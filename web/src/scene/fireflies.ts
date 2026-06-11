@@ -3,6 +3,14 @@ import type { XZ } from "./layout.js";
 import { COLORS } from "./palette.js";
 import { glowTexture } from "./textures.js";
 
+function safeBigInt(value: string): bigint {
+  try {
+    return BigInt(value);
+  } catch {
+    return 0n;
+  }
+}
+
 const MAX = 400;
 const DIVE_SECONDS = 2;
 
@@ -61,7 +69,7 @@ export class Fireflies {
 
   setMempool(size: number, cost: string): void {
     this.visible = Math.max(20, Math.min(this.max, 20 + size));
-    const costNum = Number(BigInt(cost) / 1_000_000_000n); // ~CLVM cost in billions
+    const costNum = Number(safeBigInt(cost) / 1_000_000_000n); // ~CLVM cost in billions
     this.agitation = Math.max(0.5, Math.min(3, 0.5 + costNum / 400));
   }
 

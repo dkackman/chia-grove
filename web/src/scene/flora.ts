@@ -34,6 +34,8 @@ class InstancedKind {
   private next = 0;
   private readonly matrix = new THREE.Matrix4();
   private readonly quaternion = new THREE.Quaternion();
+  private readonly position = new THREE.Vector3();
+  private readonly scale = new THREE.Vector3();
 
   constructor(
     scene: THREE.Scene,
@@ -69,9 +71,9 @@ class InstancedKind {
       const eased = easeOutCubic(progress);
       const width = Math.min(1, eased * 1.3);
       this.matrix.compose(
-        new THREE.Vector3(slot.x, 0, slot.z),
+        this.position.set(slot.x, 0, slot.z),
         this.quaternion,
-        new THREE.Vector3(width, eased * slot.height * gustDip, width)
+        this.scale.set(width, eased * slot.height * gustDip, width)
       );
       this.mesh.setMatrixAt(i, this.matrix);
     }
@@ -233,10 +235,11 @@ export class FloraSystem {
     this.gustUntil = t + 2;
   }
 
-  update(t: number): void {
+  update(t: number, dt: number): void {
+    const remaining = Math.max(0, this.gustUntil - t);
     const gustDip =
-      t < this.gustUntil
-        ? 0.82 + 0.18 * Math.abs(Math.sin((this.gustUntil - t) * 6))
+      remaining > 0
+        ? 1 - 0.18 * Math.min(1, remaining / 2) * Math.abs(Math.sin(remaining * 6))
         : 1;
     this.grass.update(t, gustDip);
     this.mushroom.update(t, gustDip);
@@ -244,7 +247,7 @@ export class FloraSystem {
 
     for (const glow of this.bloomGlows) {
       if (glow.material.opacity > 0.55) {
-        glow.material.opacity = Math.max(0.55, glow.material.opacity - 0.002);
+        glow.material.opacity = Math.max(0.55, glow.material.opacity - dt * 0.12);
       }
     }
     for (const wisp of this.wisps) {

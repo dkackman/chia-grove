@@ -23,14 +23,16 @@ grove.setAmbientHandler((mempoolSize, mempoolCost) =>
   fireflies.setMempool(mempoolSize, mempoolCost)
 );
 grove.setBlockHandler((pos) => fireflies.diveTo(pos, clockRef.t));
-attachPicker(canvas, grove.camera, flora);
 grove.setReorgHandler(() => {
   flora.gust(clockRef.t);
   fireflies.scatter();
 });
-grove.setUpdateHandler((_dt, t) => {
+const frameCallbacks: Array<() => void> = [];
+grove.setUpdateHandler((dt, t) => {
   clockRef.t = t;
-  flora.update(t);
+  flora.update(t, dt);
   fireflies.update(t);
+  for (const fn of frameCallbacks) fn();
 });
+attachPicker(canvas, grove.camera, flora, (fn) => frameCallbacks.push(fn));
 feed.start();

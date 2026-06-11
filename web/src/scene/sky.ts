@@ -2,6 +2,14 @@ import * as THREE from "three";
 import { COLORS } from "./palette.js";
 import { auroraTexture, glowTexture } from "./textures.js";
 
+function safeBigInt(value: string): bigint {
+  try {
+    return BigInt(value);
+  } catch {
+    return 0n;
+  }
+}
+
 export interface Sky {
   update(dt: number, t: number): void;
   pulse(): void;
@@ -10,6 +18,8 @@ export interface Sky {
 }
 
 export function createSky(scene: THREE.Scene): Sky {
+  const glowMap = glowTexture();
+
   // starfield dome
   const starCount = 900;
   const positions = new Float32Array(starCount * 3);
@@ -27,7 +37,7 @@ export function createSky(scene: THREE.Scene): Sky {
     starGeometry,
     new THREE.PointsMaterial({
       size: 1.1,
-      map: glowTexture(),
+      map: glowMap,
       color: 0x9fb8aa,
       transparent: true,
       depthWrite: false,
@@ -38,7 +48,7 @@ export function createSky(scene: THREE.Scene): Sky {
 
   // moon
   const moonMaterial = new THREE.SpriteMaterial({
-    map: glowTexture(),
+    map: glowMap,
     color: COLORS.moon,
     transparent: true,
     depthWrite: false,
@@ -86,7 +96,7 @@ export function createSky(scene: THREE.Scene): Sky {
       auroraEnergy = 1;
     },
     setNetspace(bytes) {
-      const eib = Number(BigInt(bytes) >> 50n) / 1024;
+      const eib = Number(safeBigInt(bytes) >> 50n) / 1024;
       moonTarget = Math.min(1.05, Math.max(0.55, 0.55 + (eib - 10) * 0.0125));
     },
     setSignalLost(lost) {

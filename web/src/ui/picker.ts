@@ -5,11 +5,11 @@ import { hideCard, showCard } from "./detail-card.js";
 export function attachPicker(
   canvas: HTMLCanvasElement,
   camera: THREE.PerspectiveCamera,
-  flora: FloraSystem
+  flora: FloraSystem,
+  onFrame: (fn: () => void) => void
 ): void {
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
-  let hovering = false;
 
   function intersect(eventX: number, eventY: number) {
     pointer.set(
@@ -25,9 +25,19 @@ export function attachPicker(
     return null;
   }
 
+  let pendingX = -1;
+  let pendingY = -1;
+
   canvas.addEventListener("pointermove", (event) => {
-    hovering = intersect(event.clientX, event.clientY) !== null;
+    pendingX = event.clientX;
+    pendingY = event.clientY;
+  });
+
+  onFrame(() => {
+    if (pendingX < 0) return;
+    const hovering = intersect(pendingX, pendingY) !== null;
     canvas.style.cursor = hovering ? "pointer" : "default";
+    pendingX = -1;
   });
 
   canvas.addEventListener("click", (event) => {
