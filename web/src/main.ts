@@ -27,7 +27,10 @@ const fireflies = new Fireflies(grove.scene, grove.reducedMotion ? 150 : 400);
 grove.setAmbientHandler((mempoolSize, mempoolCost) =>
   fireflies.setMempool(mempoolSize, mempoolCost)
 );
-grove.setBlockHandler((pos) => fireflies.diveTo(pos, clockRef.t));
+grove.setBlockHandler((pos) => {
+  fireflies.diveTo(pos, clockRef.t);
+  if (!grove.reducedMotion) flora.gust(clockRef.t);
+});
 grove.setReorgHandler(() => {
   flora.gust(clockRef.t);
   fireflies.scatter();

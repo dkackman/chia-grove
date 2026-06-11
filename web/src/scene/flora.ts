@@ -60,6 +60,8 @@ class InstancedKind {
   private readonly position = new THREE.Vector3();
   private readonly scale = new THREE.Vector3();
   private readonly euler = new THREE.Euler();
+  private readonly swayQuat = new THREE.Quaternion();
+  private readonly worldQuat = new THREE.Quaternion();
 
   constructor(
     scene: THREE.Scene,
@@ -124,11 +126,26 @@ class InstancedKind {
       const progress = Math.min((t - slot.bornAt) / GROW_SECONDS, 1);
       const eased = easeOutCubic(progress);
       const width = Math.min(1, eased * 1.3) * slot.width;
-      const sway = 1 + this.swayAmp * Math.sin(t * 1.4 + slot.swayPhase);
+      // wind: lean from the base. A wave travels diagonally across the
+      // meadow (~21-unit wavelength, so several crests are visible at
+      // once); the small swayPhase term keeps the front ragged without
+      // destroying coherence. A second incommensurate harmonic breaks the
+      // pendulum regularity, and a faster per-plant flutter (frequency
+      // varied by swayPhase) desyncs neighbors. The 0.35 bias keeps plants
+      // leaning slightly downwind rather than swinging symmetrically about
+      // vertical. Gusts (gustDip < 1) deepen the lean and dip the height.
+      const wavePhase = t * 1.2 + (slot.x + slot.z * 0.6) * 0.3 + slot.swayPhase * 0.15;
+      const breeze =
+        Math.sin(wavePhase) +
+        0.35 * Math.sin(wavePhase * 1.7 + 1.3) +
+        0.22 * Math.sin(t * (2.3 + slot.swayPhase * 0.12) + slot.swayPhase * 7);
+      const lean = this.swayAmp * (1 + (1 - gustDip) * 6) * (0.35 + breeze * 0.55);
+      this.swayQuat.setFromEuler(this.euler.set(lean * 0.4, 0, lean));
+      this.worldQuat.multiplyQuaternions(this.swayQuat, slot.rotation);
       this.matrix.compose(
         this.position.set(slot.x, 0, slot.z),
-        slot.rotation,
-        this.scale.set(width, eased * slot.height * gustDip * sway, width)
+        this.worldQuat,
+        this.scale.set(width, eased * slot.height * gustDip, width)
       );
       this.mesh.setMatrixAt(i, this.matrix);
     }
@@ -278,7 +295,7 @@ export class FloraSystem {
       roughness: 0.8,
     });
     this.grass = grassGeometries().map(
-      (geometry) => new InstancedKind(scene, geometry, grassMaterial, CAPS.grass, 0.05)
+      (geometry) => new InstancedKind(scene, geometry, grassMaterial, CAPS.grass, 0.09)
     );
 
     const mushroomMaterial = new THREE.MeshStandardMaterial({
@@ -287,7 +304,7 @@ export class FloraSystem {
       roughness: 0.6,
     });
     this.mushroom = mushroomGeometries().map(
-      (geometry) => new InstancedKind(scene, geometry, mushroomMaterial, CAPS.mushroom, 0.015)
+      (geometry) => new InstancedKind(scene, geometry, mushroomMaterial, CAPS.mushroom, 0.022)
     );
 
     const bloomMaterial = new THREE.MeshStandardMaterial({
@@ -297,7 +314,7 @@ export class FloraSystem {
       roughness: 0.4,
     });
     this.bloom = bloomGeometries().map(
-      (geometry) => new InstancedKind(scene, geometry, bloomMaterial, CAPS.bloom, 0.03)
+      (geometry) => new InstancedKind(scene, geometry, bloomMaterial, CAPS.bloom, 0.04)
     );
 
     const glowMap = glowTexture();
