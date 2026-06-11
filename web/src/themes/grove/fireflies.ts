@@ -1,7 +1,7 @@
 import * as THREE from "three";
-import type { XZ } from "./layout.js";
+import type { XZ } from "../shared/util.js";
 import { COLORS } from "./palette.js";
-import { glowTexture } from "../themes/shared/textures.js";
+import { glowTexture } from "../shared/textures.js";
 
 function safeBigInt(value: string): bigint {
   try {

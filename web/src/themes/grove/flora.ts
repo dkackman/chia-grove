@@ -1,12 +1,12 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { SproutEvent } from "@grove/shared";
-import { mulberry32, type XZ } from "../themes/shared/util.js";
-import { easeOutCubic, InstancedKind, type Pose } from "../themes/shared/instanced.js";
-import { catWidth, xchHeight } from "../themes/shared/scales.js";
-import { catColor } from "../themes/shared/cat-color.js";
+import { mulberry32, type XZ } from "../shared/util.js";
+import { easeOutCubic, InstancedKind, type Pose } from "../shared/instanced.js";
+import { catWidth, xchHeight } from "../shared/scales.js";
+import { catColor } from "../shared/cat-color.js";
 import { COLORS } from "./palette.js";
-import { glowTexture } from "../themes/shared/textures.js";
+import { glowTexture } from "../shared/textures.js";
 import { sproutOffset } from "./layout.js";
 
 // caps are per geometry variant (3 variants per kind)

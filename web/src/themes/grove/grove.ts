@@ -1,8 +1,9 @@
 import * as THREE from "three";
 import type { GroveEvent, SproutEvent } from "@grove/shared";
-import type { GroveFeed } from "../net/feed.js";
+import type { GroveFeed } from "../../net/feed.js";
+import { type XZ } from "../shared/util.js";
 import { createGround } from "./ground.js";
-import { blockPosition, type XZ } from "./layout.js";
+import { blockPosition } from "./layout.js";
 import { COLORS } from "./palette.js";
 import { createSky } from "./sky.js";
 

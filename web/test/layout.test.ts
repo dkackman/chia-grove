@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { blockPosition, sproutOffset } from "../src/scene/layout.js";
+import { blockPosition, sproutOffset } from "../src/themes/grove/layout.js";
 
 test("block positions spiral outward monotonically", () => {
   const r = (i: number) => Math.hypot(blockPosition(i).x, blockPosition(i).z);

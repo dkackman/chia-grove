@@ -1,6 +1,4 @@
-import { mulberry32, type XZ } from "../themes/shared/util.js";
-
-export type { XZ };
+import { mulberry32, type XZ } from "../shared/util.js";
 
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5)); // ≈ 2.39996 rad
 const CLEARING_RADIUS = 6;

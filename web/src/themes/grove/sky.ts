@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { COLORS } from "./palette.js";
-import { auroraTexture, glowTexture } from "../themes/shared/textures.js";
+import { auroraTexture, glowTexture } from "../shared/textures.js";
 
 function safeBigInt(value: string): bigint {
   try {

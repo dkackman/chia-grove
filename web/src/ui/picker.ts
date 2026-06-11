@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import type { SproutEvent } from "@grove/shared";
-import type { FloraSystem } from "../scene/flora.js";
+import type { FloraSystem } from "../themes/grove/flora.js";
 import { hideCard, showCard } from "./detail-card.js";
 
 interface Hit {

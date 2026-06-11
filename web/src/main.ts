@@ -1,7 +1,7 @@
 import { GroveFeed } from "./net/feed.js";
-import { startGrove } from "./scene/grove.js";
-import { FloraSystem } from "./scene/flora.js";
-import { Fireflies } from "./scene/fireflies.js";
+import { startGrove } from "./themes/grove/grove.js";
+import { FloraSystem } from "./themes/grove/flora.js";
+import { Fireflies } from "./themes/grove/fireflies.js";
 import { attachPicker } from "./ui/picker.js";
 import { BlockConsole } from "./ui/console.js";
 import { initLegend } from "./ui/legend.js";

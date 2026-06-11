@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { bloomGeometries, grassGeometries, mushroomGeometries } from "../src/scene/flora.js";
+import { bloomGeometries, grassGeometries, mushroomGeometries } from "../src/themes/grove/flora.js";
 
 // mergeGeometries returns null when inputs mix indexed and non-indexed
 // geometries; a null geometry crashes the renderer on the first frame.
