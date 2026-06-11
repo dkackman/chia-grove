@@ -85,13 +85,13 @@ class InstancedKind {
   }
 }
 
-function grassGeometry(): THREE.BufferGeometry {
+export function grassGeometry(): THREE.BufferGeometry {
   const cone = new THREE.ConeGeometry(0.07, 1, 5);
   cone.translate(0, 0.5, 0);
   return cone;
 }
 
-function mushroomGeometry(): THREE.BufferGeometry {
+export function mushroomGeometry(): THREE.BufferGeometry {
   const stem = new THREE.CylinderGeometry(0.05, 0.08, 0.5, 6);
   stem.translate(0, 0.25, 0);
   const cap = new THREE.SphereGeometry(0.24, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2);
@@ -99,10 +99,12 @@ function mushroomGeometry(): THREE.BufferGeometry {
   return mergeGeometries([stem, cap]);
 }
 
-function bloomGeometry(): THREE.BufferGeometry {
-  const core = new THREE.IcosahedronGeometry(0.18, 1);
+export function bloomGeometry(): THREE.BufferGeometry {
+  const core = new THREE.IcosahedronGeometry(0.18, 1); // non-indexed (polyhedron)
   core.translate(0, 0.85, 0);
-  const stalk = new THREE.CylinderGeometry(0.025, 0.04, 0.7, 5);
+  // toNonIndexed: mergeGeometries returns null when inputs mix indexed and
+  // non-indexed geometries, and a null geometry crashes the render loop
+  const stalk = new THREE.CylinderGeometry(0.025, 0.04, 0.7, 5).toNonIndexed();
   stalk.translate(0, 0.35, 0);
   return mergeGeometries([core, stalk]);
 }
