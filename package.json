@@ -2,7 +2,11 @@
   "name": "chia-grove",
   "private": true,
   "type": "module",
-  "workspaces": ["shared", "server", "web"],
+  "workspaces": [
+    "shared",
+    "server",
+    "web"
+  ],
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc -p server/tsconfig.json && tsc -p web/tsconfig.json && tsc -p shared/tsconfig.json",
@@ -12,7 +16,10 @@
     "start": "npm run start -w server"
   },
   "devDependencies": {
-    "typescript": "^5.6.0",
-    "vitest": "^3.0.0"
+    "typescript": "^6.0.0",
+    "vitest": "^4.0.0"
+  },
+  "engines": {
+    "node": ">=24"
   }
 }

@@ -43,7 +43,7 @@ npm run build        # production frontend bundle (web/dist)
 
 ## Deployment (Ubuntu droplet)
 
-1. Install Node 20+ and Caddy; create the `grove` user and `/opt/chia-grove`.
+1. Install Node 24 LTS and Caddy (see deploy/infra/server-setup.sh); create the `grove` user and `/opt/chia-grove`.
 2. Copy `deploy/chia-grove.service` to `/etc/systemd/system/`, enable it.
 3. Point `deploy/Caddyfile`'s domain at the droplet, install as `/etc/caddy/Caddyfile`.
 4. `deploy/deploy.sh grove@your-droplet`

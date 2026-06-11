@@ -11,7 +11,10 @@ process.on("unhandledRejection", (reason) => {
   console.error("unhandled rejection:", reason);
 });
 process.on("uncaughtException", (error) => {
+  // log and exit: a process that limps on after an uncaught exception can
+  // look "up" to systemd while serving nothing — let Restart=always recover
   console.error("uncaught exception:", error);
+  process.exit(1);
 });
 
 const PORT = Number(process.env.PORT ?? 8080);

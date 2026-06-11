@@ -8,7 +8,7 @@
     "start": "tsx src/index.ts"
   },
   "dependencies": {
-    "@fastify/static": "^8.0.0",
+    "@fastify/static": "^9.0.0",
     "@fastify/websocket": "^11.0.0",
     "@grove/shared": "*",
     "chia-wallet-sdk": "^0.33.0",
@@ -16,6 +16,6 @@
     "tsx": "^4.19.0"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0"
+    "@types/node": "^24.0.0"
   }
 }
