@@ -19,6 +19,7 @@ interface Slot {
   x: number;
   z: number;
   height: number;
+  width: number;
   baseColor: THREE.Color;
   rotation: THREE.Quaternion;
   swayPhase: number;
@@ -27,6 +28,7 @@ interface Slot {
 /** Per-instance pose, derived deterministically from the coin id. */
 interface Pose {
   height: number;
+  width?: number;
   color?: THREE.Color;
   rotY: number;
   tiltX: number;
@@ -43,6 +45,7 @@ function makeSlots(cap: number): Slot[] {
     x: 0,
     z: 0,
     height: 1,
+    width: 1,
     baseColor: WHITE.clone(),
     rotation: new THREE.Quaternion(),
     swayPhase: 0,
@@ -92,6 +95,7 @@ class InstancedKind {
     slot.x = x;
     slot.z = z;
     slot.height = pose.height;
+    slot.width = pose.width ?? 1;
     slot.baseColor = pose.color ? pose.color.clone() : WHITE.clone();
     slot.rotation.setFromEuler(this.euler.set(pose.tiltX, pose.rotY, pose.tiltZ));
     slot.swayPhase = pose.swayPhase;
@@ -119,7 +123,7 @@ class InstancedKind {
       if (!slot.meta) continue;
       const progress = Math.min((t - slot.bornAt) / GROW_SECONDS, 1);
       const eased = easeOutCubic(progress);
-      const width = Math.min(1, eased * 1.3);
+      const width = Math.min(1, eased * 1.3) * slot.width;
       const sway = 1 + this.swayAmp * Math.sin(t * 1.4 + slot.swayPhase);
       this.matrix.compose(
         this.position.set(slot.x, 0, slot.z),
@@ -233,6 +237,17 @@ export function bloomGeometries(): THREE.BufferGeometry[] {
 function xchHeight(amount: string): number {
   const mojos = Number(amount);
   return Math.min(3.2, 0.4 + 0.55 * Math.log10(1 + mojos / 1e9));
+}
+
+/**
+ * CAT amount (mojos, string) → mushroom cap width. CATs carry 3 decimals
+ * (1 token = 1000 mojos); per-token value varies wildly across assets, so
+ * this only conveys relative magnitude within a colony. log scale and
+ * sublinear, dust→slim, whale→chunky toadstool.
+ */
+function catWidth(amount: string): number {
+  const tokens = Number(amount) / 1000;
+  return 0.75 + 0.25 * Math.min(2.2, 0.5 + 0.3 * Math.log10(1 + tokens));
 }
 
 // nominal height multiplier per grass variant (broad blades stay low)
@@ -357,6 +372,7 @@ export class FloraSystem {
         this.color.setHSL(h, 0.58 + rand() * 0.25, 0.42 + rand() * 0.18);
         pose.color = this.color;
         pose.height = 0.8 + rand() * 0.5;
+        pose.width = catWidth(event.amount);
         pose.tiltX *= 0.6;
         pose.tiltZ *= 0.6;
         this.mushroom[variant].plant(event, x, z, t, pose);
