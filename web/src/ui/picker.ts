@@ -32,12 +32,24 @@ export function attachPicker(
     return null;
   }
 
+  // debounce the card only — highlight and cursor stay instant so the
+  // scene feels responsive while sweeping across the meadow
+  const SHOW_DELAY_MS = 160;
+  const HIDE_DELAY_MS = 240;
+
   let pendingX = -1;
   let pendingY = -1;
   let hoveredCoinId: string | null = null;
   // a click pins the card open so the spacescan link is reachable;
   // click-away (or clicking another plant) releases it
   let pinned = false;
+  let showTimer: number | undefined;
+  let hideTimer: number | undefined;
+
+  const clearCardTimers = () => {
+    clearTimeout(showTimer);
+    clearTimeout(hideTimer);
+  };
 
   canvas.addEventListener("pointermove", (event) => {
     pendingX = event.clientX;
@@ -56,13 +68,19 @@ export function attachPicker(
     flora.setHovered(hit?.object ?? null, hit?.instanceId);
     canvas.style.cursor = hit ? "pointer" : "default";
     if (!pinned) {
-      if (hit) showCard(hit.meta);
-      else hideCard();
+      clearCardTimers();
+      if (hit) {
+        const meta = hit.meta;
+        showTimer = window.setTimeout(() => showCard(meta), SHOW_DELAY_MS);
+      } else {
+        hideTimer = window.setTimeout(hideCard, HIDE_DELAY_MS);
+      }
     }
   });
 
   canvas.addEventListener("click", (event) => {
     const hit = intersect(event.clientX, event.clientY);
+    clearCardTimers();
     if (hit) {
       pinned = true;
       showCard(hit.meta);

@@ -20,7 +20,12 @@ html, body { height: 100%; overflow: hidden; background: #020806; }
   backdrop-filter: blur(6px);
   font: 13px/1.5 ui-monospace, monospace;
   color: #b9ffd9;
+  opacity: 0; transform: translateY(6px);
+  pointer-events: none;
+  transition: opacity 220ms ease, transform 220ms ease;
 }
+
+#card.visible { opacity: 1; transform: none; pointer-events: auto; }
 
 #card h3 { font-size: 14px; margin-bottom: 6px; color: #eafff2; }
 

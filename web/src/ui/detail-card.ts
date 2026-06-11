@@ -53,10 +53,10 @@ export function showCard(event: SproutEvent): void {
   linkDiv.appendChild(a);
   card.appendChild(linkDiv);
 
-  card.hidden = false;
+  card.classList.add("visible");
 }
 
 export function hideCard(): void {
   const card = document.getElementById("card") as HTMLDivElement;
-  card.hidden = true;
+  card.classList.remove("visible");
 }
