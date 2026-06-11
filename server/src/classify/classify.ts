@@ -61,7 +61,7 @@ function classifySpend(
     const solution = clvm.deserializeWithBackrefs(spend.solution);
 
     const nft = puzzle.parseNft(spend.coin, solution);
-    if (nft && nft.nft.proof.toLineageProof() === null) {
+    if (nft) {
       const meta = nft.nft.info.metadata.parseNftMetadata();
       const imageUrl = meta?.dataUris.find(
         (u) => u.startsWith("https://") || u.startsWith("http://")
@@ -79,8 +79,7 @@ function classifySpend(
     if (cat) return { ...base, kind: "cat", assetId: hex(cat.cat.info.assetId) };
 
     const did = puzzle.parseDid(spend.coin, solution);
-    if (did && did.did.proof.toLineageProof() === null)
-      return { ...base, kind: "did", mint };
+    if (did) return { ...base, kind: "did", mint };
   } catch {
     // unparseable puzzle → treat as plain xch
   }
