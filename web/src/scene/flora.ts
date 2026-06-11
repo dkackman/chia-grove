@@ -58,6 +58,11 @@ class InstancedKind {
       // first use, which would render untinted instances black
       this.mesh.setColorAt(i, WHITE);
     }
+    // InstancedMesh caches its bounding sphere on the first raycast — which
+    // happens while every instance is still scale-0, leaving a radius-0
+    // sphere that makes every later raycast miss. Pin a fixed sphere that
+    // covers the whole meadow instead (spiral max ~44 + cluster + height).
+    this.mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 2, 0), 80);
     scene.add(this.mesh);
   }
 
