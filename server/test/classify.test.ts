@@ -28,9 +28,7 @@ function block(spends: CoinSpend[], height = 100): BlockInput {
 }
 
 function sprouts(spends: CoinSpend[]): SproutEvent[] {
-  return classifyBlock(block(spends)).filter(
-    (e): e is SproutEvent => e.type === "sprout"
-  );
+  return classifyBlock(block(spends)).filter((e): e is SproutEvent => e.type === "sprout");
 }
 
 // Mirrors the createDid helper in the SDK's own nfts.spec.ts.
@@ -42,11 +40,7 @@ function createDid(clvm: Clvm, parentCoinId: Buffer, pk: PublicKey) {
     clvm.standardSpend(
       pk,
       clvm.delegatedSpend([
-        clvm.createCoin(
-          eveDid.did.info.innerPuzzleHash(),
-          1n,
-          clvm.alloc([p2PuzzleHash])
-        ),
+        clvm.createCoin(eveDid.did.info.innerPuzzleHash(), 1n, clvm.alloc([p2PuzzleHash])),
       ])
     )
   );
@@ -109,11 +103,7 @@ test("cat spend carries deterministic assetId", () => {
     alice.pk,
     clvm.delegatedSpend([clvm.createCoin(catInfo.puzzleHash(), 1n)])
   );
-  const eve = new Cat(
-    new Coin(alice.coin.coinId(), catInfo.puzzleHash(), 1n),
-    null,
-    catInfo
-  );
+  const eve = new Cat(new Coin(alice.coin.coinId(), catInfo.puzzleHash(), 1n), null, catInfo);
   clvm.spendCats([
     new CatSpend(
       eve,
@@ -146,9 +136,7 @@ test("nft mint flow yields nft sprout with mint flag and did sprout; launcher sp
   clvm.spendStandardCoin(
     alice.coin,
     alice.pk,
-    clvm.delegatedSpend(
-      didParentConditions.concat([clvm.createCoin(alice.puzzleHash, 0n)])
-    )
+    clvm.delegatedSpend(didParentConditions.concat([clvm.createCoin(alice.puzzleHash, 0n)]))
   );
 
   const mintCoin = new Coin(alice.coin.coinId(), alice.puzzleHash, 0n);
@@ -165,11 +153,7 @@ test("nft mint flow yields nft sprout with mint flag and did sprout; launcher sp
       null
     ),
   ]);
-  clvm.spendStandardCoin(
-    mintCoin,
-    alice.pk,
-    clvm.delegatedSpend(mintParentConditions)
-  );
+  clvm.spendStandardCoin(mintCoin, alice.pk, clvm.delegatedSpend(mintParentConditions));
   clvm.spendNft(
     nft,
     clvm.standardSpend(
@@ -195,9 +179,7 @@ test("nft mint flow yields nft sprout with mint flag and did sprout; launcher sp
   const result = sprouts(spends);
 
   const launcherHash = hex(Constants.singletonLauncherHash());
-  const launcherSpendCount = spends.filter(
-    (s) => hex(s.coin.puzzleHash) === launcherHash
-  ).length;
+  const launcherSpendCount = spends.filter((s) => hex(s.coin.puzzleHash) === launcherHash).length;
   expect(launcherSpendCount).toBeGreaterThan(0);
 
   const nftSprouts = result.filter((s) => s.kind === "nft");

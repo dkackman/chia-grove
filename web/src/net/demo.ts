@@ -1,9 +1,9 @@
 import type { GroveEvent, SproutEvent, SproutKind } from "@grove/shared";
 
 const randomHex = (bytes: number): string =>
-  Array.from({ length: bytes * 2 }, () =>
-    "0123456789abcdef"[Math.floor(Math.random() * 16)]
-  ).join("");
+  Array.from({ length: bytes * 2 }, () => "0123456789abcdef"[Math.floor(Math.random() * 16)]).join(
+    ""
+  );
 
 // a few stable fake CAT asset ids so colonies form by color
 const DEMO_ASSET_IDS = Array.from({ length: 6 }, () => randomHex(32));
@@ -27,8 +27,7 @@ function sprout(height: number): SproutEvent {
     amount: String(Math.floor(10 ** (3 + Math.random() * 11))),
   };
   if (kind === "cat") {
-    event.assetId =
-      DEMO_ASSET_IDS[Math.floor(Math.random() * DEMO_ASSET_IDS.length)];
+    event.assetId = DEMO_ASSET_IDS[Math.floor(Math.random() * DEMO_ASSET_IDS.length)];
   }
   if (kind === "nft") {
     event.launcherId = randomHex(32);

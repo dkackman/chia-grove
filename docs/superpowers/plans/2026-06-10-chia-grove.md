@@ -9,11 +9,13 @@
 **Tech Stack:** TypeScript everywhere; npm workspaces (`shared`, `server`, `web`); server: `chia-wallet-sdk` (napi, ^0.33.0), Fastify 5 + `@fastify/websocket` + `@fastify/static`, `tsx` runtime; web: Vite 6 + three.js (no UI framework); tests: Vitest at the root (the SDK's in-memory `Simulator` lets classify tests mint real NFTs/CATs/DIDs without network).
 
 **Noted deviations from spec (intentional, minor):**
+
 - `getAdditionsAndRemovals` is not fetched: block spends already carry every datum the scene uses (kinds, amounts, counts). Nothing visual consumed additions.
 - NFT `imageUrl` comes straight from the on-chain metadata program's `dataUris` (first http(s) URI) — no server-side fetch/cache needed, same intent ("omitted when unavailable").
 - Reorg "wilt and regrow" is implemented as a grove-wide gust (brief global scale dip + firefly scatter + ripple) rather than per-plant wilt — visible event, far simpler.
 
 **Environment notes for the executor:**
+
 - Working directory: `/Users/don/src/dkackman/chia-grove` (repo already initialized, spec committed).
 - Node >= 20 required (napi native module).
 - `chia-wallet-sdk` ships prebuilt binaries via npm — no Rust toolchain needed.
@@ -84,6 +86,7 @@ Event flow: `CoinsetPoller` → handlers in `index.ts` → `classifyBlock()` →
 ### Task 1: Workspace scaffold
 
 **Files:**
+
 - Create: `package.json`, `tsconfig.base.json`, `vitest.config.ts`, `.gitignore`
 - Create: `shared/package.json`, `server/package.json`, `server/tsconfig.json`, `web/package.json`, `web/tsconfig.json`
 
@@ -252,6 +255,7 @@ git commit -m "chore: scaffold npm workspaces (shared/server/web)"
 ### Task 2: Shared grove event types
 
 **Files:**
+
 - Create: `shared/src/index.ts`
 
 These types are the entire server↔browser contract. Types only — no test.
@@ -320,6 +324,7 @@ git commit -m "feat(shared): grove event wire types"
 ### Task 3: Ring buffer
 
 **Files:**
+
 - Create: `server/src/web/ring-buffer.ts`
 - Test: `server/test/ring-buffer.test.ts`
 
@@ -397,12 +402,14 @@ git commit -m "feat(server): event ring buffer"
 ### Task 4: Classifier (spends → grove events)
 
 **Files:**
+
 - Create: `server/src/classify/classify.ts`
 - Test: `server/test/classify.test.ts`
 
-The only logic-dense module. Tests use the SDK's in-memory `Simulator` + `Clvm` to construct *real* standard/CAT/NFT/DID coin spends — no network, fully deterministic. The patterns below are lifted from the SDK's own napi test suite (`napi/__test__/nfts.spec.ts`, `cats.spec.ts` in the chia-wallet-sdk repo).
+The only logic-dense module. Tests use the SDK's in-memory `Simulator` + `Clvm` to construct _real_ standard/CAT/NFT/DID coin spends — no network, fully deterministic. The patterns below are lifted from the SDK's own napi test suite (`napi/__test__/nfts.spec.ts`, `cats.spec.ts` in the chia-wallet-sdk repo).
 
 Key SDK facts (verified against `chia-wallet-sdk@0.33.0` typings):
+
 - `new Clvm()`; `clvm.deserializeWithBackrefs(bytes): Program`; `program.puzzle(): Puzzle`
 - `puzzle.parseNft(coin, solution): ParsedNft | null` → `.nft.info.launcherId: Buffer`, `.nft.info.metadata: Program` → `.parseNftMetadata(): NftMetadata | null` → `.dataUris: string[]`
 - `puzzle.parseCat(coin, solution): ParsedCat | null` → `.cat.info.assetId: Buffer`
@@ -448,9 +455,7 @@ function block(spends: CoinSpend[], height = 100): BlockInput {
 }
 
 function sprouts(spends: CoinSpend[]): SproutEvent[] {
-  return classifyBlock(block(spends)).filter(
-    (e): e is SproutEvent => e.type === "sprout"
-  );
+  return classifyBlock(block(spends)).filter((e): e is SproutEvent => e.type === "sprout");
 }
 
 // Mirrors the createDid helper in the SDK's own nfts.spec.ts.
@@ -462,11 +467,7 @@ function createDid(clvm: Clvm, parentCoinId: Buffer, pk: PublicKey) {
     clvm.standardSpend(
       pk,
       clvm.delegatedSpend([
-        clvm.createCoin(
-          eveDid.did.info.innerPuzzleHash(),
-          1n,
-          clvm.alloc([p2PuzzleHash])
-        ),
+        clvm.createCoin(eveDid.did.info.innerPuzzleHash(), 1n, clvm.alloc([p2PuzzleHash])),
       ])
     )
   );
@@ -529,11 +530,7 @@ test("cat spend carries deterministic assetId", () => {
     alice.pk,
     clvm.delegatedSpend([clvm.createCoin(catInfo.puzzleHash(), 1n)])
   );
-  const eve = new Cat(
-    new Coin(alice.coin.coinId(), catInfo.puzzleHash(), 1n),
-    null,
-    catInfo
-  );
+  const eve = new Cat(new Coin(alice.coin.coinId(), catInfo.puzzleHash(), 1n), null, catInfo);
   clvm.spendCats([
     new CatSpend(
       eve,
@@ -566,9 +563,7 @@ test("nft mint flow yields nft sprout with mint flag and did sprout; launcher sp
   clvm.spendStandardCoin(
     alice.coin,
     alice.pk,
-    clvm.delegatedSpend(
-      didParentConditions.concat([clvm.createCoin(alice.puzzleHash, 0n)])
-    )
+    clvm.delegatedSpend(didParentConditions.concat([clvm.createCoin(alice.puzzleHash, 0n)]))
   );
 
   const mintCoin = new Coin(alice.coin.coinId(), alice.puzzleHash, 0n);
@@ -585,11 +580,7 @@ test("nft mint flow yields nft sprout with mint flag and did sprout; launcher sp
       null
     ),
   ]);
-  clvm.spendStandardCoin(
-    mintCoin,
-    alice.pk,
-    clvm.delegatedSpend(mintParentConditions)
-  );
+  clvm.spendStandardCoin(mintCoin, alice.pk, clvm.delegatedSpend(mintParentConditions));
   clvm.spendNft(
     nft,
     clvm.standardSpend(
@@ -615,9 +606,7 @@ test("nft mint flow yields nft sprout with mint flag and did sprout; launcher sp
   const result = sprouts(spends);
 
   const launcherHash = hex(Constants.singletonLauncherHash());
-  const launcherSpendCount = spends.filter(
-    (s) => hex(s.coin.puzzleHash) === launcherHash
-  ).length;
+  const launcherSpendCount = spends.filter((s) => hex(s.coin.puzzleHash) === launcherHash).length;
   expect(launcherSpendCount).toBeGreaterThan(0);
 
   const nftSprouts = result.filter((s) => s.kind === "nft");
@@ -697,9 +686,7 @@ function classifySpend(
     coinId: hex(spend.coin.coinId()),
     amount: spend.coin.amount.toString(),
   };
-  const mint = launcherCoinIds.has(hex(spend.coin.parentCoinInfo))
-    ? true
-    : undefined;
+  const mint = launcherCoinIds.has(hex(spend.coin.parentCoinInfo)) ? true : undefined;
 
   try {
     const puzzle = clvm.deserializeWithBackrefs(spend.puzzleReveal).puzzle();
@@ -749,6 +736,7 @@ git commit -m "feat(server): classify block spends into grove events"
 ### Task 5: Coinset poller
 
 **Files:**
+
 - Create: `server/src/ingest/types.ts`, `server/src/ingest/coinset-poller.ts`, `server/src/ingest/coinset-view.ts`
 - Test: `server/test/coinset-poller.test.ts`
 
@@ -811,12 +799,7 @@ export interface ChainSource {
 ```ts
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { CoinsetPoller } from "../src/ingest/coinset-poller.js";
-import type {
-  BlockData,
-  BlockInfo,
-  ChainState,
-  RpcView,
-} from "../src/ingest/types.js";
+import type { BlockData, BlockInfo, ChainState, RpcView } from "../src/ingest/types.js";
 
 interface FakeBlock {
   height: number;
@@ -885,9 +868,7 @@ function collect() {
 
 test("backfills the last N transaction blocks on first tick", async () => {
   const rpc = new FakeRpc();
-  rpc.chain(
-    Array.from({ length: 20 }, (_, i) => ({ h: i, hash: `h${i}` }))
-  );
+  rpc.chain(Array.from({ length: 20 }, (_, i) => ({ h: i, hash: `h${i}` })));
   const sink = collect();
   const poller = new CoinsetPoller(rpc, sink.handlers, { backfillBlocks: 5 });
   await poller.tick();
@@ -923,20 +904,22 @@ test("detects a reorg, emits fork height, and re-walks the new chain", async () 
 
   // replace blocks 1-2 with a competing chain and extend it
   rpc.blocks.set(1, {
-    height: 1, headerHash: "h1b", prevHash: "h0",
+    height: 1,
+    headerHash: "h1b",
+    prevHash: "h0",
     timestamp: BigInt(1_700_000_101),
   });
   rpc.blocks.set(2, {
-    height: 2, headerHash: "h2b", prevHash: "h1b",
+    height: 2,
+    headerHash: "h2b",
+    prevHash: "h1b",
     timestamp: BigInt(1_700_000_102),
   });
   rpc.chain([{ h: 3, hash: "h3b" }]);
   await poller.tick();
 
   expect(sink.reorgs).toEqual([0]);
-  expect(sink.blocks.map((b) => b.headerHash)).toEqual([
-    "h0", "h1", "h2", "h1b", "h2b", "h3b",
-  ]);
+  expect(sink.blocks.map((b) => b.headerHash)).toEqual(["h0", "h1", "h2", "h1b", "h2b", "h3b"]);
 });
 
 test("backs off exponentially on failure and recovers", async () => {
@@ -979,11 +962,7 @@ Expected: FAIL — cannot find module `../src/ingest/coinset-poller.js`.
 `server/src/ingest/coinset-poller.ts`:
 
 ```ts
-import type {
-  ChainHandlers,
-  ChainSource,
-  RpcView,
-} from "./types.js";
+import type { ChainHandlers, ChainSource, RpcView } from "./types.js";
 
 export interface PollerOptions {
   pollIntervalMs?: number;
@@ -1180,6 +1159,7 @@ git commit -m "feat(server): coinset poller with backfill, reorg rewind, and bac
 ### Task 6: WebSocket hub and Fastify app
 
 **Files:**
+
 - Create: `server/src/web/hub.ts`, `server/src/web/server.ts`
 - Test: `server/test/hub.test.ts`
 
@@ -1278,8 +1258,7 @@ test("hopelessly behind client is disconnected", () => {
   hub.publish([blockEvent(1)]);
   expect(dead.closed).toBe(true);
   hub.publish([blockEvent(2)]);
-  expect(dead.parsed().filter((m) => (m as GroveEvent).type === "block"))
-    .toHaveLength(0);
+  expect(dead.parsed().filter((m) => (m as GroveEvent).type === "block")).toHaveLength(0);
 });
 
 test("removed client receives nothing", () => {
@@ -1389,10 +1368,7 @@ export async function buildServer(hub: Hub): Promise<FastifyInstance> {
     });
   });
 
-  const dist = path.resolve(
-    path.dirname(fileURLToPath(import.meta.url)),
-    "../../../web/dist"
-  );
+  const dist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../web/dist");
   if (existsSync(dist)) {
     await app.register(fastifyStatic, { root: dist });
   }
@@ -1416,6 +1392,7 @@ git commit -m "feat(server): websocket hub with backpressure and fastify app"
 ### Task 7: Server entry point (wiring)
 
 **Files:**
+
 - Create: `server/src/index.ts`
 
 - [ ] **Step 1: Write the entry point**
@@ -1443,9 +1420,7 @@ const poller = new CoinsetPoller(
   {
     onBlock(block) {
       hub.publish(classifyBlock(block));
-      console.log(
-        `block ${block.height} (${block.spends.length} spends)`
-      );
+      console.log(`block ${block.height} (${block.spends.length} spends)`);
     },
     onAmbient(state) {
       hub.publish([
@@ -1498,6 +1473,7 @@ git commit -m "feat(server): wire poller, classifier, and hub into entry point"
 ### Task 8: Web scaffold, feed, and demo mode
 
 **Files:**
+
 - Create: `web/vite.config.ts`, `web/index.html`, `web/src/style.css`, `web/src/main.ts`
 - Create: `web/src/net/feed.ts`, `web/src/net/demo.ts`
 
@@ -1542,39 +1518,75 @@ export default defineConfig({
 `web/src/style.css`:
 
 ```css
-* { margin: 0; padding: 0; box-sizing: border-box; }
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
 
-html, body { height: 100%; overflow: hidden; background: #020806; }
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+  background: #020806;
+}
 
-#grove { display: block; width: 100%; height: 100%; }
+#grove {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
 
 #status {
-  position: fixed; top: 14px; right: 16px;
-  font: 12px/1.4 ui-monospace, monospace;
+  position: fixed;
+  top: 14px;
+  right: 16px;
+  font:
+    12px/1.4 ui-monospace,
+    monospace;
   color: rgba(185, 255, 217, 0.5);
-  letter-spacing: 0.08em; text-transform: uppercase;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   pointer-events: none;
 }
 
 #card {
-  position: fixed; bottom: 24px; left: 24px; max-width: 300px;
-  padding: 14px 16px; border-radius: 10px;
+  position: fixed;
+  bottom: 24px;
+  left: 24px;
+  max-width: 300px;
+  padding: 14px 16px;
+  border-radius: 10px;
   background: rgba(4, 17, 10, 0.88);
   border: 1px solid rgba(61, 220, 132, 0.25);
   backdrop-filter: blur(6px);
-  font: 13px/1.5 ui-monospace, monospace;
+  font:
+    13px/1.5 ui-monospace,
+    monospace;
   color: #b9ffd9;
 }
 
-#card h3 { font-size: 14px; margin-bottom: 6px; color: #eafff2; }
-
-#card img {
-  width: 100%; border-radius: 6px; margin: 8px 0; display: block;
+#card h3 {
+  font-size: 14px;
+  margin-bottom: 6px;
+  color: #eafff2;
 }
 
-#card a { color: #5ef0a0; }
+#card img {
+  width: 100%;
+  border-radius: 6px;
+  margin: 8px 0;
+  display: block;
+}
 
-#card .dim { color: rgba(185, 255, 217, 0.55); word-break: break-all; }
+#card a {
+  color: #5ef0a0;
+}
+
+#card .dim {
+  color: rgba(185, 255, 217, 0.55);
+  word-break: break-all;
+}
 ```
 
 - [ ] **Step 2: Write the demo event generator**
@@ -1585,9 +1597,9 @@ html, body { height: 100%; overflow: hidden; background: #020806; }
 import type { GroveEvent, SproutEvent, SproutKind } from "@grove/shared";
 
 const randomHex = (bytes: number): string =>
-  Array.from({ length: bytes * 2 }, () =>
-    "0123456789abcdef"[Math.floor(Math.random() * 16)]
-  ).join("");
+  Array.from({ length: bytes * 2 }, () => "0123456789abcdef"[Math.floor(Math.random() * 16)]).join(
+    ""
+  );
 
 // a few stable fake CAT asset ids so colonies form by color
 const DEMO_ASSET_IDS = Array.from({ length: 6 }, () => randomHex(32));
@@ -1611,8 +1623,7 @@ function sprout(height: number): SproutEvent {
     amount: String(Math.floor(10 ** (3 + Math.random() * 11))),
   };
   if (kind === "cat") {
-    event.assetId =
-      DEMO_ASSET_IDS[Math.floor(Math.random() * DEMO_ASSET_IDS.length)];
+    event.assetId = DEMO_ASSET_IDS[Math.floor(Math.random() * DEMO_ASSET_IDS.length)];
   }
   if (kind === "nft") {
     event.launcherId = randomHex(32);
@@ -1723,9 +1734,7 @@ export class GroveFeed {
   /** Spread snapshot events over a few seconds so the grove grows in. */
   private replay(events: GroveEvent[]): void {
     const step = SNAPSHOT_REPLAY_MS / Math.max(events.length, 1);
-    events.forEach((event, i) =>
-      setTimeout(() => this.dispatch(event), i * step)
-    );
+    events.forEach((event, i) => setTimeout(() => this.dispatch(event), i * step));
   }
 
   private dispatch(event: GroveEvent): void {
@@ -1738,10 +1747,7 @@ export class GroveFeed {
 
   private resetStaleTimer(): void {
     clearTimeout(this.staleTimer);
-    this.staleTimer = window.setTimeout(
-      () => this.setStatus("stale"),
-      STALE_AFTER_MS
-    );
+    this.staleTimer = window.setTimeout(() => this.setStatus("stale"), STALE_AFTER_MS);
   }
 }
 ```
@@ -1783,6 +1789,7 @@ git commit -m "feat(web): vite scaffold, grove feed with reconnect, demo mode"
 ### Task 9: Pure frontend helpers (layout, palette, formatting)
 
 **Files:**
+
 - Create: `web/src/scene/layout.ts`, `web/src/scene/palette.ts`, `web/src/ui/format.ts`
 - Test: `web/test/layout.test.ts`, `web/test/palette.test.ts`
 
@@ -1947,6 +1954,7 @@ git commit -m "feat(web): phyllotaxis layout, palette, and formatting helpers"
 ### Task 10: Scene bootstrap (renderer, sky, ground, camera drift)
 
 **Files:**
+
 - Create: `web/src/scene/textures.ts`, `web/src/scene/sky.ts`, `web/src/scene/ground.ts`, `web/src/scene/grove.ts`
 - Modify: `web/src/main.ts`
 
@@ -1965,10 +1973,7 @@ export function glowTexture(): THREE.CanvasTexture {
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = size;
   const ctx = canvas.getContext("2d")!;
-  const gradient = ctx.createRadialGradient(
-    size / 2, size / 2, 0,
-    size / 2, size / 2, size / 2
-  );
+  const gradient = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
   gradient.addColorStop(0, "rgba(255,255,255,1)");
   gradient.addColorStop(0.35, "rgba(255,255,255,0.55)");
   gradient.addColorStop(1, "rgba(255,255,255,0)");
@@ -2203,12 +2208,7 @@ export function startGrove(canvas: HTMLCanvasElement, feed: GroveFeed) {
   scene.background = new THREE.Color(COLORS.background);
   scene.fog = new THREE.FogExp2(COLORS.fog, 0.016);
 
-  const camera = new THREE.PerspectiveCamera(
-    50,
-    innerWidth / innerHeight,
-    0.1,
-    500
-  );
+  const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 500);
 
   scene.add(new THREE.HemisphereLight(0x23402e, 0x050a06, 0.7));
 
@@ -2309,8 +2309,7 @@ const status = document.getElementById("status") as HTMLDivElement;
 const feed = new GroveFeed();
 feed.onStatus((s) => {
   status.hidden = s === "live";
-  status.textContent =
-    s === "demo" ? "demo" : s === "stale" ? "signal lost" : "";
+  status.textContent = s === "demo" ? "demo" : s === "stale" ? "signal lost" : "";
 });
 
 startGrove(canvas, feed);
@@ -2336,6 +2335,7 @@ git commit -m "feat(web): scene bootstrap with sky, ground ripples, drifting cam
 ### Task 11: Flora systems (grasses, mushrooms, blooms, wisps)
 
 **Files:**
+
 - Create: `web/src/scene/flora.ts`
 - Modify: `web/src/main.ts`
 
@@ -2397,8 +2397,14 @@ class InstancedKind {
     scene.add(this.mesh);
   }
 
-  plant(meta: SproutEvent, x: number, z: number, height: number, t: number,
-        color?: THREE.Color): number {
+  plant(
+    meta: SproutEvent,
+    x: number,
+    z: number,
+    height: number,
+    t: number,
+    color?: THREE.Color
+  ): number {
     const i = this.next;
     this.next = (this.next + 1) % this.slots.length;
     this.slots[i] = { meta, bornAt: t, x, z, height };
@@ -2583,9 +2589,7 @@ export class FloraSystem {
 
   update(t: number): void {
     const gustDip =
-      t < this.gustUntil
-        ? 0.82 + 0.18 * Math.abs(Math.sin((this.gustUntil - t) * 6))
-        : 1;
+      t < this.gustUntil ? 0.82 + 0.18 * Math.abs(Math.sin((this.gustUntil - t) * 6)) : 1;
     this.grass.update(t, gustDip);
     this.mushroom.update(t, gustDip);
     this.bloom.update(t, gustDip);
@@ -2599,8 +2603,7 @@ export class FloraSystem {
       if (!wisp.meta) continue;
       const progress = Math.min((t - wisp.bornAt) / 2, 1);
       wisp.sprite.material.opacity = easeOutCubic(progress) * 0.85;
-      wisp.sprite.position.y =
-        easeOutCubic(progress) * 1.4 + Math.sin(t * 1.3 + wisp.phase) * 0.25;
+      wisp.sprite.position.y = easeOutCubic(progress) * 1.4 + Math.sin(t * 1.3 + wisp.phase) * 0.25;
     }
   }
 
@@ -2662,6 +2665,7 @@ git commit -m "feat(web): instanced asset-aware flora (grass, mushrooms, blooms,
 ### Task 12: Fireflies and ambient wiring
 
 **Files:**
+
 - Create: `web/src/scene/fireflies.ts`
 - Modify: `web/src/main.ts`
 
@@ -2699,7 +2703,10 @@ export class Fireflies {
   private visible = 60;
   private agitation = 1;
 
-  constructor(scene: THREE.Scene, private readonly max = MAX) {
+  constructor(
+    scene: THREE.Scene,
+    private readonly max = MAX
+  ) {
     this.positions = new Float32Array(this.max * 3);
     this.flies = Array.from({ length: this.max }, () => ({
       cx: (Math.random() - 0.5) * 70,
@@ -2714,10 +2721,7 @@ export class Fireflies {
     }));
 
     const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute(
-      "position",
-      new THREE.BufferAttribute(this.positions, 3)
-    );
+    geometry.setAttribute("position", new THREE.BufferAttribute(this.positions, 3));
     this.points = new THREE.Points(
       geometry,
       new THREE.PointsMaterial({
@@ -2826,6 +2830,7 @@ git commit -m "feat(web): mempool firefly swarm with block dives"
 ### Task 13: Hover/click interaction and detail card
 
 **Files:**
+
 - Create: `web/src/ui/picker.ts`, `web/src/ui/detail-card.ts`
 - Modify: `web/src/main.ts`
 
@@ -2848,8 +2853,7 @@ let hideTimer: number | undefined;
 
 export function showCard(event: SproutEvent): void {
   const card = document.getElementById("card") as HTMLDivElement;
-  const title =
-    event.kind === "nft" && event.mint ? "NFT mint" : KIND_LABELS[event.kind];
+  const title = event.kind === "nft" && event.mint ? "NFT mint" : KIND_LABELS[event.kind];
 
   card.innerHTML = `
     <h3>${title}</h3>
@@ -2893,10 +2897,7 @@ export function attachPicker(
   let hovering = false;
 
   function intersect(eventX: number, eventY: number) {
-    pointer.set(
-      (eventX / innerWidth) * 2 - 1,
-      -(eventY / innerHeight) * 2 + 1
-    );
+    pointer.set((eventX / innerWidth) * 2 - 1, -(eventY / innerHeight) * 2 + 1);
     raycaster.setFromCamera(pointer, camera);
     const hits = raycaster.intersectObjects(flora.pickables(), false);
     for (const hit of hits) {
@@ -2949,6 +2950,7 @@ git commit -m "feat(web): hover/click picking with coin detail card"
 ### Task 14: Deployment assets and README
 
 **Files:**
+
 - Create: `deploy/Caddyfile`, `deploy/chia-grove.service`, `deploy/deploy.sh`, `README.md`
 
 - [ ] **Step 1: Write deployment files**
@@ -3012,7 +3014,7 @@ Run: `chmod +x deploy/deploy.sh`
 
 `README.md`:
 
-```markdown
+````markdown
 # Chia Grove
 
 An ambient 3D visualization of live Chia mainnet activity. Every block
@@ -3020,15 +3022,15 @@ sprouts luminous flora in a nocturnal meadow — what grows depends on what
 happened on chain, classified per-spend with the
 [chia-wallet-sdk](https://github.com/xch-dev/chia-wallet-sdk) napi binding:
 
-| On chain | In the grove |
-|---|---|
-| XCH spend | Grass blade, height scales with amount |
-| CAT transfer | Mushroom, color derived from the asset id |
+| On chain     | In the grove                                      |
+| ------------ | ------------------------------------------------- |
+| XCH spend    | Grass blade, height scales with amount            |
+| CAT transfer | Mushroom, color derived from the asset id         |
 | NFT activity | Glowing bloom (mints burst); click to see the NFT |
-| DID activity | Violet will-o'-wisp |
-| Mempool | Firefly swarm density and agitation |
-| Netspace | Moonlight brightness |
-| New block | Light ripple + aurora pulse |
+| DID activity | Violet will-o'-wisp                               |
+| Mempool      | Firefly swarm density and agitation               |
+| Netspace     | Moonlight brightness                              |
+| New block    | Light ripple + aurora pulse                       |
 
 Click any plant for coin details and a spacescan.io link.
 
@@ -3048,6 +3050,7 @@ npm install
 npm run dev:server   # ingest + ws on :8080 (needs network)
 npm run dev:web      # vite on :5173, proxies /ws
 ```
+````
 
 Open http://localhost:5173/?demo=1 for synthetic events (no server needed).
 
@@ -3064,7 +3067,8 @@ npm run build        # production frontend bundle (web/dist)
 4. `deploy/deploy.sh grove@your-droplet`
 
 Environment: `PORT` (8080), `POLL_INTERVAL_MS` (3000), `BACKFILL_BLOCKS` (30).
-```
+
+````
 
 - [ ] **Step 3: Final verification**
 
@@ -3076,7 +3080,7 @@ Expected: everything green.
 ```bash
 git add deploy README.md
 git commit -m "docs: README and droplet deployment assets"
-```
+````
 
 ---
 
@@ -3095,4 +3099,3 @@ git commit -m "docs: README and droplet deployment assets"
 - Demo mode (`?demo=1`) — Task 8
 - Deploy: droplet + Caddy + systemd, no secrets — Task 14
 - Phase-2 peer seam — `ChainSource`/`RpcView` interfaces, Task 5
-

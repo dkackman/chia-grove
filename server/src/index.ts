@@ -28,9 +28,7 @@ const poller = new CoinsetPoller(
   {
     onBlock(block) {
       hub.publish(classifyBlock(block));
-      console.log(
-        `block ${block.height} (${block.spends.length} spends)`
-      );
+      console.log(`block ${block.height} (${block.spends.length} spends)`);
     },
     onAmbient(state) {
       hub.publish([

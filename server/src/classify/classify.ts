@@ -50,9 +50,7 @@ function classifySpend(
     coinId: hex(spend.coin.coinId()),
     amount: spend.coin.amount.toString(),
   };
-  const mint = launcherCoinIds.has(hex(spend.coin.parentCoinInfo))
-    ? true
-    : undefined;
+  const mint = launcherCoinIds.has(hex(spend.coin.parentCoinInfo)) ? true : undefined;
 
   try {
     const puzzle = clvm.deserializeWithBackrefs(spend.puzzleReveal).puzzle();

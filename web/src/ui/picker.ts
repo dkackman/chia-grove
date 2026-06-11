@@ -19,10 +19,7 @@ export function attachPicker(
   const pointer = new THREE.Vector2();
 
   function intersect(eventX: number, eventY: number): Hit | null {
-    pointer.set(
-      (eventX / innerWidth) * 2 - 1,
-      -(eventY / innerHeight) * 2 + 1
-    );
+    pointer.set((eventX / innerWidth) * 2 - 1, -(eventY / innerHeight) * 2 + 1);
     raycaster.setFromCamera(pointer, camera);
     const hits = raycaster.intersectObjects(flora.pickables(), false);
     for (const hit of hits) {

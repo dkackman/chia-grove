@@ -1,11 +1,6 @@
 import { expect, test, vi } from "vitest";
 import { CoinsetPoller } from "../src/ingest/coinset-poller.js";
-import type {
-  BlockData,
-  BlockInfo,
-  ChainState,
-  RpcView,
-} from "../src/ingest/types.js";
+import type { BlockData, BlockInfo, ChainState, RpcView } from "../src/ingest/types.js";
 
 interface FakeBlock {
   height: number;
@@ -74,9 +69,7 @@ function collect() {
 
 test("backfills the last N transaction blocks on first tick", async () => {
   const rpc = new FakeRpc();
-  rpc.chain(
-    Array.from({ length: 20 }, (_, i) => ({ h: i, hash: `h${i}` }))
-  );
+  rpc.chain(Array.from({ length: 20 }, (_, i) => ({ h: i, hash: `h${i}` })));
   const sink = collect();
   const poller = new CoinsetPoller(rpc, sink.handlers, { backfillBlocks: 5 });
   await poller.tick();
@@ -112,27 +105,27 @@ test("detects a reorg, emits fork height, and re-walks the new chain", async () 
 
   // replace blocks 1-2 with a competing chain and extend it
   rpc.blocks.set(1, {
-    height: 1, headerHash: "h1b", prevHash: "h0",
+    height: 1,
+    headerHash: "h1b",
+    prevHash: "h0",
     timestamp: BigInt(1_700_000_101),
   });
   rpc.blocks.set(2, {
-    height: 2, headerHash: "h2b", prevHash: "h1b",
+    height: 2,
+    headerHash: "h2b",
+    prevHash: "h1b",
     timestamp: BigInt(1_700_000_102),
   });
   rpc.chain([{ h: 3, hash: "h3b" }]);
   await poller.tick();
 
   expect(sink.reorgs).toEqual([0]);
-  expect(sink.blocks.map((b) => b.headerHash)).toEqual([
-    "h0", "h1", "h2", "h1b", "h2b", "h3b",
-  ]);
+  expect(sink.blocks.map((b) => b.headerHash)).toEqual(["h0", "h1", "h2", "h1b", "h2b", "h3b"]);
 });
 
 test("reorg deeper than hash memory resets and re-backfills", async () => {
   const rpc = new FakeRpc();
-  rpc.chain(
-    Array.from({ length: 10 }, (_, i) => ({ h: i, hash: `h${i}` }))
-  );
+  rpc.chain(Array.from({ length: 10 }, (_, i) => ({ h: i, hash: `h${i}` })));
   const sink = collect();
   const poller = new CoinsetPoller(rpc, sink.handlers, { backfillBlocks: 3 });
   await poller.tick(); // emits 7,8,9

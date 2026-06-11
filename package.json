@@ -10,13 +10,21 @@
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc -p server/tsconfig.json && tsc -p web/tsconfig.json && tsc -p shared/tsconfig.json",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "dev:server": "npm run dev -w server",
     "dev:web": "npm run dev -w web",
     "build": "npm run build -w web",
     "start": "npm run start -w server"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.4.1",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.8.4",
     "typescript": "^6.0.0",
+    "typescript-eslint": "^8.61.0",
     "vitest": "^4.0.0"
   },
   "engines": {

@@ -66,8 +66,14 @@ class InstancedKind {
     scene.add(this.mesh);
   }
 
-  plant(meta: SproutEvent, x: number, z: number, height: number, t: number,
-        color?: THREE.Color): number {
+  plant(
+    meta: SproutEvent,
+    x: number,
+    z: number,
+    height: number,
+    t: number,
+    color?: THREE.Color
+  ): number {
     const i = this.next;
     this.next = (this.next + 1) % this.slots.length;
     this.slots[i] = {
@@ -273,9 +279,7 @@ export class FloraSystem {
   update(t: number, dt: number): void {
     const remaining = Math.max(0, this.gustUntil - t);
     const gustDip =
-      remaining > 0
-        ? 1 - 0.18 * Math.min(1, remaining / 2) * Math.abs(Math.sin(remaining * 6))
-        : 1;
+      remaining > 0 ? 1 - 0.18 * Math.min(1, remaining / 2) * Math.abs(Math.sin(remaining * 6)) : 1;
     this.grass.update(t, gustDip);
     this.mushroom.update(t, gustDip);
     this.bloom.update(t, gustDip);
@@ -289,8 +293,7 @@ export class FloraSystem {
       if (!wisp.meta) continue;
       const progress = Math.min((t - wisp.bornAt) / 2, 1);
       wisp.sprite.material.opacity = easeOutCubic(progress) * 0.85;
-      wisp.sprite.position.y =
-        easeOutCubic(progress) * 1.4 + Math.sin(t * 1.3 + wisp.phase) * 0.25;
+      wisp.sprite.position.y = easeOutCubic(progress) * 1.4 + Math.sin(t * 1.3 + wisp.phase) * 0.25;
     }
   }
 
@@ -312,16 +315,10 @@ export class FloraSystem {
     return wisp?.meta ?? null;
   }
 
-  private hovered:
-    | { kind: InstancedKind; index: number }
-    | { wisp: THREE.Sprite }
-    | null = null;
+  private hovered: { kind: InstancedKind; index: number } | { wisp: THREE.Sprite } | null = null;
 
   /** Brighten the plant under the pointer; pass null to clear. */
-  setHovered(
-    object: THREE.Object3D | null,
-    instanceId: number | undefined
-  ): void {
+  setHovered(object: THREE.Object3D | null, instanceId: number | undefined): void {
     if (this.hovered) {
       if ("kind" in this.hovered) {
         this.hovered.kind.setHighlight(this.hovered.index, false);

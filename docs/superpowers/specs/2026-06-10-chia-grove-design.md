@@ -24,14 +24,14 @@ Chia Grove is an ambient, web-based 3D art piece that visualizes live Chia mainn
 
 ## Key decisions
 
-| Decision | Choice |
-|---|---|
-| Binding / server runtime | `chia-wallet-sdk` napi package, Node.js 20+, TypeScript throughout |
-| Data source (v1) | coinset.org RPC via SDK `RpcClient`, polling; direct peer connections are phase 2 |
-| Data depth | Asset-aware: per-spend classification into XCH / CAT / NFT / DID |
-| Interaction | Hover highlight + click detail card (NFT image shown, link to spacescan.io); slow auto-drifting camera otherwise |
-| Spatial layout | Phyllotaxis (golden-angle) spiral filling outward from a center clearing |
-| Project location | Standalone repo (`chia-grove`), consuming the published npm package |
+| Decision                 | Choice                                                                                                           |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------- |
+| Binding / server runtime | `chia-wallet-sdk` napi package, Node.js 20+, TypeScript throughout                                               |
+| Data source (v1)         | coinset.org RPC via SDK `RpcClient`, polling; direct peer connections are phase 2                                |
+| Data depth               | Asset-aware: per-spend classification into XCH / CAT / NFT / DID                                                 |
+| Interaction              | Hover highlight + click detail card (NFT image shown, link to spacescan.io); slow auto-drifting camera otherwise |
+| Spatial layout           | Phyllotaxis (golden-angle) spiral filling outward from a center clearing                                         |
+| Project location         | Standalone repo (`chia-grove`), consuming the published npm package                                              |
 
 ## Architecture
 
@@ -95,12 +95,12 @@ Nocturnal meadow, green-on-dark palette, ground fog, starfield + moon.
 
 **Asset → flora mapping:**
 
-| Chain activity | Flora | Detail |
-|---|---|---|
-| XCH spend | Grasses & reeds | Height scales with log(amount): dust = blade, whale = towering stalk |
-| CAT transfer | Mushroom cluster | Cap hue deterministic from asset ID |
-| NFT activity | Glowing bloom | Mint gets a burst animation; click shows the actual NFT image |
-| DID activity | Violet will-o'-wisp | Rises from the ground and hovers |
+| Chain activity | Flora               | Detail                                                               |
+| -------------- | ------------------- | -------------------------------------------------------------------- |
+| XCH spend      | Grasses & reeds     | Height scales with log(amount): dust = blade, whale = towering stalk |
+| CAT transfer   | Mushroom cluster    | Cap hue deterministic from asset ID                                  |
+| NFT activity   | Glowing bloom       | Mint gets a burst animation; click shows the actual NFT image        |
+| DID activity   | Violet will-o'-wisp | Rises from the ground and hovers                                     |
 
 **Ambient signals:**
 
@@ -108,7 +108,7 @@ Nocturnal meadow, green-on-dark palette, ground fog, starfield + moon.
 - **Sky & moon** — moonlight brightness tracks netspace; a soft aurora pulse rolls across the sky on each new peak.
 - **Block heartbeat** — each block sends a slow ripple of light through the ground fog, radiating from the newest planting.
 
-**Spatial layout — phyllotaxis spiral:** block *n* plants its flora group at the golden-angle spiral position around a center clearing (sunflower-seed packing). The grove is dense and organic at any age. Oldest plantings beyond the cap fade and "compost" at the rim. Camera: slow orbital drift around the center; gentle breathing zoom.
+**Spatial layout — phyllotaxis spiral:** block _n_ plants its flora group at the golden-angle spiral position around a center clearing (sunflower-seed packing). The grove is dense and organic at any age. Oldest plantings beyond the cap fade and "compost" at the rim. Camera: slow orbital drift around the center; gentle breathing zoom.
 
 **Interaction:** raycast hover gently brightens a plant and shows a small card (asset type, amount, coin ID, block height; NFT image when available) with a link to spacescan.io; moving the pointer away hides it. Clicking pins the card open so the link is reachable; click-away unpins. A collapsible legend inset (top-left, state remembered) explains the symbols; a scrolling block console (bottom-right, ~6 fading lines) logs each block's height, spend count, and asset mix in sync with the animations. No camera control in v1.
 

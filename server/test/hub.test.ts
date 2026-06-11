@@ -90,8 +90,7 @@ test("hopelessly behind client is disconnected", () => {
   hub.publish([blockEvent(1)]);
   expect(dead.closed).toBe(true);
   hub.publish([blockEvent(2)]);
-  expect(dead.parsed().filter((m) => (m as GroveEvent).type === "block"))
-    .toHaveLength(0);
+  expect(dead.parsed().filter((m) => (m as GroveEvent).type === "block")).toHaveLength(0);
 });
 
 test("removed client receives nothing", () => {

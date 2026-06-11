@@ -5,15 +5,15 @@ sprouts luminous flora in a nocturnal meadow — what grows depends on what
 happened on chain, classified per-spend with the
 [chia-wallet-sdk](https://github.com/xch-dev/chia-wallet-sdk) napi binding:
 
-| On chain | In the grove |
-|---|---|
-| XCH spend | Grass blade, height scales with amount |
-| CAT transfer | Mushroom, color derived from the asset id |
+| On chain     | In the grove                                      |
+| ------------ | ------------------------------------------------- |
+| XCH spend    | Grass blade, height scales with amount            |
+| CAT transfer | Mushroom, color derived from the asset id         |
 | NFT activity | Glowing bloom (mints burst); click to see the NFT |
-| DID activity | Violet will-o'-wisp |
-| Mempool | Firefly swarm density and agitation |
-| Netspace | Moonlight brightness |
-| New block | Light ripple + aurora pulse |
+| DID activity | Violet will-o'-wisp                               |
+| Mempool      | Firefly swarm density and agitation               |
+| Netspace     | Moonlight brightness                              |
+| New block    | Light ripple + aurora pulse                       |
 
 Click any plant for coin details and a spacescan.io link.
 

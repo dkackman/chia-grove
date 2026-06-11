@@ -20,12 +20,8 @@ test("singular spend", () => {
 });
 
 test("asset counts appear only when nonzero", () => {
-  expect(formatBlockLine(agg({ cat: 3, nft: 1 }))).toBe(
-    "#8853512 · 14 spends · 3 cat · 1 nft"
-  );
-  expect(formatBlockLine(agg({ did: 2 }))).toBe(
-    "#8853512 · 14 spends · 2 did"
-  );
+  expect(formatBlockLine(agg({ cat: 3, nft: 1 }))).toBe("#8853512 · 14 spends · 3 cat · 1 nft");
+  expect(formatBlockLine(agg({ did: 2 }))).toBe("#8853512 · 14 spends · 2 did");
 });
 
 test("fees shown in XCH when nonzero", () => {

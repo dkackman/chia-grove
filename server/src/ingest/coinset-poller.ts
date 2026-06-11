@@ -1,8 +1,4 @@
-import type {
-  ChainHandlers,
-  ChainSource,
-  RpcView,
-} from "./types.js";
+import type { ChainHandlers, ChainSource, RpcView } from "./types.js";
 
 export interface PollerOptions {
   pollIntervalMs?: number;

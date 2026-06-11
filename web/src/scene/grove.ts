@@ -22,12 +22,7 @@ export function startGrove(canvas: HTMLCanvasElement, feed: GroveFeed) {
   scene.background = new THREE.Color(COLORS.background);
   scene.fog = new THREE.FogExp2(COLORS.fog, 0.016);
 
-  const camera = new THREE.PerspectiveCamera(
-    50,
-    innerWidth / innerHeight,
-    0.1,
-    500
-  );
+  const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 500);
 
   scene.add(new THREE.HemisphereLight(0x23402e, 0x050a06, 0.7));
 

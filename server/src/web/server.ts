@@ -23,10 +23,7 @@ export async function buildServer(hub: Hub): Promise<FastifyInstance> {
     });
   });
 
-  const dist = path.resolve(
-    path.dirname(fileURLToPath(import.meta.url)),
-    "../../../web/dist"
-  );
+  const dist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../web/dist");
   if (existsSync(dist)) {
     await app.register(fastifyStatic, { root: dist });
   }

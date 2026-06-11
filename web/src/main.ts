@@ -10,9 +10,7 @@ const canvas = document.getElementById("grove") as HTMLCanvasElement;
 const status = document.getElementById("status") as HTMLDivElement;
 
 initLegend();
-const blockConsole = new BlockConsole(
-  document.getElementById("console") as HTMLDivElement
-);
+const blockConsole = new BlockConsole(document.getElementById("console") as HTMLDivElement);
 
 const feed = new GroveFeed();
 feed.onStatus((s) => {

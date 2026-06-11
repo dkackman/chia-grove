@@ -17,8 +17,7 @@ function el(tag: string, cls?: string, text?: string): HTMLElement {
 
 export function showCard(event: SproutEvent): void {
   const card = document.getElementById("card") as HTMLDivElement;
-  const title =
-    event.kind === "nft" && event.mint ? "NFT mint" : KIND_LABELS[event.kind];
+  const title = event.kind === "nft" && event.mint ? "NFT mint" : KIND_LABELS[event.kind];
 
   card.replaceChildren();
 
@@ -32,9 +31,7 @@ export function showCard(event: SproutEvent): void {
     card.appendChild(img);
   }
 
-  card.appendChild(
-    el("div", undefined, `${mojosToXch(event.amount)} XCH · block ${event.height}`)
-  );
+  card.appendChild(el("div", undefined, `${mojosToXch(event.amount)} XCH · block ${event.height}`));
   card.appendChild(el("div", "dim", `coin ${shortHex(event.coinId)}`));
 
   if (event.assetId) {

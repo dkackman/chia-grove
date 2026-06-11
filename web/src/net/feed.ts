@@ -57,9 +57,7 @@ export class GroveFeed {
   /** Spread snapshot events over a few seconds so the grove grows in. */
   private replay(events: GroveEvent[]): void {
     const step = SNAPSHOT_REPLAY_MS / Math.max(events.length, 1);
-    events.forEach((event, i) =>
-      setTimeout(() => this.dispatch(event), i * step)
-    );
+    events.forEach((event, i) => setTimeout(() => this.dispatch(event), i * step));
   }
 
   private dispatch(event: GroveEvent): void {
@@ -72,9 +70,6 @@ export class GroveFeed {
 
   private resetStaleTimer(): void {
     clearTimeout(this.staleTimer);
-    this.staleTimer = window.setTimeout(
-      () => this.setStatus("stale"),
-      STALE_AFTER_MS
-    );
+    this.staleTimer = window.setTimeout(() => this.setStatus("stale"), STALE_AFTER_MS);
   }
 }

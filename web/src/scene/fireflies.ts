@@ -33,7 +33,10 @@ export class Fireflies {
   private visible = 60;
   private agitation = 1;
 
-  constructor(scene: THREE.Scene, private readonly max = MAX) {
+  constructor(
+    scene: THREE.Scene,
+    private readonly max = MAX
+  ) {
     this.positions = new Float32Array(this.max * 3);
     this.flies = Array.from({ length: this.max }, () => ({
       cx: (Math.random() - 0.5) * 70,
@@ -48,10 +51,7 @@ export class Fireflies {
     }));
 
     const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute(
-      "position",
-      new THREE.BufferAttribute(this.positions, 3)
-    );
+    geometry.setAttribute("position", new THREE.BufferAttribute(this.positions, 3));
     this.points = new THREE.Points(
       geometry,
       new THREE.PointsMaterial({

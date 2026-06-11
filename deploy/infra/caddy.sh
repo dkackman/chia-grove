@@ -4,7 +4,7 @@ curl -fsSL https://raw.githubusercontent.com/dkackman/chia-grove/main/deploy/chi
 systemctl daemon-reload && systemctl enable chia-grove
 
 # Caddy: replace the placeholder domain
-printf 'grove.yourdomain.com {\n    reverse_proxy localhost:8080\n}\n' > /etc/caddy/Caddyfile
+printf 'chia-grove.kackman.net {\n    reverse_proxy localhost:8080\n}\n' > /etc/caddy/Caddyfile
 systemctl reload caddy
 
 
