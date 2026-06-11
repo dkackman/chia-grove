@@ -11,6 +11,7 @@ export class GroveFeed {
   private statusListeners: Array<(status: FeedStatus) => void> = [];
   private staleTimer: number | undefined;
   private retryMs = 1000;
+  private started = false;
 
   onEvent(listener: (event: GroveEvent) => void): void {
     this.listeners.push(listener);
@@ -21,6 +22,8 @@ export class GroveFeed {
   }
 
   start(): void {
+    if (this.started) return;
+    this.started = true;
     if (new URLSearchParams(location.search).get("demo") === "1") {
       this.setStatus("demo");
       startDemo((event) => this.dispatch(event));
@@ -44,6 +47,7 @@ export class GroveFeed {
     };
 
     ws.onclose = () => {
+      clearTimeout(this.staleTimer);
       this.setStatus("stale");
       setTimeout(() => this.connect(), this.retryMs + Math.random() * 1000);
       this.retryMs = Math.min(this.retryMs * 2, 30_000);
