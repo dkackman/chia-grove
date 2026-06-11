@@ -2,3 +2,6 @@ node_modules/
 dist/
 *.log
 .superpowers/
+.env
+.env.*
+.DS_Store
