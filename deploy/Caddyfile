@@ -1,3 +1,7 @@
-grove.example.com {
+chia-grove.com {
     reverse_proxy localhost:8080
+}
+
+chia-grove.kackman.net {
+    redir https://chia-grove.com{uri} permanent
 }
