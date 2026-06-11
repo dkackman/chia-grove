@@ -21,3 +21,6 @@ chown -R grove:grove /home/grove/.ssh && chmod 700 /home/grove/.ssh
 
 # firewall
 ufw allow OpenSSH && ufw allow 80,443/tcp && ufw enable
+
+# let grove read service logs (journalctl -u chia-grove)
+usermod -aG systemd-journal grove
