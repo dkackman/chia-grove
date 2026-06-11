@@ -18,6 +18,7 @@ export class CoinsetPoller implements ChainSource {
   private lastHeight = -1;
   private timer: NodeJS.Timeout | null = null;
   private stopped = false;
+  private running = false;
 
   private readonly interval: number;
   private readonly backfill: number;
@@ -38,11 +39,14 @@ export class CoinsetPoller implements ChainSource {
   }
 
   start(): void {
+    if (this.running) return;
+    this.running = true;
     this.stopped = false;
     void this.loop();
   }
 
   stop(): void {
+    this.running = false;
     this.stopped = true;
     if (this.timer) clearTimeout(this.timer);
   }
@@ -52,7 +56,7 @@ export class CoinsetPoller implements ChainSource {
       await this.tick();
       this.delayMs = this.interval;
     } catch (error) {
-      this.delayMs = Math.min(this.delayMs * 2, this.maxBackoff);
+      this.delayMs = Math.min(Math.max(this.delayMs, 500) * 2, this.maxBackoff);
       console.warn(`poll failed (retry in ${this.delayMs}ms):`, error);
     }
     if (!this.stopped) {
@@ -66,19 +70,32 @@ export class CoinsetPoller implements ChainSource {
     this.handlers.onAmbient(state);
     if (this.lastHeight < 0) {
       this.lastHeight = Math.max(-1, state.peakHeight - this.backfill);
+      if (this.lastHeight >= 0) {
+        const anchor = await this.rpc.getBlockInfo(this.lastHeight);
+        this.known.set(anchor.height, anchor.headerHash);
+      }
     }
     await this.walkTo(state.peakHeight);
   }
 
   private async walkTo(peak: number): Promise<void> {
     let height = this.lastHeight + 1;
+    let reorgs = 0;
     while (height <= peak) {
+      if (this.stopped) return;
       const info = await this.rpc.getBlockInfo(height);
 
       const prevKnown = this.known.get(height - 1);
       if (prevKnown !== undefined && info.prevHash !== prevKnown) {
+        if (++reorgs > 5) throw new Error("too many reorgs in one tick; backing off");
         const fork = await this.findFork(height - 1);
         this.handlers.onReorg(fork);
+        if (fork < 0) {
+          // reorg deeper than our memory: reset and re-backfill next tick
+          this.known.clear();
+          this.lastHeight = -1;
+          return;
+        }
         for (const h of [...this.known.keys()]) {
           if (h > fork) this.known.delete(h);
         }
@@ -109,7 +126,7 @@ export class CoinsetPoller implements ChainSource {
   private async findFork(from: number): Promise<number> {
     for (let height = from; height >= 0; height--) {
       const knownHash = this.known.get(height);
-      if (knownHash === undefined) return height; // beyond memory
+      if (knownHash === undefined) return -1; // beyond memory — treat as deep reorg
       const info = await this.rpc.getBlockInfo(height);
       if (info.headerHash === knownHash) return height;
     }

@@ -128,6 +128,31 @@ test("detects a reorg, emits fork height, and re-walks the new chain", async () 
   ]);
 });
 
+test("reorg deeper than hash memory resets and re-backfills", async () => {
+  const rpc = new FakeRpc();
+  rpc.chain(
+    Array.from({ length: 10 }, (_, i) => ({ h: i, hash: `h${i}` }))
+  );
+  const sink = collect();
+  const poller = new CoinsetPoller(rpc, sink.handlers, { backfillBlocks: 3 });
+  await poller.tick(); // emits 7,8,9
+  // replace the ENTIRE remembered window with a competing chain
+  for (let h = 6; h <= 9; h++) {
+    rpc.blocks.set(h, {
+      height: h,
+      headerHash: `h${h}b`,
+      prevHash: h === 6 ? "h5" : `h${h - 1}b`,
+      timestamp: BigInt(1_700_000_200 + h),
+    });
+  }
+  rpc.chain([{ h: 10, hash: "h10b" }]);
+  await poller.tick(); // detects reorg, resets
+  await poller.tick(); // re-backfills from new peak
+  expect(sink.reorgs).toEqual([-1]);
+  const tail = sink.blocks.slice(3).map((b) => b.headerHash);
+  expect(tail).toEqual(["h8b", "h9b", "h10b"]);
+});
+
 test("backs off exponentially on failure and recovers", async () => {
   vi.useFakeTimers();
   const rpc = new FakeRpc();
