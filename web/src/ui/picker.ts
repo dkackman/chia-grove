@@ -35,7 +35,10 @@ export function attachPicker(
   // debounce the card only — highlight and cursor stay instant so the
   // scene feels responsive while sweeping across the meadow
   const SHOW_DELAY_MS = 160;
-  const HIDE_DELAY_MS = 240;
+  // generous: leaving a plant must give the pointer time to travel into the
+  // card (entering the card then holds it open for the spacescan link)
+  const HIDE_DELAY_MS = 600;
+  const CARD_EXIT_HIDE_MS = 240;
 
   let pendingX = -1;
   let pendingY = -1;
@@ -43,6 +46,7 @@ export function attachPicker(
   // a click pins the card open so the spacescan link is reachable;
   // click-away (or clicking another plant) releases it
   let pinned = false;
+  let insideCard = false;
   let showTimer: number | undefined;
   let hideTimer: number | undefined;
 
@@ -50,6 +54,19 @@ export function attachPicker(
     clearTimeout(showTimer);
     clearTimeout(hideTimer);
   };
+
+  // the card is interactive while visible; hovering it parks the hide timer
+  const card = document.getElementById("card") as HTMLDivElement;
+  card.addEventListener("pointerenter", () => {
+    insideCard = true;
+    clearTimeout(hideTimer);
+  });
+  card.addEventListener("pointerleave", () => {
+    insideCard = false;
+    if (!pinned) {
+      hideTimer = window.setTimeout(hideCard, CARD_EXIT_HIDE_MS);
+    }
+  });
 
   canvas.addEventListener("pointermove", (event) => {
     pendingX = event.clientX;
@@ -67,7 +84,7 @@ export function attachPicker(
 
     flora.setHovered(hit?.object ?? null, hit?.instanceId);
     canvas.style.cursor = hit ? "pointer" : "default";
-    if (!pinned) {
+    if (!pinned && !insideCard) {
       clearCardTimers();
       if (hit) {
         const meta = hit.meta;
