@@ -5,7 +5,7 @@ export interface BlockEvent {
   height: number;
   headerHash: string; // hex, no 0x
   timestamp: number; // unix seconds
-  spendCount: number;
+  spendCount: number; // all coin spends in the block, including singleton launchers
   fees: string; // mojos
 }
 

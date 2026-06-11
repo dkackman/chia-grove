@@ -13,8 +13,6 @@ export interface BlockInput {
 }
 
 export function classifyBlock(block: BlockInput): GroveEvent[] {
-  const clvm = new Clvm();
-
   const launcherCoinIds = new Set(
     block.spends
       .filter((s) => hex(s.coin.puzzleHash) === LAUNCHER_HASH)
@@ -34,17 +32,17 @@ export function classifyBlock(block: BlockInput): GroveEvent[] {
 
   for (const spend of block.spends) {
     if (hex(spend.coin.puzzleHash) === LAUNCHER_HASH) continue;
-    events.push(classifySpend(clvm, spend, block.height, launcherCoinIds));
+    events.push(classifySpend(spend, block.height, launcherCoinIds));
   }
   return events;
 }
 
 function classifySpend(
-  clvm: Clvm,
   spend: CoinSpend,
   height: number,
   launcherCoinIds: Set<string>
 ): SproutEvent {
+  const clvm = new Clvm();
   const base: SproutEvent = {
     type: "sprout",
     kind: "xch",
@@ -80,8 +78,9 @@ function classifySpend(
 
     const did = puzzle.parseDid(spend.coin, solution);
     if (did) return { ...base, kind: "did", mint };
-  } catch {
-    // unparseable puzzle → treat as plain xch
+  } catch (error) {
+    // parse* returns null on miss; a throw is unexpected — log and fall back
+    console.warn(`classify: puzzle parse failed for coin ${base.coinId}`, error);
   }
   return base;
 }
