@@ -16,7 +16,7 @@ export function blockPosition(index: number): XZ {
 }
 
 /** Deterministic PRNG (mulberry32) so plant scatter is stable per coin. */
-function mulberry32(seed: number): () => number {
+export function mulberry32(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
     a = (a + 0x6d2b79f5) | 0;

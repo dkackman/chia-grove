@@ -1,12 +1,14 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { SproutEvent } from "@grove/shared";
-import { sproutOffset, type XZ } from "./layout.js";
+import { mulberry32, sproutOffset, type XZ } from "./layout.js";
 import { catColor, COLORS } from "./palette.js";
 import { glowTexture } from "./textures.js";
 
 const GROW_SECONDS = 1.6;
-const CAPS = { grass: 2400, mushroom: 400, bloom: 120, wisp: 80 } as const;
+// caps are per geometry variant (3 variants per kind)
+const CAPS = { grass: 800, mushroom: 140, bloom: 40, wisp: 80 } as const;
+const VARIANTS = 3;
 
 const WHITE = new THREE.Color(0xffffff);
 const HIGHLIGHT_BOOST = 2.2;
@@ -18,6 +20,18 @@ interface Slot {
   z: number;
   height: number;
   baseColor: THREE.Color;
+  rotation: THREE.Quaternion;
+  swayPhase: number;
+}
+
+/** Per-instance pose, derived deterministically from the coin id. */
+interface Pose {
+  height: number;
+  color?: THREE.Color;
+  rotY: number;
+  tiltX: number;
+  tiltZ: number;
+  swayPhase: number;
 }
 
 const easeOutCubic = (p: number) => 1 - (1 - p) ** 3;
@@ -30,6 +44,8 @@ function makeSlots(cap: number): Slot[] {
     z: 0,
     height: 1,
     baseColor: WHITE.clone(),
+    rotation: new THREE.Quaternion(),
+    swayPhase: 0,
   }));
 }
 
@@ -38,15 +54,16 @@ class InstancedKind {
   readonly slots: Slot[];
   private next = 0;
   private readonly matrix = new THREE.Matrix4();
-  private readonly quaternion = new THREE.Quaternion();
   private readonly position = new THREE.Vector3();
   private readonly scale = new THREE.Vector3();
+  private readonly euler = new THREE.Euler();
 
   constructor(
     scene: THREE.Scene,
     geometry: THREE.BufferGeometry,
     material: THREE.Material,
-    cap: number
+    cap: number,
+    private readonly swayAmp: number
   ) {
     this.mesh = new THREE.InstancedMesh(geometry, material, cap);
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -66,26 +83,20 @@ class InstancedKind {
     scene.add(this.mesh);
   }
 
-  plant(
-    meta: SproutEvent,
-    x: number,
-    z: number,
-    height: number,
-    t: number,
-    color?: THREE.Color
-  ): number {
+  plant(meta: SproutEvent, x: number, z: number, t: number, pose: Pose): number {
     const i = this.next;
     this.next = (this.next + 1) % this.slots.length;
-    this.slots[i] = {
-      meta,
-      bornAt: t,
-      x,
-      z,
-      height,
-      baseColor: color ? color.clone() : WHITE.clone(),
-    };
+    const slot = this.slots[i];
+    slot.meta = meta;
+    slot.bornAt = t;
+    slot.x = x;
+    slot.z = z;
+    slot.height = pose.height;
+    slot.baseColor = pose.color ? pose.color.clone() : WHITE.clone();
+    slot.rotation.setFromEuler(this.euler.set(pose.tiltX, pose.rotY, pose.tiltZ));
+    slot.swayPhase = pose.swayPhase;
     // always write: clears any leftover highlight from the recycled slot
-    this.mesh.setColorAt(i, this.slots[i].baseColor);
+    this.mesh.setColorAt(i, slot.baseColor);
     this.mesh.instanceColor!.needsUpdate = true;
     return i;
   }
@@ -109,10 +120,11 @@ class InstancedKind {
       const progress = Math.min((t - slot.bornAt) / GROW_SECONDS, 1);
       const eased = easeOutCubic(progress);
       const width = Math.min(1, eased * 1.3);
+      const sway = 1 + this.swayAmp * Math.sin(t * 1.4 + slot.swayPhase);
       this.matrix.compose(
         this.position.set(slot.x, 0, slot.z),
-        this.quaternion,
-        this.scale.set(width, eased * slot.height * gustDip, width)
+        slot.rotation,
+        this.scale.set(width, eased * slot.height * gustDip * sway, width)
       );
       this.mesh.setMatrixAt(i, this.matrix);
     }
@@ -124,28 +136,97 @@ class InstancedKind {
   }
 }
 
-export function grassGeometry(): THREE.BufferGeometry {
-  const cone = new THREE.ConeGeometry(0.07, 1, 5);
-  cone.translate(0, 0.5, 0);
-  return cone;
+/** Tilt a grown-from-base geometry outward without lifting it off the ground. */
+function lean(geometry: THREE.BufferGeometry, angleZ: number, shiftX = 0): THREE.BufferGeometry {
+  geometry.rotateZ(angleZ);
+  geometry.translate(shiftX, 0, 0);
+  return geometry;
 }
 
-export function mushroomGeometry(): THREE.BufferGeometry {
-  const stem = new THREE.CylinderGeometry(0.05, 0.08, 0.5, 6);
-  stem.translate(0, 0.25, 0);
-  const cap = new THREE.SphereGeometry(0.24, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2);
-  cap.translate(0, 0.5, 0);
-  return mergeGeometries([stem, cap]);
+export function grassGeometries(): THREE.BufferGeometry[] {
+  // single tall blade, slightly leaning
+  const blade = new THREE.ConeGeometry(0.055, 1, 5);
+  blade.translate(0, 0.5, 0);
+  lean(blade, 0.08);
+
+  // tuft of three blades splayed from a shared base
+  const mid = new THREE.ConeGeometry(0.06, 1, 5);
+  mid.translate(0, 0.5, 0);
+  const left = new THREE.ConeGeometry(0.05, 0.8, 5);
+  left.translate(0, 0.4, 0);
+  lean(left, 0.32, -0.04);
+  const right = new THREE.ConeGeometry(0.05, 0.7, 5);
+  right.translate(0, 0.35, 0);
+  lean(right, -0.38, 0.04);
+  const tuft = mergeGeometries([mid, left, right]);
+
+  // broad squat blade
+  const broad = new THREE.ConeGeometry(0.11, 1, 4);
+  broad.translate(0, 0.5, 0);
+
+  return [blade, tuft, broad];
 }
 
-export function bloomGeometry(): THREE.BufferGeometry {
-  const core = new THREE.IcosahedronGeometry(0.18, 1); // non-indexed (polyhedron)
-  core.translate(0, 0.85, 0);
+export function mushroomGeometries(): THREE.BufferGeometry[] {
+  // classic toadstool
+  const stem1 = new THREE.CylinderGeometry(0.05, 0.08, 0.5, 6);
+  stem1.translate(0, 0.25, 0);
+  const cap1 = new THREE.SphereGeometry(0.24, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2);
+  cap1.translate(0, 0.5, 0);
+
+  // tall slender, small cap
+  const stem2 = new THREE.CylinderGeometry(0.035, 0.06, 0.78, 6);
+  stem2.translate(0, 0.39, 0);
+  const cap2 = new THREE.SphereGeometry(0.14, 8, 5, 0, Math.PI * 2, 0, Math.PI / 2);
+  cap2.translate(0, 0.78, 0);
+
+  // squat button with a wide flattened cap
+  const stem3 = new THREE.CylinderGeometry(0.07, 0.1, 0.26, 6);
+  stem3.translate(0, 0.13, 0);
+  const cap3 = new THREE.SphereGeometry(0.3, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2);
+  cap3.scale(1, 0.55, 1);
+  cap3.translate(0, 0.26, 0);
+
+  return [
+    mergeGeometries([stem1, cap1]),
+    mergeGeometries([stem2, cap2]),
+    mergeGeometries([stem3, cap3]),
+  ];
+}
+
+export function bloomGeometries(): THREE.BufferGeometry[] {
   // toNonIndexed: mergeGeometries returns null when inputs mix indexed and
-  // non-indexed geometries, and a null geometry crashes the render loop
-  const stalk = new THREE.CylinderGeometry(0.025, 0.04, 0.7, 5).toNonIndexed();
-  stalk.translate(0, 0.35, 0);
-  return mergeGeometries([core, stalk]);
+  // non-indexed geometries (icosahedra are non-indexed), and a null geometry
+  // crashes the render loop
+  const stalk = () => {
+    const s = new THREE.CylinderGeometry(0.025, 0.04, 0.7, 5).toNonIndexed();
+    s.translate(0, 0.35, 0);
+    return s;
+  };
+
+  // single orb on a stalk
+  const core1 = new THREE.IcosahedronGeometry(0.18, 1);
+  core1.translate(0, 0.85, 0);
+  const orb = mergeGeometries([core1, stalk()]);
+
+  // orb with a flat petal halo
+  const core2 = new THREE.IcosahedronGeometry(0.15, 1);
+  core2.translate(0, 0.85, 0);
+  const halo = new THREE.TorusGeometry(0.27, 0.035, 6, 16).toNonIndexed();
+  halo.rotateX(Math.PI / 2);
+  halo.translate(0, 0.85, 0);
+  const ringed = mergeGeometries([core2, halo, stalk()]);
+
+  // twin orbs at staggered heights
+  const small = new THREE.IcosahedronGeometry(0.11, 1);
+  small.translate(0.13, 0.62, 0);
+  const big = new THREE.IcosahedronGeometry(0.16, 1);
+  big.translate(-0.07, 0.92, 0);
+  const tallStalk = new THREE.CylinderGeometry(0.025, 0.04, 0.78, 5).toNonIndexed();
+  tallStalk.translate(-0.02, 0.39, 0);
+  const twin = mergeGeometries([small, big, tallStalk]);
+
+  return [orb, ringed, twin];
 }
 
 /** XCH amount (mojos, string) → grass height. log scale, dust→blade, whale→stalk. */
@@ -154,69 +235,73 @@ function xchHeight(amount: string): number {
   return Math.min(3.2, 0.4 + 0.55 * Math.log10(1 + mojos / 1e9));
 }
 
+// nominal height multiplier per grass variant (broad blades stay low)
+const GRASS_VARIANT_HEIGHT = [1, 0.85, 0.6] as const;
+
+interface Wisp {
+  sprite: THREE.Sprite;
+  meta: SproutEvent | null;
+  bornAt: number;
+  phase: number;
+  baseScale: number;
+}
+
 export class FloraSystem {
-  private readonly grass: InstancedKind;
-  private readonly mushroom: InstancedKind;
-  private readonly bloom: InstancedKind;
-  private readonly wisps: Array<{
-    sprite: THREE.Sprite;
-    meta: SproutEvent | null;
-    bornAt: number;
-    phase: number;
-  }>;
-  private readonly bloomGlows: THREE.Sprite[];
+  private readonly grass: InstancedKind[];
+  private readonly mushroom: InstancedKind[];
+  private readonly bloom: InstancedKind[];
+  private readonly wisps: Wisp[];
+  private readonly bloomGlows: THREE.Sprite[][];
   private nextWisp = 0;
   private gustUntil = 0;
   private readonly color = new THREE.Color();
 
   constructor(scene: THREE.Scene) {
-    this.grass = new InstancedKind(
-      scene,
-      grassGeometry(),
-      new THREE.MeshStandardMaterial({
-        color: COLORS.grass,
-        emissive: COLORS.grassEmissive,
-        roughness: 0.8,
-      }),
-      CAPS.grass
+    const grassMaterial = new THREE.MeshStandardMaterial({
+      color: COLORS.grass,
+      emissive: COLORS.grassEmissive,
+      roughness: 0.8,
+    });
+    this.grass = grassGeometries().map(
+      (geometry) => new InstancedKind(scene, geometry, grassMaterial, CAPS.grass, 0.05)
     );
-    this.mushroom = new InstancedKind(
-      scene,
-      mushroomGeometry(),
-      new THREE.MeshStandardMaterial({
-        color: 0xffffff, // tinted per-instance from assetId
-        emissive: 0x10101a,
-        roughness: 0.6,
-      }),
-      CAPS.mushroom
+
+    const mushroomMaterial = new THREE.MeshStandardMaterial({
+      color: 0xffffff, // tinted per-instance from assetId
+      emissive: 0x10101a,
+      roughness: 0.6,
+    });
+    this.mushroom = mushroomGeometries().map(
+      (geometry) => new InstancedKind(scene, geometry, mushroomMaterial, CAPS.mushroom, 0.015)
     );
-    this.bloom = new InstancedKind(
-      scene,
-      bloomGeometry(),
-      new THREE.MeshStandardMaterial({
-        color: COLORS.bloom,
-        emissive: COLORS.bloomEmissive,
-        emissiveIntensity: 1.3,
-        roughness: 0.4,
-      }),
-      CAPS.bloom
+
+    const bloomMaterial = new THREE.MeshStandardMaterial({
+      color: COLORS.bloom,
+      emissive: COLORS.bloomEmissive,
+      emissiveIntensity: 1.3,
+      roughness: 0.4,
+    });
+    this.bloom = bloomGeometries().map(
+      (geometry) => new InstancedKind(scene, geometry, bloomMaterial, CAPS.bloom, 0.03)
     );
 
     const glowMap = glowTexture();
-    this.bloomGlows = Array.from({ length: CAPS.bloom }, () => {
-      const sprite = new THREE.Sprite(
-        new THREE.SpriteMaterial({
-          map: glowMap,
-          color: COLORS.bloomEmissive,
-          transparent: true,
-          opacity: 0,
-          depthWrite: false,
-          blending: THREE.AdditiveBlending,
-        })
-      );
-      scene.add(sprite);
-      return sprite;
-    });
+    this.bloomGlows = this.bloom.map(() =>
+      Array.from({ length: CAPS.bloom }, () => {
+        const sprite = new THREE.Sprite(
+          new THREE.SpriteMaterial({
+            map: glowMap,
+            color: COLORS.bloomEmissive,
+            transparent: true,
+            opacity: 0,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending,
+          })
+        );
+        scene.add(sprite);
+        return sprite;
+      })
+    );
 
     this.wisps = Array.from({ length: CAPS.wisp }, () => {
       const sprite = new THREE.Sprite(
@@ -231,8 +316,12 @@ export class FloraSystem {
       );
       sprite.scale.setScalar(0.9);
       scene.add(sprite);
-      return { sprite, meta: null, bornAt: 0, phase: Math.random() * 10 };
+      return { sprite, meta: null, bornAt: 0, phase: Math.random() * 10, baseScale: 0.9 };
     });
+  }
+
+  private allKinds(): InstancedKind[] {
+    return [...this.grass, ...this.mushroom, ...this.bloom];
   }
 
   plant(event: SproutEvent, blockPos: XZ, t: number): void {
@@ -240,24 +329,47 @@ export class FloraSystem {
     const x = blockPos.x + offset.x;
     const z = blockPos.z + offset.z;
 
+    // separate hash slice from sproutOffset's so pose doesn't correlate with
+    // position within the cluster
+    const rand = mulberry32(parseInt(event.coinId.slice(8, 16), 16));
+    const variant = Math.floor(rand() * VARIANTS);
+    const pose: Pose = {
+      height: 1,
+      rotY: rand() * Math.PI * 2,
+      tiltX: (rand() - 0.5) * 0.2,
+      tiltZ: (rand() - 0.5) * 0.2,
+      swayPhase: rand() * Math.PI * 2,
+    };
+
     switch (event.kind) {
       case "xch": {
-        // subtle per-blade hue/lightness jitter, seeded by coin id
-        const jitter = (parseInt(event.coinId.slice(8, 12), 16) % 100) / 100;
-        this.color.setHSL(0.36 + jitter * 0.05, 0.55, 0.3 + jitter * 0.12);
-        this.grass.plant(event, x, z, xchHeight(event.amount), t, this.color);
+        const jitter = rand();
+        this.color.setHSL(0.33 + jitter * 0.09, 0.45 + rand() * 0.25, 0.26 + rand() * 0.16);
+        pose.color = this.color;
+        pose.height =
+          xchHeight(event.amount) * GRASS_VARIANT_HEIGHT[variant] * (0.85 + rand() * 0.35);
+        this.grass[variant].plant(event, x, z, t, pose);
         break;
       }
       case "cat": {
-        const { h, s, l } = catColor(event.assetId ?? "0".repeat(64));
-        this.color.setHSL(h, s, l);
-        this.mushroom.plant(event, x, z, 1, t, this.color);
+        // hue keyed to the asset (colony identity); shade varies per coin
+        const { h } = catColor(event.assetId ?? "0".repeat(64));
+        this.color.setHSL(h, 0.58 + rand() * 0.25, 0.42 + rand() * 0.18);
+        pose.color = this.color;
+        pose.height = 0.8 + rand() * 0.5;
+        pose.tiltX *= 0.6;
+        pose.tiltZ *= 0.6;
+        this.mushroom[variant].plant(event, x, z, t, pose);
         break;
       }
       case "nft": {
-        const index = this.bloom.plant(event, x, z, event.mint ? 1.35 : 1, t);
-        const glow = this.bloomGlows[index];
-        glow.position.set(x, 0.85, z);
+        // slight warm tint variation so blooms aren't all the same amber
+        this.color.setHSL(0.07 + rand() * 0.07, 0.5, 0.78 + rand() * 0.1);
+        pose.color = this.color;
+        pose.height = (event.mint ? 1.35 : 1) * (0.9 + rand() * 0.3);
+        const index = this.bloom[variant].plant(event, x, z, t, pose);
+        const glow = this.bloomGlows[variant][index];
+        glow.position.set(x, 0.85 * pose.height, z);
         glow.material.opacity = event.mint ? 0.9 : 0.55;
         glow.scale.setScalar(event.mint ? 2.6 : 1.7);
         break;
@@ -267,6 +379,8 @@ export class FloraSystem {
         this.nextWisp = (this.nextWisp + 1) % CAPS.wisp;
         wisp.meta = event;
         wisp.bornAt = t;
+        wisp.baseScale = 0.65 + rand() * 0.5;
+        wisp.sprite.scale.setScalar(wisp.baseScale);
         wisp.sprite.position.set(x, 0, z);
         break;
       }
@@ -281,13 +395,15 @@ export class FloraSystem {
     const remaining = Math.max(0, this.gustUntil - t);
     const gustDip =
       remaining > 0 ? 1 - 0.18 * Math.min(1, remaining / 2) * Math.abs(Math.sin(remaining * 6)) : 1;
-    this.grass.update(t, gustDip);
-    this.mushroom.update(t, gustDip);
-    this.bloom.update(t, gustDip);
+    for (const kind of this.allKinds()) {
+      kind.update(t, gustDip);
+    }
 
-    for (const glow of this.bloomGlows) {
-      if (glow.material.opacity > 0.55) {
-        glow.material.opacity = Math.max(0.55, glow.material.opacity - dt * 0.12);
+    for (const glows of this.bloomGlows) {
+      for (const glow of glows) {
+        if (glow.material.opacity > 0.55) {
+          glow.material.opacity = Math.max(0.55, glow.material.opacity - dt * 0.12);
+        }
       }
     }
     for (const wisp of this.wisps) {
@@ -301,22 +417,19 @@ export class FloraSystem {
   /** Objects the picker may raycast, with metadata lookup. */
   pickables(): THREE.Object3D[] {
     return [
-      this.grass.mesh,
-      this.mushroom.mesh,
-      this.bloom.mesh,
+      ...this.allKinds().map((kind) => kind.mesh),
       ...this.wisps.filter((w) => w.meta).map((w) => w.sprite),
     ];
   }
 
   metaFor(object: THREE.Object3D, instanceId: number | undefined): SproutEvent | null {
-    if (object === this.grass.mesh) return this.grass.metaAt(instanceId ?? -1);
-    if (object === this.mushroom.mesh) return this.mushroom.metaAt(instanceId ?? -1);
-    if (object === this.bloom.mesh) return this.bloom.metaAt(instanceId ?? -1);
+    const kind = this.allKinds().find((k) => k.mesh === object);
+    if (kind) return kind.metaAt(instanceId ?? -1);
     const wisp = this.wisps.find((w) => w.sprite === object);
     return wisp?.meta ?? null;
   }
 
-  private hovered: { kind: InstancedKind; index: number } | { wisp: THREE.Sprite } | null = null;
+  private hovered: { kind: InstancedKind; index: number } | { wisp: Wisp } | null = null;
 
   /** Brighten the plant under the pointer; pass null to clear. */
   setHovered(object: THREE.Object3D | null, instanceId: number | undefined): void {
@@ -324,20 +437,13 @@ export class FloraSystem {
       if ("kind" in this.hovered) {
         this.hovered.kind.setHighlight(this.hovered.index, false);
       } else {
-        this.hovered.wisp.scale.setScalar(0.9);
+        this.hovered.wisp.sprite.scale.setScalar(this.hovered.wisp.baseScale);
       }
       this.hovered = null;
     }
     if (!object) return;
 
-    const kind =
-      object === this.grass.mesh
-        ? this.grass
-        : object === this.mushroom.mesh
-          ? this.mushroom
-          : object === this.bloom.mesh
-            ? this.bloom
-            : null;
+    const kind = this.allKinds().find((k) => k.mesh === object) ?? null;
     if (kind && instanceId !== undefined) {
       kind.setHighlight(instanceId, true);
       this.hovered = { kind, index: instanceId };
@@ -345,8 +451,8 @@ export class FloraSystem {
     }
     const wisp = this.wisps.find((w) => w.sprite === object);
     if (wisp?.meta) {
-      wisp.sprite.scale.setScalar(1.25);
-      this.hovered = { wisp: wisp.sprite };
+      wisp.sprite.scale.setScalar(wisp.baseScale * 1.35);
+      this.hovered = { wisp };
     }
   }
 }
