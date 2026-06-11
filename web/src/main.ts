@@ -1,6 +1,7 @@
 import { GroveFeed } from "./net/feed.js";
 import { startGrove } from "./scene/grove.js";
 import { FloraSystem } from "./scene/flora.js";
+import { Fireflies } from "./scene/fireflies.js";
 
 const canvas = document.getElementById("grove") as HTMLCanvasElement;
 const status = document.getElementById("status") as HTMLDivElement;
@@ -16,9 +17,18 @@ const grove = startGrove(canvas, feed);
 const flora = new FloraSystem(grove.scene);
 const clockRef = { t: 0 };
 grove.setSproutHandler((event, blockPos) => flora.plant(event, blockPos, clockRef.t));
-grove.setReorgHandler(() => flora.gust(clockRef.t));
+const fireflies = new Fireflies(grove.scene, grove.reducedMotion ? 150 : 400);
+grove.setAmbientHandler((mempoolSize, mempoolCost) =>
+  fireflies.setMempool(mempoolSize, mempoolCost)
+);
+grove.setBlockHandler((pos) => fireflies.diveTo(pos, clockRef.t));
+grove.setReorgHandler(() => {
+  flora.gust(clockRef.t);
+  fireflies.scatter();
+});
 grove.setUpdateHandler((_dt, t) => {
   clockRef.t = t;
   flora.update(t);
+  fireflies.update(t);
 });
 feed.start();
