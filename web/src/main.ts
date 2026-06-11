@@ -3,9 +3,16 @@ import { startGrove } from "./scene/grove.js";
 import { FloraSystem } from "./scene/flora.js";
 import { Fireflies } from "./scene/fireflies.js";
 import { attachPicker } from "./ui/picker.js";
+import { BlockConsole } from "./ui/console.js";
+import { initLegend } from "./ui/legend.js";
 
 const canvas = document.getElementById("grove") as HTMLCanvasElement;
 const status = document.getElementById("status") as HTMLDivElement;
+
+initLegend();
+const blockConsole = new BlockConsole(
+  document.getElementById("console") as HTMLDivElement
+);
 
 const feed = new GroveFeed();
 feed.onStatus((s) => {
@@ -35,4 +42,5 @@ grove.setUpdateHandler((dt, t) => {
   for (const fn of frameCallbacks) fn();
 });
 attachPicker(canvas, grove.camera, flora, (fn) => frameCallbacks.push(fn));
+feed.onEvent((event) => blockConsole.handle(event));
 feed.start();

@@ -18,7 +18,7 @@ Chia Grove is an ambient, web-based 3D art piece that visualizes live Chia mainn
 
 ## Non-goals
 
-- Not a block explorer or dashboard (no stats HUD in v1).
+- Not a block explorer or dashboard. (A small legend inset and a scrolling per-block log are in scope; aggregate stats dashboards are not.)
 - No user accounts, no wallets, no transaction submission.
 - No historical archive — the grove shows recent activity only (~last 30 blocks backfilled, in-memory).
 
@@ -110,7 +110,7 @@ Nocturnal meadow, green-on-dark palette, ground fog, starfield + moon.
 
 **Spatial layout — phyllotaxis spiral:** block *n* plants its flora group at the golden-angle spiral position around a center clearing (sunflower-seed packing). The grove is dense and organic at any age. Oldest plantings beyond the cap fade and "compost" at the rim. Camera: slow orbital drift around the center; gentle breathing zoom.
 
-**Interaction:** raycast hover gently brightens a plant; click opens a small card (asset type, amount, coin ID, block height; NFT image when available) with a link to spacescan.io. Click-away or timeout dismisses. No camera control in v1.
+**Interaction:** raycast hover gently brightens a plant and shows a small card (asset type, amount, coin ID, block height; NFT image when available) with a link to spacescan.io; moving the pointer away hides it. Clicking pins the card open so the link is reachable; click-away unpins. A collapsible legend inset (top-left, state remembered) explains the symbols; a scrolling block console (bottom-right, ~6 fading lines) logs each block's height, spend count, and asset mix in sync with the animations. No camera control in v1.
 
 **Reorg visual:** affected plantings wilt and regrow — a visible gust through the grove.
 

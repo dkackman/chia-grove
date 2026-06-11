@@ -8,8 +8,6 @@ const KIND_LABELS: Record<SproutEvent["kind"], string> = {
   did: "DID",
 };
 
-let hideTimer: number | undefined;
-
 function el(tag: string, cls?: string, text?: string): HTMLElement {
   const e = document.createElement(tag);
   if (cls) e.className = cls;
@@ -56,13 +54,9 @@ export function showCard(event: SproutEvent): void {
   card.appendChild(linkDiv);
 
   card.hidden = false;
-
-  clearTimeout(hideTimer);
-  hideTimer = window.setTimeout(hideCard, 12_000);
 }
 
 export function hideCard(): void {
   const card = document.getElementById("card") as HTMLDivElement;
   card.hidden = true;
-  clearTimeout(hideTimer);
 }

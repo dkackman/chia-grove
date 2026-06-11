@@ -8,12 +8,16 @@ import { glowTexture } from "./textures.js";
 const GROW_SECONDS = 1.6;
 const CAPS = { grass: 2400, mushroom: 400, bloom: 120, wisp: 80 } as const;
 
+const WHITE = new THREE.Color(0xffffff);
+const HIGHLIGHT_BOOST = 2.2;
+
 interface Slot {
   meta: SproutEvent | null;
   bornAt: number;
   x: number;
   z: number;
   height: number;
+  baseColor: THREE.Color;
 }
 
 const easeOutCubic = (p: number) => 1 - (1 - p) ** 3;
@@ -25,6 +29,7 @@ function makeSlots(cap: number): Slot[] {
     x: 0,
     z: 0,
     height: 1,
+    baseColor: WHITE.clone(),
   }));
 }
 
@@ -47,7 +52,12 @@ class InstancedKind {
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.slots = makeSlots(cap);
     const zero = new THREE.Matrix4().makeScale(0, 0, 0);
-    for (let i = 0; i < cap; i++) this.mesh.setMatrixAt(i, zero);
+    for (let i = 0; i < cap; i++) {
+      this.mesh.setMatrixAt(i, zero);
+      // initialize every instance color: setColorAt zero-fills the buffer on
+      // first use, which would render untinted instances black
+      this.mesh.setColorAt(i, WHITE);
+    }
     scene.add(this.mesh);
   }
 
@@ -55,13 +65,31 @@ class InstancedKind {
         color?: THREE.Color): number {
     const i = this.next;
     this.next = (this.next + 1) % this.slots.length;
-    this.slots[i] = { meta, bornAt: t, x, z, height };
-    if (color) {
-      this.mesh.setColorAt(i, color);
-      this.mesh.instanceColor!.needsUpdate = true;
-    }
+    this.slots[i] = {
+      meta,
+      bornAt: t,
+      x,
+      z,
+      height,
+      baseColor: color ? color.clone() : WHITE.clone(),
+    };
+    // always write: clears any leftover highlight from the recycled slot
+    this.mesh.setColorAt(i, this.slots[i].baseColor);
+    this.mesh.instanceColor!.needsUpdate = true;
     return i;
   }
+
+  setHighlight(index: number, on: boolean): void {
+    const slot = this.slots[index];
+    if (!slot?.meta) return;
+    const color = on
+      ? this.highlightColor.copy(slot.baseColor).multiplyScalar(HIGHLIGHT_BOOST)
+      : slot.baseColor;
+    this.mesh.setColorAt(index, color);
+    this.mesh.instanceColor!.needsUpdate = true;
+  }
+
+  private readonly highlightColor = new THREE.Color();
 
   update(t: number, gustDip: number): void {
     for (let i = 0; i < this.slots.length; i++) {
@@ -277,5 +305,45 @@ export class FloraSystem {
     if (object === this.bloom.mesh) return this.bloom.metaAt(instanceId ?? -1);
     const wisp = this.wisps.find((w) => w.sprite === object);
     return wisp?.meta ?? null;
+  }
+
+  private hovered:
+    | { kind: InstancedKind; index: number }
+    | { wisp: THREE.Sprite }
+    | null = null;
+
+  /** Brighten the plant under the pointer; pass null to clear. */
+  setHovered(
+    object: THREE.Object3D | null,
+    instanceId: number | undefined
+  ): void {
+    if (this.hovered) {
+      if ("kind" in this.hovered) {
+        this.hovered.kind.setHighlight(this.hovered.index, false);
+      } else {
+        this.hovered.wisp.scale.setScalar(0.9);
+      }
+      this.hovered = null;
+    }
+    if (!object) return;
+
+    const kind =
+      object === this.grass.mesh
+        ? this.grass
+        : object === this.mushroom.mesh
+          ? this.mushroom
+          : object === this.bloom.mesh
+            ? this.bloom
+            : null;
+    if (kind && instanceId !== undefined) {
+      kind.setHighlight(instanceId, true);
+      this.hovered = { kind, index: instanceId };
+      return;
+    }
+    const wisp = this.wisps.find((w) => w.sprite === object);
+    if (wisp?.meta) {
+      wisp.sprite.scale.setScalar(1.25);
+      this.hovered = { wisp: wisp.sprite };
+    }
   }
 }
