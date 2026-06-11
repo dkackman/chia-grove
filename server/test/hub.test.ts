@@ -8,12 +8,18 @@ class FakeSocket implements WireSocket {
   bufferedAmount = 0;
   readyState = 1; // OPEN
   closed = false;
+  terminated = false;
 
   send(data: string): void {
     this.sent.push(data);
   }
 
   close(): void {
+    this.closed = true;
+  }
+
+  terminate(): void {
+    this.terminated = true;
     this.closed = true;
   }
 
@@ -95,4 +101,23 @@ test("removed client receives nothing", () => {
   hub.remove(socket);
   hub.publish([blockEvent(1)]);
   expect(socket.sent).toHaveLength(1); // just the snapshot
+});
+
+test("add ignores sockets that are not open", () => {
+  const hub = makeHub();
+  const socket = new FakeSocket();
+  socket.readyState = 3; // CLOSED
+  hub.add(socket);
+  expect(socket.sent).toHaveLength(0);
+  hub.publish([blockEvent(1)]);
+  expect(socket.sent).toHaveLength(0);
+});
+
+test("hard-limit eviction uses terminate, not graceful close", () => {
+  const hub = makeHub();
+  const dead = new FakeSocket();
+  hub.add(dead);
+  dead.bufferedAmount = 2 * 1024 * 1024;
+  hub.publish([blockEvent(1)]);
+  expect(dead.terminated).toBe(true);
 });

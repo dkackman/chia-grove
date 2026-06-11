@@ -14,6 +14,8 @@ export async function buildServer(hub: Hub): Promise<FastifyInstance> {
 
   app.register(async (instance) => {
     instance.get("/ws", { websocket: true }, (socket) => {
+      // ws.WebSocket satisfies WireSocket structurally (send/close/terminate/
+      // bufferedAmount/readyState); the double cast bridges the nominal types.
       const wire = socket as unknown as WireSocket;
       hub.add(wire);
       socket.on("close", () => hub.remove(wire));

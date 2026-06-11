@@ -9,6 +9,7 @@ const OPEN = 1;
 export interface WireSocket {
   send(data: string): void;
   close(): void;
+  terminate(): void;
   readonly bufferedAmount: number;
   readonly readyState: number;
 }
@@ -20,6 +21,7 @@ export class Hub {
   constructor(private readonly buffer: RingBuffer<GroveEvent>) {}
 
   add(socket: WireSocket): void {
+    if (socket.readyState !== OPEN) return;
     const events: GroveEvent[] = this.buffer.snapshot();
     if (this.lastAmbient) events.push(this.lastAmbient);
     socket.send(JSON.stringify({ type: "snapshot", events }));
@@ -38,7 +40,7 @@ export class Hub {
       const data = JSON.stringify(event);
       for (const socket of [...this.clients]) {
         if (socket.readyState !== OPEN || socket.bufferedAmount > HARD_LIMIT) {
-          socket.close();
+          socket.terminate();
           this.clients.delete(socket);
           continue;
         }
