@@ -1,0 +1,17 @@
+[Unit]
+Description=Chia Grove
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=grove
+WorkingDirectory=/opt/chia-grove
+ExecStart=/usr/bin/npm run start
+Restart=always
+RestartSec=5
+Environment=PORT=8080
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target
