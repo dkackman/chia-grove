@@ -1,0 +1,33 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body { height: 100%; overflow: hidden; background: #020806; }
+
+#grove { display: block; width: 100%; height: 100%; }
+
+#status {
+  position: fixed; top: 14px; right: 16px;
+  font: 12px/1.4 ui-monospace, monospace;
+  color: rgba(185, 255, 217, 0.5);
+  letter-spacing: 0.08em; text-transform: uppercase;
+  pointer-events: none;
+}
+
+#card {
+  position: fixed; bottom: 24px; left: 24px; max-width: 300px;
+  padding: 14px 16px; border-radius: 10px;
+  background: rgba(4, 17, 10, 0.88);
+  border: 1px solid rgba(61, 220, 132, 0.25);
+  backdrop-filter: blur(6px);
+  font: 13px/1.5 ui-monospace, monospace;
+  color: #b9ffd9;
+}
+
+#card h3 { font-size: 14px; margin-bottom: 6px; color: #eafff2; }
+
+#card img {
+  width: 100%; border-radius: 6px; margin: 8px 0; display: block;
+}
+
+#card a { color: #5ef0a0; }
+
+#card .dim { color: rgba(185, 255, 217, 0.55); word-break: break-all; }
