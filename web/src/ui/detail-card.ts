@@ -17,13 +17,29 @@ function el(tag: string, cls?: string, text?: string): HTMLElement {
 
 export function showCard(event: SproutEvent): void {
   const card = document.getElementById("card") as HTMLDivElement;
-  const title = event.kind === "nft" && event.mint ? "NFT mint" : KIND_LABELS[event.kind];
-
   card.replaceChildren();
 
-  card.appendChild(el("h3", undefined, title));
+  const h3 = document.createElement("h3");
+  if (event.kind === "nft" && event.mint) {
+    h3.textContent = "NFT mint";
+  } else if (event.catName) {
+    h3.appendChild(document.createTextNode(event.catName));
+    if (event.catTicker) {
+      h3.appendChild(el("span", "ticker", event.catTicker));
+    }
+  } else {
+    h3.textContent = KIND_LABELS[event.kind];
+  }
+  card.appendChild(h3);
 
-  if (event.imageUrl) {
+  if (event.catIconUrl) {
+    const img = document.createElement("img");
+    img.src = event.catIconUrl;
+    img.alt = event.catName ?? "CAT";
+    img.loading = "lazy";
+    img.className = "cat-icon";
+    card.appendChild(img);
+  } else if (event.imageUrl) {
     const img = document.createElement("img");
     img.src = event.imageUrl;
     img.alt = "NFT";

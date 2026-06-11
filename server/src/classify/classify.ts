@@ -1,5 +1,6 @@
 import { Clvm, Constants, type CoinSpend } from "chia-wallet-sdk";
 import type { GroveEvent, SproutEvent } from "@grove/shared";
+import type { CatRegistry } from "./cats.js";
 
 const hex = (b: Uint8Array) => Buffer.from(b).toString("hex");
 const LAUNCHER_HASH = hex(Constants.singletonLauncherHash());
@@ -12,7 +13,7 @@ export interface BlockInput {
   spends: CoinSpend[];
 }
 
-export function classifyBlock(block: BlockInput): GroveEvent[] {
+export function classifyBlock(block: BlockInput, cats?: CatRegistry): GroveEvent[] {
   const launcherCoinIds = new Set(
     block.spends
       .filter((s) => hex(s.coin.puzzleHash) === LAUNCHER_HASH)
@@ -32,7 +33,7 @@ export function classifyBlock(block: BlockInput): GroveEvent[] {
 
   for (const spend of block.spends) {
     if (hex(spend.coin.puzzleHash) === LAUNCHER_HASH) continue;
-    events.push(classifySpend(spend, block.height, launcherCoinIds));
+    events.push(classifySpend(spend, block.height, launcherCoinIds, cats));
   }
   return events;
 }
@@ -40,7 +41,8 @@ export function classifyBlock(block: BlockInput): GroveEvent[] {
 function classifySpend(
   spend: CoinSpend,
   height: number,
-  launcherCoinIds: Set<string>
+  launcherCoinIds: Set<string>,
+  cats?: CatRegistry
 ): SproutEvent {
   const clvm = new Clvm();
   const base: SproutEvent = {
@@ -72,7 +74,16 @@ function classifySpend(
     }
 
     const cat = puzzle.parseCat(spend.coin, solution);
-    if (cat) return { ...base, kind: "cat", assetId: hex(cat.cat.info.assetId) };
+    if (cat) {
+      const assetId = hex(cat.cat.info.assetId);
+      const info = cats?.lookup(assetId);
+      return {
+        ...base,
+        kind: "cat",
+        assetId,
+        ...(info ? { catName: info.name, catTicker: info.ticker, catIconUrl: info.iconUrl } : {}),
+      };
+    }
 
     const did = puzzle.parseDid(spend.coin, solution);
     if (did) return { ...base, kind: "did", mint };

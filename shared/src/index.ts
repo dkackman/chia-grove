@@ -17,6 +17,9 @@ export interface SproutEvent {
   amount: string; // mojos
   mint?: boolean; // spent coin's parent was a singleton launcher
   assetId?: string; // CAT only, hex
+  catName?: string; // CAT only, from Dexie registry
+  catTicker?: string; // CAT only, from Dexie registry
+  catIconUrl?: string; // CAT only, from Dexie registry
   launcherId?: string; // NFT only, hex
   imageUrl?: string; // NFT only, first http(s) data URI
 }

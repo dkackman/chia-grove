@@ -75,6 +75,28 @@ body {
   color: #5ef0a0;
 }
 
+#card .ticker {
+  display: inline-block;
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(61, 220, 132, 0.15);
+  border: 1px solid rgba(61, 220, 132, 0.35);
+  color: #5ef0a0;
+  margin-left: 6px;
+  vertical-align: middle;
+  letter-spacing: 0.05em;
+}
+
+#card .cat-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 6px;
+  margin: 6px 0;
+  display: block;
+  object-fit: contain;
+}
+
 #card .dim {
   color: rgba(185, 255, 217, 0.55);
   word-break: break-all;

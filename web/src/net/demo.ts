@@ -8,6 +8,15 @@ const randomHex = (bytes: number): string =>
 // a few stable fake CAT asset ids so colonies form by color
 const DEMO_ASSET_IDS = Array.from({ length: 6 }, () => randomHex(32));
 
+const DEMO_CATS: Array<{ name: string; ticker: string } | undefined> = [
+  { name: "Spacebucks", ticker: "SBX" },
+  { name: "Marmot", ticker: "MRMT" },
+  { name: "Stably USD", ticker: "USDS" },
+  { name: "Chia Holiday 2021", ticker: "CH21" },
+  undefined, // unknown CAT — no registry entry
+  undefined,
+];
+
 function randomKind(): SproutKind {
   const roll = Math.random();
   if (roll < 0.85) return "xch";
@@ -27,7 +36,13 @@ function sprout(height: number): SproutEvent {
     amount: String(Math.floor(10 ** (3 + Math.random() * 11))),
   };
   if (kind === "cat") {
-    event.assetId = DEMO_ASSET_IDS[Math.floor(Math.random() * DEMO_ASSET_IDS.length)];
+    const idx = Math.floor(Math.random() * DEMO_ASSET_IDS.length);
+    event.assetId = DEMO_ASSET_IDS[idx];
+    const cat = DEMO_CATS[idx];
+    if (cat) {
+      event.catName = cat.name;
+      event.catTicker = cat.ticker;
+    }
   }
   if (kind === "nft") {
     event.launcherId = randomHex(32);

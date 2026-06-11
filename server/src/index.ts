@@ -1,6 +1,7 @@
 import { RpcClient } from "chia-wallet-sdk";
 import type { GroveEvent } from "@grove/shared";
 import { classifyBlock } from "./classify/classify.js";
+import { CatRegistry } from "./classify/cats.js";
 import { CoinsetPoller } from "./ingest/coinset-poller.js";
 import { coinsetView } from "./ingest/coinset-view.js";
 import { Hub } from "./web/hub.js";
@@ -22,12 +23,14 @@ const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS ?? 3000);
 const BACKFILL_BLOCKS = Number(process.env.BACKFILL_BLOCKS ?? 30);
 
 const hub = new Hub(new RingBuffer<GroveEvent>(500));
+const cats = new CatRegistry();
+await cats.start();
 
 const poller = new CoinsetPoller(
   coinsetView(RpcClient.mainnet()),
   {
     onBlock(block) {
-      hub.publish(classifyBlock(block));
+      hub.publish(classifyBlock(block, cats));
       console.log(`block ${block.height} (${block.spends.length} spends)`);
     },
     onAmbient(state) {
@@ -59,6 +62,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, async () => {
     console.log(`${signal} received, shutting down`);
     poller.stop();
+    cats.stop();
     await app.close();
     process.exit(0);
   });
