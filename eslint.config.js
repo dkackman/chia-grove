@@ -7,7 +7,7 @@ export default tseslint.config(
   tseslint.configs.recommended,
   prettier,
   {
-    ignores: ["**/dist/**", "**/node_modules/**", "**/.vite/**"],
+    ignores: ["**/dist/**", "**/node_modules/**", "**/.vite/**", ".remember/**"],
   },
   {
     rules: {

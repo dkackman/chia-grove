@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { SproutEvent } from "@grove/shared";
 import { sproutOffset, type XZ } from "./layout.js";
-import { catHue, COLORS } from "./palette.js";
+import { catColor, COLORS } from "./palette.js";
 import { glowTexture } from "./textures.js";
 
 const GROW_SECONDS = 1.6;
@@ -249,7 +249,8 @@ export class FloraSystem {
         break;
       }
       case "cat": {
-        this.color.setHSL(catHue(event.assetId ?? "0".repeat(64)) / 360, 0.6, 0.55);
+        const { h, s, l } = catColor(event.assetId ?? "0".repeat(64));
+        this.color.setHSL(h, s, l);
         this.mushroom.plant(event, x, z, 1, t, this.color);
         break;
       }

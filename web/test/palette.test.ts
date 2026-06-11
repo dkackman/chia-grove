@@ -1,13 +1,17 @@
 import { expect, test } from "vitest";
-import { catHue } from "../src/scene/palette.js";
+import { catColor } from "../src/scene/palette.js";
 import { mojosToXch } from "../src/ui/format.js";
 
-test("catHue is deterministic and in range", () => {
+test("catColor is deterministic and palette-matched", () => {
   const assetId = "a1b2c3d4" + "00".repeat(28);
-  expect(catHue(assetId)).toBe(catHue(assetId));
-  expect(catHue(assetId)).toBeGreaterThanOrEqual(0);
-  expect(catHue(assetId)).toBeLessThan(360);
-  expect(catHue(assetId)).not.toBe(catHue("ffeeddcc" + "00".repeat(28)));
+  const color = catColor(assetId);
+  expect(color).toEqual(catColor(assetId));
+  expect(color.h).toBeGreaterThanOrEqual(0);
+  expect(color.h).toBeLessThan(1);
+  expect(color.s).toBeGreaterThan(0);
+  expect(color.l).toBeGreaterThan(0);
+  // different assets get different colors
+  expect(catColor(assetId).h).not.toBe(catColor("ffeeddcc" + "00".repeat(28)).h);
 });
 
 test("mojosToXch formats correctly", () => {
