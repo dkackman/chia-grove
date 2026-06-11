@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { catColor } from "../src/scene/palette.js";
+import { catColor } from "../src/themes/shared/cat-color.js";
 import { mojosToXch } from "../src/ui/format.js";
 
 test("catColor is deterministic and palette-matched", () => {

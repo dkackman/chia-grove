@@ -1,160 +1,27 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { SproutEvent } from "@grove/shared";
-import { mulberry32, sproutOffset, type XZ } from "./layout.js";
-import { catColor, COLORS } from "./palette.js";
-import { glowTexture } from "./textures.js";
+import { mulberry32, type XZ } from "../themes/shared/util.js";
+import { easeOutCubic, InstancedKind, type Pose } from "../themes/shared/instanced.js";
+import { catWidth, xchHeight } from "../themes/shared/scales.js";
+import { catColor } from "../themes/shared/cat-color.js";
+import { COLORS } from "./palette.js";
+import { glowTexture } from "../themes/shared/textures.js";
+import { sproutOffset } from "./layout.js";
 
-const GROW_SECONDS = 1.6;
 // caps are per geometry variant (3 variants per kind)
 const CAPS = { grass: 800, mushroom: 140, bloom: 40, wisp: 80 } as const;
 const VARIANTS = 3;
 
-const WHITE = new THREE.Color(0xffffff);
-const HIGHLIGHT_BOOST = 2.2;
+// nominal height multiplier per grass variant (broad blades stay low)
+const GRASS_VARIANT_HEIGHT = [1, 0.85, 0.6] as const;
 
-interface Slot {
+interface Wisp {
+  sprite: THREE.Sprite;
   meta: SproutEvent | null;
   bornAt: number;
-  x: number;
-  z: number;
-  height: number;
-  width: number;
-  baseColor: THREE.Color;
-  rotation: THREE.Quaternion;
-  swayPhase: number;
-}
-
-/** Per-instance pose, derived deterministically from the coin id. */
-interface Pose {
-  height: number;
-  width?: number;
-  color?: THREE.Color;
-  rotY: number;
-  tiltX: number;
-  tiltZ: number;
-  swayPhase: number;
-}
-
-const easeOutCubic = (p: number) => 1 - (1 - p) ** 3;
-
-function makeSlots(cap: number): Slot[] {
-  return Array.from({ length: cap }, () => ({
-    meta: null,
-    bornAt: 0,
-    x: 0,
-    z: 0,
-    height: 1,
-    width: 1,
-    baseColor: WHITE.clone(),
-    rotation: new THREE.Quaternion(),
-    swayPhase: 0,
-  }));
-}
-
-class InstancedKind {
-  readonly mesh: THREE.InstancedMesh;
-  readonly slots: Slot[];
-  private next = 0;
-  private readonly matrix = new THREE.Matrix4();
-  private readonly position = new THREE.Vector3();
-  private readonly scale = new THREE.Vector3();
-  private readonly euler = new THREE.Euler();
-  private readonly swayQuat = new THREE.Quaternion();
-  private readonly worldQuat = new THREE.Quaternion();
-
-  constructor(
-    scene: THREE.Scene,
-    geometry: THREE.BufferGeometry,
-    material: THREE.Material,
-    cap: number,
-    private readonly swayAmp: number
-  ) {
-    this.mesh = new THREE.InstancedMesh(geometry, material, cap);
-    this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    this.slots = makeSlots(cap);
-    const zero = new THREE.Matrix4().makeScale(0, 0, 0);
-    for (let i = 0; i < cap; i++) {
-      this.mesh.setMatrixAt(i, zero);
-      // initialize every instance color: setColorAt zero-fills the buffer on
-      // first use, which would render untinted instances black
-      this.mesh.setColorAt(i, WHITE);
-    }
-    // InstancedMesh caches its bounding sphere on the first raycast — which
-    // happens while every instance is still scale-0, leaving a radius-0
-    // sphere that makes every later raycast miss. Pin a fixed sphere that
-    // covers the whole meadow instead (spiral max ~44 + cluster + height).
-    this.mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 2, 0), 80);
-    scene.add(this.mesh);
-  }
-
-  plant(meta: SproutEvent, x: number, z: number, t: number, pose: Pose): number {
-    const i = this.next;
-    this.next = (this.next + 1) % this.slots.length;
-    const slot = this.slots[i];
-    slot.meta = meta;
-    slot.bornAt = t;
-    slot.x = x;
-    slot.z = z;
-    slot.height = pose.height;
-    slot.width = pose.width ?? 1;
-    slot.baseColor = pose.color ? pose.color.clone() : WHITE.clone();
-    slot.rotation.setFromEuler(this.euler.set(pose.tiltX, pose.rotY, pose.tiltZ));
-    slot.swayPhase = pose.swayPhase;
-    // always write: clears any leftover highlight from the recycled slot
-    this.mesh.setColorAt(i, slot.baseColor);
-    this.mesh.instanceColor!.needsUpdate = true;
-    return i;
-  }
-
-  setHighlight(index: number, on: boolean): void {
-    const slot = this.slots[index];
-    if (!slot?.meta) return;
-    const color = on
-      ? this.highlightColor.copy(slot.baseColor).multiplyScalar(HIGHLIGHT_BOOST)
-      : slot.baseColor;
-    this.mesh.setColorAt(index, color);
-    this.mesh.instanceColor!.needsUpdate = true;
-  }
-
-  private readonly highlightColor = new THREE.Color();
-
-  update(t: number, gustDip: number): void {
-    for (let i = 0; i < this.slots.length; i++) {
-      const slot = this.slots[i];
-      if (!slot.meta) continue;
-      const progress = Math.min((t - slot.bornAt) / GROW_SECONDS, 1);
-      const eased = easeOutCubic(progress);
-      const width = Math.min(1, eased * 1.3) * slot.width;
-      // wind: lean from the base. A wave travels diagonally across the
-      // meadow (~21-unit wavelength, so several crests are visible at
-      // once); the small swayPhase term keeps the front ragged without
-      // destroying coherence. A second incommensurate harmonic breaks the
-      // pendulum regularity, and a faster per-plant flutter (frequency
-      // varied by swayPhase) desyncs neighbors. The 0.35 bias keeps plants
-      // leaning slightly downwind rather than swinging symmetrically about
-      // vertical. Gusts (gustDip < 1) deepen the lean and dip the height.
-      const wavePhase = t * 1.2 + (slot.x + slot.z * 0.6) * 0.3 + slot.swayPhase * 0.15;
-      const breeze =
-        Math.sin(wavePhase) +
-        0.35 * Math.sin(wavePhase * 1.7 + 1.3) +
-        0.22 * Math.sin(t * (2.3 + slot.swayPhase * 0.12) + slot.swayPhase * 7);
-      const lean = this.swayAmp * (1 + (1 - gustDip) * 6) * (0.35 + breeze * 0.55);
-      this.swayQuat.setFromEuler(this.euler.set(lean * 0.4, 0, lean));
-      this.worldQuat.multiplyQuaternions(this.swayQuat, slot.rotation);
-      this.matrix.compose(
-        this.position.set(slot.x, 0, slot.z),
-        this.worldQuat,
-        this.scale.set(width, eased * slot.height * gustDip, width)
-      );
-      this.mesh.setMatrixAt(i, this.matrix);
-    }
-    this.mesh.instanceMatrix.needsUpdate = true;
-  }
-
-  metaAt(index: number): SproutEvent | null {
-    return this.slots[index]?.meta ?? null;
-  }
+  phase: number;
+  baseScale: number;
 }
 
 /** Tilt a grown-from-base geometry outward without lifting it off the ground. */
@@ -248,34 +115,6 @@ export function bloomGeometries(): THREE.BufferGeometry[] {
   const twin = mergeGeometries([small, big, tallStalk]);
 
   return [orb, ringed, twin];
-}
-
-/** XCH amount (mojos, string) → grass height. log scale, dust→blade, whale→stalk. */
-function xchHeight(amount: string): number {
-  const mojos = Number(amount);
-  return Math.min(3.2, 0.4 + 0.55 * Math.log10(1 + mojos / 1e9));
-}
-
-/**
- * CAT amount (mojos, string) → mushroom cap width. CATs carry 3 decimals
- * (1 token = 1000 mojos); per-token value varies wildly across assets, so
- * this only conveys relative magnitude within a colony. log scale and
- * sublinear, dust→slim, whale→chunky toadstool.
- */
-function catWidth(amount: string): number {
-  const tokens = Number(amount) / 1000;
-  return 0.75 + 0.25 * Math.min(2.2, 0.5 + 0.3 * Math.log10(1 + tokens));
-}
-
-// nominal height multiplier per grass variant (broad blades stay low)
-const GRASS_VARIANT_HEIGHT = [1, 0.85, 0.6] as const;
-
-interface Wisp {
-  sprite: THREE.Sprite;
-  meta: SproutEvent | null;
-  bornAt: number;
-  phase: number;
-  baseScale: number;
 }
 
 export class FloraSystem {
