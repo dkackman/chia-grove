@@ -7,6 +7,13 @@ import { Hub } from "./web/hub.js";
 import { RingBuffer } from "./web/ring-buffer.js";
 import { buildServer } from "./web/server.js";
 
+process.on("unhandledRejection", (reason) => {
+  console.error("unhandled rejection:", reason);
+});
+process.on("uncaughtException", (error) => {
+  console.error("uncaught exception:", error);
+});
+
 const PORT = Number(process.env.PORT ?? 8080);
 const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS ?? 3000);
 const BACKFILL_BLOCKS = Number(process.env.BACKFILL_BLOCKS ?? 30);
@@ -46,3 +53,12 @@ const app = await buildServer(hub);
 await app.listen({ port: PORT, host: "0.0.0.0" });
 poller.start();
 console.log(`chia-grove server on :${PORT}`);
+
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.once(signal, async () => {
+    console.log(`${signal} received, shutting down`);
+    poller.stop();
+    await app.close();
+    process.exit(0);
+  });
+}

@@ -60,7 +60,7 @@ One Node process on the droplet; static frontend served by the same process.
 Pure function from block data to **grove events** (the only logic-dense module; fully unit-tested):
 
 - For each coin spend, build `Puzzle` from the reveal and try `parseNft` → `parseCat` → `parseDid`; fall back to XCH.
-- NFT events carry launcher ID and resolved image URL when metadata is fetchable (fetched server-side with a short timeout and small in-memory cache; omitted on failure).
+- NFT events carry launcher ID and an image URL taken directly from the on-chain metadata program's `dataUris` (first http(s) URI); no server-side fetch is needed, and the field is omitted when absent.
 - CAT color is derived deterministically from the asset ID (hash → hue), so each token species forms a consistent colony.
 
 ### Grove event schema (server → browser, JSON over WebSocket)
@@ -126,7 +126,7 @@ Nocturnal meadow, green-on-dark palette, ground fog, starfield + moon.
 - One `InstancedMesh` per flora kind; fireflies are a single GPU particle system.
 - Target 60 fps on integrated graphics. Hard cap ~3,000 plants (oldest culled).
 - Pixel-ratio clamped on high-DPI; `prefers-reduced-motion` honored (static camera, reduced particles).
-- Rendering pauses when the tab is hidden; buffered events fast-replay on return.
+- Hidden tabs pause rendering automatically (browsers do not fire requestAnimationFrame for hidden tabs); animations are keyed to absolute time, so the scene catches up instantly on return.
 
 ## Testing
 
