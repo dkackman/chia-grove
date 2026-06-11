@@ -2,6 +2,7 @@ import { GroveFeed } from "./net/feed.js";
 import { startGrove } from "./scene/grove.js";
 import { FloraSystem } from "./scene/flora.js";
 import { Fireflies } from "./scene/fireflies.js";
+import { attachPicker } from "./ui/picker.js";
 
 const canvas = document.getElementById("grove") as HTMLCanvasElement;
 const status = document.getElementById("status") as HTMLDivElement;
@@ -22,6 +23,7 @@ grove.setAmbientHandler((mempoolSize, mempoolCost) =>
   fireflies.setMempool(mempoolSize, mempoolCost)
 );
 grove.setBlockHandler((pos) => fireflies.diveTo(pos, clockRef.t));
+attachPicker(canvas, grove.camera, flora);
 grove.setReorgHandler(() => {
   flora.gust(clockRef.t);
   fireflies.scatter();
