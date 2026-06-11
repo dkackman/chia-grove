@@ -14,5 +14,5 @@ rsync -az --delete \
   --exclude .superpowers \
   ./ "$HOST:$TARGET/"
 
-ssh "$HOST" "cd $TARGET && npm ci --omit=dev && sudo systemctl restart chia-grove"
+ssh "$HOST" "cd $TARGET && npm install --omit=dev && sudo systemctl restart chia-grove"
 echo "deployed to $HOST"
