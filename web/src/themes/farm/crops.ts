@@ -255,9 +255,7 @@ export class CropSystem {
     this.release(tractor, t);
     const remaining = Math.max(0, this.wiltUntil - t);
     const dip =
-      remaining > 0
-        ? 1 - 0.22 * Math.min(1, remaining / 2) * Math.abs(Math.sin(remaining * 5))
-        : 1;
+      remaining > 0 ? 1 - 0.22 * Math.min(1, remaining / 2) * Math.abs(Math.sin(remaining * 5)) : 1;
     for (const kind of this.allKinds()) kind.update(t, dip);
     for (const glows of this.sunflowerGlows) {
       for (const glow of glows) {

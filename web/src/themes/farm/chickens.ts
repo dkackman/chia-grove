@@ -39,7 +39,10 @@ export class Chickens {
   private readonly scale = new THREE.Vector3(1, 1, 1);
   private readonly euler = new THREE.Euler();
 
-  constructor(scene: THREE.Scene, private readonly max: number) {
+  constructor(
+    scene: THREE.Scene,
+    private readonly max: number
+  ) {
     this.mesh = new THREE.InstancedMesh(
       chickenGeometry(),
       new THREE.MeshStandardMaterial({ color: FARM.chicken, roughness: 0.8 }),
@@ -101,11 +104,7 @@ export class Chickens {
       }
       const peck = Math.max(0, Math.sin(t * 5 * hen.speed + hen.phase)) * 0.07;
       this.quaternion.setFromEuler(this.euler.set(0, Math.atan2(dx, dz) + Math.PI / 2, 0));
-      this.matrix.compose(
-        this.position.set(hen.x, -peck, hen.z),
-        this.quaternion,
-        this.scale
-      );
+      this.matrix.compose(this.position.set(hen.x, -peck, hen.z), this.quaternion, this.scale);
       this.mesh.setMatrixAt(i, this.matrix);
     }
     this.mesh.instanceMatrix.needsUpdate = true;

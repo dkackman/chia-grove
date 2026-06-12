@@ -6,15 +6,15 @@ Live at **[chia-grove.com](https://chia-grove.com)**
 
 ## The Grove
 
-| On chain | In the grove |
-|---|---|
-| XCH spend | Grass blade, height scales with amount |
+| On chain     | In the grove                                                  |
+| ------------ | ------------------------------------------------------------- |
+| XCH spend    | Grass blade, height scales with amount                        |
 | CAT transfer | Mushroom, color and size derived from the asset id and amount |
-| NFT activity | Glowing bloom (mints burst open); click to see the NFT |
-| DID activity | Violet will-o'-wisp |
-| Mempool | Firefly swarm density and agitation |
-| Netspace | Moonlight brightness |
-| New block | Ground ripple + aurora pulse |
+| NFT activity | Glowing bloom (mints burst open); click to see the NFT        |
+| DID activity | Violet will-o'-wisp                                           |
+| Mempool      | Firefly swarm density and agitation                           |
+| Netspace     | Moonlight brightness                                          |
+| New block    | Ground ripple + aurora pulse                                  |
 
 Click any plant for coin details and a [spacescan.io](https://spacescan.io) link.
 
@@ -63,8 +63,8 @@ First-time server setup:
 
 **Environment variables:**
 
-| Variable | Default | Description |
-|---|---|---|
-| `PORT` | `8080` | HTTP/WebSocket listen port |
-| `POLL_INTERVAL_MS` | `3000` | Blockchain poll cadence |
-| `BACKFILL_BLOCKS` | `30` | Blocks to replay on startup |
+| Variable           | Default | Description                 |
+| ------------------ | ------- | --------------------------- |
+| `PORT`             | `8080`  | HTTP/WebSocket listen port  |
+| `POLL_INTERVAL_MS` | `3000`  | Blockchain poll cadence     |
+| `BACKFILL_BLOCKS`  | `30`    | Blocks to replay on startup |

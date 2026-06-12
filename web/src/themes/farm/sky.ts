@@ -20,7 +20,12 @@ export function createFarmSky(scene: THREE.Scene): FarmSky {
   const glowMap = glowTexture();
 
   const sun = new THREE.Sprite(
-    new THREE.SpriteMaterial({ map: glowMap, color: FARM.sun, transparent: true, depthWrite: false })
+    new THREE.SpriteMaterial({
+      map: glowMap,
+      color: FARM.sun,
+      transparent: true,
+      depthWrite: false,
+    })
   );
   sun.position.set(40, 55, -80);
   sun.scale.setScalar(30);

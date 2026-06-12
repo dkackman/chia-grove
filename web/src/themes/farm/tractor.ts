@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { FIELD, rowDirection, rowZ } from "./layout.js";
 import { FARM } from "./palette.js";
 
-export const PASS_SECONDS = 2.5;
+export const PASS_SECONDS = 10;
 /** Start/end just outside the field so crops at the row ends get a pass too. */
 const EDGE_X = FIELD.rowLength / 2 + 2;
 
@@ -14,40 +14,87 @@ export class Tractor {
   private readonly wheels: THREE.Mesh[] = [];
 
   constructor(scene: THREE.Scene) {
-    const body = new THREE.Mesh(
-      new THREE.BoxGeometry(0.95, 0.42, 0.6),
-      new THREE.MeshStandardMaterial({ color: FARM.tractor, roughness: 0.6 })
-    );
-    body.position.y = 0.45;
-    const cab = new THREE.Mesh(
-      new THREE.BoxGeometry(0.42, 0.34, 0.5),
-      new THREE.MeshStandardMaterial({ color: 0xdddde2, roughness: 0.4 })
-    );
-    cab.position.set(-0.18, 0.78, 0);
-    const pipe = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.03, 0.03, 0.3, 5),
-      new THREE.MeshStandardMaterial({ color: FARM.tractorDark })
-    );
-    pipe.position.set(0.3, 0.8, 0);
-
-    const wheelGeometry = new THREE.CylinderGeometry(0.22, 0.22, 0.1, 10);
-    wheelGeometry.rotateX(Math.PI / 2); // axle along z
-    const wheelMaterial = new THREE.MeshStandardMaterial({
+    const bodyMaterial = new THREE.MeshStandardMaterial({ color: FARM.tractor, roughness: 0.6 });
+    const darkMaterial = new THREE.MeshStandardMaterial({
       color: FARM.tractorDark,
       roughness: 0.9,
     });
-    for (const [wx, wz] of [
-      [0.3, 0.34],
-      [0.3, -0.34],
-      [-0.32, 0.34],
-      [-0.32, -0.34],
-    ] as Array<[number, number]>) {
-      const wheel = new THREE.Mesh(wheelGeometry, wheelMaterial);
-      wheel.position.set(wx, 0.22, wz);
+
+    // classic proportions: long low chassis, hood up front (+x), cab at the back
+    const chassis = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.16, 0.46), darkMaterial);
+    chassis.position.y = 0.32;
+    const hood = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.34, 0.42), bodyMaterial);
+    hood.position.set(0.28, 0.56, 0);
+    const grill = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.26, 0.34), darkMaterial);
+    grill.position.set(0.59, 0.52, 0);
+    const headlight = new THREE.Mesh(
+      new THREE.BoxGeometry(0.04, 0.08, 0.12),
+      new THREE.MeshStandardMaterial({
+        color: FARM.headlight,
+        emissive: FARM.headlight,
+        emissiveIntensity: 0.8,
+      })
+    );
+    headlight.position.set(0.61, 0.62, 0);
+
+    // cab: body-color base, glass house, thin roof
+    const cabBase = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.18, 0.52), bodyMaterial);
+    cabBase.position.set(-0.16, 0.7, 0);
+    const cabGlass = new THREE.Mesh(
+      new THREE.BoxGeometry(0.4, 0.32, 0.46),
+      new THREE.MeshStandardMaterial({ color: FARM.glass, roughness: 0.15, metalness: 0.2 })
+    );
+    cabGlass.position.set(-0.16, 0.94, 0);
+    const cabRoof = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.06, 0.56), bodyMaterial);
+    cabRoof.position.set(-0.16, 1.13, 0);
+
+    const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.36, 6), darkMaterial);
+    pipe.position.set(0.16, 0.9, 0.13);
+
+    // fenders over the big rear wheels
+    for (const fz of [0.36, -0.36]) {
+      const fender = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.05, 0.16), bodyMaterial);
+      fender.position.set(-0.34, 0.66, fz);
+      this.group.add(fender);
+    }
+
+    // trailing plow: tow bar plus three angled tines dragging the soil line
+    const towBar = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.05, 0.08), darkMaterial);
+    towBar.position.set(-0.62, 0.3, 0);
+    const tineBar = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.05, 0.62), darkMaterial);
+    tineBar.position.set(-0.76, 0.3, 0);
+    this.group.add(towBar, tineBar);
+    for (const tz of [-0.22, 0, 0.22]) {
+      const tine = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.26, 0.05), darkMaterial);
+      tine.position.set(-0.8, 0.14, tz);
+      tine.rotation.z = 0.4;
+      this.group.add(tine);
+    }
+
+    // big rear wheels, small front wheels, light hub caps
+    const hubMaterial = new THREE.MeshStandardMaterial({ color: 0xd8d2c4, roughness: 0.5 });
+    const wheelSpecs: Array<[x: number, radius: number, width: number, z: number]> = [
+      [-0.34, 0.3, 0.14, 0.33],
+      [-0.34, 0.3, 0.14, -0.33],
+      [0.36, 0.17, 0.1, 0.28],
+      [0.36, 0.17, 0.1, -0.28],
+    ];
+    for (const [wx, radius, width, wz] of wheelSpecs) {
+      const wheelGeometry = new THREE.CylinderGeometry(radius, radius, width, 12);
+      wheelGeometry.rotateX(Math.PI / 2); // axle along z
+      const wheel = new THREE.Mesh(wheelGeometry, darkMaterial);
+      wheel.position.set(wx, radius, wz);
       this.wheels.push(wheel);
       this.group.add(wheel);
+
+      const hubGeometry = new THREE.CylinderGeometry(radius * 0.45, radius * 0.45, width + 0.02, 8);
+      hubGeometry.rotateX(Math.PI / 2);
+      const hub = new THREE.Mesh(hubGeometry, hubMaterial);
+      hub.position.copy(wheel.position);
+      this.group.add(hub);
     }
-    this.group.add(body, cab, pipe);
+
+    this.group.add(chassis, hood, grill, headlight, cabBase, cabGlass, cabRoof, pipe);
     this.group.visible = false;
     scene.add(this.group);
   }

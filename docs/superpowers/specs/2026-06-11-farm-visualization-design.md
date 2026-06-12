@@ -48,15 +48,15 @@ wiring in `main.ts` (flora + fireflies + handler hookup) moves into
 
 ```ts
 interface Visualization {
-  id: string;                 // "grove" | "farm"
-  label: string;              // shown in the legend picker
+  id: string; // "grove" | "farm"
+  label: string; // shown in the legend picker
   legend: Array<[swatchClass: string, label: string]>;
   start(canvas: HTMLCanvasElement, feed: GroveFeed): VisualizationHandle;
 }
 
 interface VisualizationHandle {
-  camera: THREE.Camera;                          // for the picker raycaster
-  pickables(): THREE.Object3D[];                 // hover/click targets
+  camera: THREE.Camera; // for the picker raycaster
+  pickables(): THREE.Object3D[]; // hover/click targets
   metaFor(obj: THREE.Object3D, instanceId: number | undefined): SproutEvent | null;
   setHovered(obj: THREE.Object3D | null, instanceId: number | undefined): void;
 }
@@ -101,12 +101,12 @@ naturally, live blocks get the full pass.
 
 ### Crops
 
-| Event | Representation | Cap |
-|---|---|---|
-| XCH | Wheat stalks; height = log(amount) (reuse grove's `xchHeight` scale); 3 geometry variants | 800 |
-| CAT | Gourds (pumpkin / cabbage / tall squash); hue from the same `catColor` asset hash, re-lit for daylight; girth = log(amount) | 140 |
-| NFT | Sunflowers (head + petal ring + stalk); mint = oversized head + brief golden glow sprite | 40 |
-| DID | Scarecrows (cross-post, sacking head), sparse and distinctive | 80 |
+| Event | Representation                                                                                                              | Cap |
+| ----- | --------------------------------------------------------------------------------------------------------------------------- | --- |
+| XCH   | Wheat stalks; height = log(amount) (reuse grove's `xchHeight` scale); 3 geometry variants                                   | 800 |
+| CAT   | Gourds (pumpkin / cabbage / tall squash); hue from the same `catColor` asset hash, re-lit for daylight; girth = log(amount) | 140 |
+| NFT   | Sunflowers (head + petal ring + stalk); mint = oversized head + brief golden glow sprite                                    | 40  |
+| DID   | Scarecrows (cross-post, sacking head), sparse and distinctive                                                               | 80  |
 
 ### Ambient, status, reorg
 

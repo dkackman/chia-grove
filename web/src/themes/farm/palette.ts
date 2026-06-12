@@ -14,4 +14,12 @@ export const FARM = {
   barnRoof: 0x5e2a20,
   tractor: 0xc94f35,
   tractorDark: 0x26262a,
+  barnTrim: 0xf2ede2,
+  silo: 0xb9c0c8,
+  hill: 0x86a96b,
+  treeTrunk: 0x6b4a2e,
+  treeCanopy: 0x4d7a3a,
+  fence: 0xcabfa8,
+  glass: 0xa8cfe0,
+  headlight: 0xfff3b0,
 } as const;

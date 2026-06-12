@@ -69,21 +69,21 @@ New WebSocket clients receive a `Snapshot` of the last 500 events from `RingBuff
 
 ### Event types (`shared/src/index.ts`)
 
-| Type | When emitted |
-|------|-------------|
-| `BlockEvent` | Every new block |
-| `SproutEvent` | Every classified coin spend |
+| Type           | When emitted                        |
+| -------------- | ----------------------------------- |
+| `BlockEvent`   | Every new block                     |
+| `SproutEvent`  | Every classified coin spend         |
 | `AmbientEvent` | Each poll cycle (mempool, netspace) |
-| `ReorgEvent` | Chain reorg detected |
-| `Snapshot` | Sent once on WebSocket connect |
+| `ReorgEvent`   | Chain reorg detected                |
+| `Snapshot`     | Sent once on WebSocket connect      |
 
 ### Environment variables (server)
 
-| Var | Default |
-|-----|---------|
-| `PORT` | `8080` |
-| `POLL_INTERVAL_MS` | `3000` |
-| `BACKFILL_BLOCKS` | `30` |
+| Var                | Default |
+| ------------------ | ------- |
+| `PORT`             | `8080`  |
+| `POLL_INTERVAL_MS` | `3000`  |
+| `BACKFILL_BLOCKS`  | `30`    |
 
 ## Deployment
 

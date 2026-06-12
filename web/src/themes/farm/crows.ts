@@ -18,7 +18,10 @@ export class Crows {
   private readonly scale = new THREE.Vector3();
   private readonly offsets: Array<{ dz: number; dy: number; dphase: number }>;
 
-  constructor(scene: THREE.Scene, private readonly count: number) {
+  constructor(
+    scene: THREE.Scene,
+    private readonly count: number
+  ) {
     const wing = new THREE.ConeGeometry(0.18, 0.5, 3);
     wing.rotateX(Math.PI / 2); // point along −z, flat-ish silhouette
     wing.scale(1, 0.25, 1);

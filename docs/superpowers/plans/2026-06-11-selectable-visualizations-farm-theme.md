@@ -61,6 +61,7 @@ CLAUDE.md                    MODIFIED  architecture paths + theme docs
 Pure refactor — no behavior change. Existing tests keep passing.
 
 **Files:**
+
 - Create: `web/src/themes/shared/instanced.ts`, `web/src/themes/shared/util.ts`, `web/src/themes/shared/cat-color.ts`, `web/src/themes/shared/scales.ts`, `web/src/themes/shared/textures.ts`
 - Modify: `web/src/scene/flora.ts`, `web/src/scene/layout.ts`, `web/src/scene/palette.ts`, `web/src/scene/fireflies.ts`, `web/src/scene/sky.ts`
 - Delete: `web/src/scene/textures.ts`
@@ -161,6 +162,7 @@ git commit -m "refactor(web): extract theme-neutral helpers into themes/shared"
 Mechanical move; no behavior change.
 
 **Files:**
+
 - Move: `web/src/scene/{grove,flora,fireflies,sky,ground,layout,palette}.ts` → `web/src/themes/grove/`
 - Modify: `web/src/main.ts`, `web/src/ui/picker.ts`, `web/test/layout.test.ts`, `web/test/flora-geometry.test.ts`
 
@@ -207,6 +209,7 @@ git commit -m "refactor(web): move grove scene into themes/grove"
 ### Task 3: Theme interfaces, grove theme module, registry
 
 **Files:**
+
 - Create: `web/src/themes/types.ts`, `web/src/themes/grove/index.ts`, `web/src/themes/index.ts`
 - Test: `web/test/themes.test.ts`
 
@@ -355,6 +358,7 @@ git commit -m "feat(web): theme interface, registry, grove theme module"
 ### Task 4: Rewire `main.ts` and generalize the picker
 
 **Files:**
+
 - Modify: `web/src/main.ts`, `web/src/ui/picker.ts`
 
 - [ ] **Step 1: Rewrite `web/src/ui/picker.ts` signature and lookups**
@@ -446,6 +450,7 @@ git commit -m "feat(web): boot through theme registry; picker works on any theme
 ### Task 5: Legend scene picker + per-theme items
 
 **Files:**
+
 - Modify: `web/src/ui/legend.ts`, `web/src/main.ts`, `web/src/style.css`
 
 - [ ] **Step 1: Rewrite `web/src/ui/legend.ts`**
@@ -543,6 +548,7 @@ git commit -m "feat(web): legend scene picker driven by theme registry"
 ### Task 6: Farm palette + serpentine row layout
 
 **Files:**
+
 - Create: `web/src/themes/farm/palette.ts`, `web/src/themes/farm/layout.ts`
 - Test: `web/test/farm-layout.test.ts`
 
@@ -671,6 +677,7 @@ git commit -m "feat(web): farm palette and serpentine row layout"
 ### Task 7: Farm crop geometries
 
 **Files:**
+
 - Create: `web/src/themes/farm/crops.ts` (geometry factories; `CropSystem` comes in Task 9)
 - Test: `web/test/farm-geometry.test.ts`
 
@@ -809,6 +816,7 @@ git commit -m "feat(web): farm crop geometries"
 ### Task 8: Tractor
 
 **Files:**
+
 - Create: `web/src/themes/farm/tractor.ts`
 - Test: `web/test/tractor.test.ts`
 
@@ -945,6 +953,7 @@ git commit -m "feat(web): farm tractor with pass timing"
 ### Task 9: CropSystem (pending-release planting)
 
 **Files:**
+
 - Modify: `web/src/themes/farm/crops.ts` (append `CropSystem`)
 - Test: `web/test/crops.test.ts`
 
@@ -1177,9 +1186,7 @@ export class CropSystem {
     this.release(tractor, t);
     const remaining = Math.max(0, this.wiltUntil - t);
     const dip =
-      remaining > 0
-        ? 1 - 0.22 * Math.min(1, remaining / 2) * Math.abs(Math.sin(remaining * 5))
-        : 1;
+      remaining > 0 ? 1 - 0.22 * Math.min(1, remaining / 2) * Math.abs(Math.sin(remaining * 5)) : 1;
     for (const kind of this.allKinds()) kind.update(t, dip);
     for (const glows of this.sunflowerGlows) {
       for (const glow of glows) {
@@ -1234,6 +1241,7 @@ git commit -m "feat(web): farm crop system with tractor-gated planting"
 Visual-only modules; verified by typecheck here and by eye in Task 12.
 
 **Files:**
+
 - Create: `web/src/themes/farm/field.ts`, `web/src/themes/farm/sky.ts`
 
 - [ ] **Step 1: Create `web/src/themes/farm/field.ts`**
@@ -1316,7 +1324,12 @@ export function createFarmSky(scene: THREE.Scene): FarmSky {
   const glowMap = glowTexture();
 
   const sun = new THREE.Sprite(
-    new THREE.SpriteMaterial({ map: glowMap, color: FARM.sun, transparent: true, depthWrite: false })
+    new THREE.SpriteMaterial({
+      map: glowMap,
+      color: FARM.sun,
+      transparent: true,
+      depthWrite: false,
+    })
   );
   sun.position.set(40, 55, -80);
   sun.scale.setScalar(30);
@@ -1381,6 +1394,7 @@ git commit -m "feat(web): farm field, barn, and daylight sky"
 ### Task 11: Chickens (mempool) and crows (reorg)
 
 **Files:**
+
 - Create: `web/src/themes/farm/chickens.ts`, `web/src/themes/farm/crows.ts`
 
 - [ ] **Step 1: Create `web/src/themes/farm/chickens.ts`**
@@ -1427,7 +1441,10 @@ export class Chickens {
   private readonly scale = new THREE.Vector3(1, 1, 1);
   private readonly euler = new THREE.Euler();
 
-  constructor(scene: THREE.Scene, private readonly max: number) {
+  constructor(
+    scene: THREE.Scene,
+    private readonly max: number
+  ) {
     this.mesh = new THREE.InstancedMesh(
       chickenGeometry(),
       new THREE.MeshStandardMaterial({ color: FARM.chicken, roughness: 0.8 }),
@@ -1489,11 +1506,7 @@ export class Chickens {
       }
       const peck = Math.max(0, Math.sin(t * 5 * hen.speed + hen.phase)) * 0.07;
       this.quaternion.setFromEuler(this.euler.set(0, Math.atan2(dx, dz) + Math.PI / 2, 0));
-      this.matrix.compose(
-        this.position.set(hen.x, -peck, hen.z),
-        this.quaternion,
-        this.scale
-      );
+      this.matrix.compose(this.position.set(hen.x, -peck, hen.z), this.quaternion, this.scale);
       this.mesh.setMatrixAt(i, this.matrix);
     }
     this.mesh.instanceMatrix.needsUpdate = true;
@@ -1521,7 +1534,10 @@ export class Crows {
   private readonly scale = new THREE.Vector3();
   private readonly offsets: Array<{ dz: number; dy: number; dphase: number }>;
 
-  constructor(scene: THREE.Scene, private readonly count: number) {
+  constructor(
+    scene: THREE.Scene,
+    private readonly count: number
+  ) {
     const wing = new THREE.ConeGeometry(0.18, 0.5, 3);
     wing.rotateX(Math.PI / 2); // point along −z, flat-ish silhouette
     wing.scale(1, 0.25, 1);
@@ -1587,6 +1603,7 @@ git commit -m "feat(web): farm chickens (mempool) and crows (reorg)"
 ### Task 12: Farm theme module, registration, legend swatches
 
 **Files:**
+
 - Create: `web/src/themes/farm/index.ts`
 - Modify: `web/src/themes/index.ts`, `web/src/style.css`, `web/test/themes.test.ts`
 
@@ -1801,6 +1818,7 @@ git commit -m "feat(web): farm visualization — tractor-planted serpentine crop
 ### Task 13: Docs + final verification
 
 **Files:**
+
 - Modify: `CLAUDE.md`
 
 - [ ] **Step 1: Update CLAUDE.md**

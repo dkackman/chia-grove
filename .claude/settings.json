@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(echo \"PID: $!\")",
+      "Bash(kill 42480)",
+      "Bash(git clean *)",
+      "Bash(git reset *)",
+      "Bash(git checkout *)",
+      "Bash(git merge *)",
+      "Bash(git worktree *)",
+      "Bash(git branch *)",
+      "Bash(/Users/don/.claude/plugins/cache/claude-plugins-official/superpowers/5.1.0/skills/brainstorming/scripts/stop-server.sh /Users/don/src/dkackman/chia-grove/.superpowers/brainstorm/23051-1781205253)",
+      "Bash(curl -s -o /dev/null -w \"page: %{http_code}\\\\n\" \"http://localhost:5173/?demo=1&theme=farm\")",
+      "Bash(curl -s \"http://localhost:5173/src/themes/farm/field.ts\")",
+      "Bash(kill %1)"
+    ]
+  }
+}
