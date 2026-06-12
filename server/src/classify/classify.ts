@@ -1,4 +1,4 @@
-import { Clvm, Constants, type CoinSpend } from "chia-wallet-sdk";
+import { Address, Clvm, Constants, type CoinSpend } from "chia-wallet-sdk";
 import type { GroveEvent, SproutEvent } from "@grove/shared";
 import type { CatRegistry } from "./cats.js";
 
@@ -69,6 +69,7 @@ function classifySpend(
         kind: "nft",
         mint,
         launcherId: hex(nft.nft.info.launcherId),
+        nftId: new Address(nft.nft.info.launcherId, "nft").encode(),
         ...(imageUrl ? { imageUrl } : {}),
       };
     }

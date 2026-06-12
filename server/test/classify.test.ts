@@ -191,6 +191,9 @@ test("nft mint flow yields nft sprout with mint flag and did sprout; launcher sp
   expect(transfers).toHaveLength(1);
   expect(transfers[0].launcherId).toBe(hex(nft.info.launcherId));
   for (const s of nftSprouts) expect(s.imageUrl).toBeUndefined(); // nil metadata
+  for (const s of nftSprouts) {
+    expect(s.nftId).toMatch(/^nft1[ac-hj-np-z02-9]{58}$/); // bech32m, 62 chars total
+  }
 
   expect(result.filter((s) => s.kind === "did").length).toBeGreaterThan(0);
   expect(result.filter((s) => s.kind === "xch").length).toBeGreaterThan(0);
