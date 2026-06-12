@@ -1,14 +1,7 @@
 import * as THREE from "three";
 import { COLORS } from "./palette.js";
 import { auroraTexture, glowTexture } from "../shared/textures.js";
-
-function safeBigInt(value: string): bigint {
-  try {
-    return BigInt(value);
-  } catch {
-    return 0n;
-  }
-}
+import { safeBigInt } from "../shared/util.js";
 
 export interface Sky {
   update(dt: number, t: number): void;
@@ -21,9 +14,13 @@ export function createSky(scene: THREE.Scene, reducedMotion = false): Sky {
   const glowMap = glowTexture();
   const METEOR_AXIS = new THREE.Vector3(1, 0, 0);
 
-  // starfield dome
+  // starfield dome — twinkle runs entirely on the GPU via a uTime uniform so
+  // there are no per-frame CPU writes or buffer uploads for 900 stars
   const starCount = 900;
   const positions = new Float32Array(starCount * 3);
+  const starPhase = new Float32Array(starCount);
+  const starSpeed = new Float32Array(starCount);
+  const baseStar = new THREE.Color(0xd6e8e2);
   for (let i = 0; i < starCount; i++) {
     const theta = Math.random() * Math.PI * 2;
     const phi = Math.acos(0.15 + Math.random() * 0.85); // bias upward
@@ -31,34 +28,41 @@ export function createSky(scene: THREE.Scene, reducedMotion = false): Sky {
     positions[i * 3] = radius * Math.sin(phi) * Math.cos(theta);
     positions[i * 3 + 1] = radius * Math.cos(phi);
     positions[i * 3 + 2] = radius * Math.sin(phi) * Math.sin(theta);
-  }
-  // per-star twinkle: animate vertex-color brightness (additive) with an
-  // individual phase + speed so the dome shimmers without a global flicker
-  const starColors = new Float32Array(starCount * 3);
-  const starPhase = new Float32Array(starCount);
-  const starTwinkleSpeed = new Float32Array(starCount);
-  const baseStar = new THREE.Color(0xd6e8e2);
-  for (let i = 0; i < starCount; i++) {
-    starColors[i * 3] = baseStar.r;
-    starColors[i * 3 + 1] = baseStar.g;
-    starColors[i * 3 + 2] = baseStar.b;
     starPhase[i] = Math.random() * Math.PI * 2;
-    starTwinkleSpeed[i] = 0.6 + Math.random() * 1.6;
+    starSpeed[i] = 0.6 + Math.random() * 1.6;
   }
   const starGeometry = new THREE.BufferGeometry();
   starGeometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-  starGeometry.setAttribute("color", new THREE.BufferAttribute(starColors, 3));
-  const stars = new THREE.Points(
-    starGeometry,
-    new THREE.PointsMaterial({
-      size: 1.5,
-      map: glowMap,
-      vertexColors: true,
-      transparent: true,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-    })
-  );
+  starGeometry.setAttribute("aPhase", new THREE.BufferAttribute(starPhase, 1));
+  starGeometry.setAttribute("aSpeed", new THREE.BufferAttribute(starSpeed, 1));
+
+  let starShader: { uniforms: Record<string, { value: number }> } | null = null;
+  const starMaterial = new THREE.PointsMaterial({
+    size: 1.5,
+    map: glowMap,
+    color: baseStar,
+    transparent: true,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+    fog: false, // stars are at the edge of the dome (r=180); meadow fog would erase them entirely
+  });
+  starMaterial.onBeforeCompile = (shader) => {
+    shader.uniforms.uTime = { value: 0 };
+    shader.vertexShader =
+      "attribute float aPhase;\nattribute float aSpeed;\nuniform float uTime;\nvarying float vTwinkle;\n" +
+      shader.vertexShader.replace(
+        "#include <color_vertex>",
+        "#include <color_vertex>\nvTwinkle = 0.7 + 0.3 * sin(uTime * aSpeed + aPhase);"
+      );
+    shader.fragmentShader =
+      "varying float vTwinkle;\n" +
+      shader.fragmentShader.replace(
+        "#include <color_fragment>",
+        "#include <color_fragment>\ndiffuseColor.rgb *= vTwinkle;"
+      );
+    starShader = shader as unknown as typeof starShader;
+  };
+  const stars = new THREE.Points(starGeometry, starMaterial);
   scene.add(stars);
 
   // moon
@@ -67,6 +71,7 @@ export function createSky(scene: THREE.Scene, reducedMotion = false): Sky {
     color: COLORS.moon,
     transparent: true,
     depthWrite: false,
+    fog: false,
   });
   const moon = new THREE.Sprite(moonMaterial);
   moon.position.set(-60, 58, -95);
@@ -86,6 +91,7 @@ export function createSky(scene: THREE.Scene, reducedMotion = false): Sky {
       opacity: 0,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
+      fog: false,
     })
   );
   aurora.position.set(0, 42, -160);
@@ -118,6 +124,7 @@ export function createSky(scene: THREE.Scene, reducedMotion = false): Sky {
       opacity: 0,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
+      fog: false,
     })
   );
   meteor.visible = false;
@@ -131,6 +138,7 @@ export function createSky(scene: THREE.Scene, reducedMotion = false): Sky {
       opacity: 0,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
+      fog: false,
     })
   );
   meteorHead.scale.setScalar(3);
@@ -195,15 +203,7 @@ export function createSky(scene: THREE.Scene, reducedMotion = false): Sky {
       moonLight.intensity = 0.15 + moonMaterial.opacity * 0.5;
 
       stars.rotation.y = t * 0.004;
-      if (!reducedMotion) {
-        for (let i = 0; i < starCount; i++) {
-          const tw = 0.7 + 0.3 * Math.sin(t * starTwinkleSpeed[i] + starPhase[i]);
-          starColors[i * 3] = baseStar.r * tw;
-          starColors[i * 3 + 1] = baseStar.g * tw;
-          starColors[i * 3 + 2] = baseStar.b * tw;
-        }
-        starGeometry.attributes.color.needsUpdate = true;
-      }
+      if (starShader) starShader.uniforms.uTime.value = reducedMotion ? 0 : t;
       updateMeteor(t);
     },
     pulse() {

@@ -1,7 +1,10 @@
 import * as THREE from "three";
 
-/** Soft radial glow dot, tintable via material color. */
+let _glow: THREE.CanvasTexture | undefined;
+
+/** Soft radial glow dot, tintable via material color. Shared singleton — one GPU upload. */
 export function glowTexture(): THREE.CanvasTexture {
+  if (_glow) return _glow;
   const size = 128;
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = size;
@@ -12,7 +15,7 @@ export function glowTexture(): THREE.CanvasTexture {
   gradient.addColorStop(1, "rgba(255,255,255,0)");
   ctx.fillStyle = gradient;
   ctx.fillRect(0, 0, size, size);
-  return new THREE.CanvasTexture(canvas);
+  return (_glow = new THREE.CanvasTexture(canvas));
 }
 
 /** Wide horizontal aurora band with vertical falloff. */

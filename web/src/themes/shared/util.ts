@@ -3,6 +3,14 @@ export interface XZ {
   z: number;
 }
 
+export function safeBigInt(value: string): bigint {
+  try {
+    return BigInt(value);
+  } catch {
+    return 0n;
+  }
+}
+
 /** Deterministic PRNG (mulberry32) so plant scatter is stable per coin. */
 export function mulberry32(seed: number): () => number {
   let a = seed >>> 0;

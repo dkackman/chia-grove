@@ -1,15 +1,7 @@
 import * as THREE from "three";
-import type { XZ } from "../shared/util.js";
+import { type XZ, safeBigInt } from "../shared/util.js";
 import { COLORS } from "./palette.js";
 import { glowTexture } from "../shared/textures.js";
-
-function safeBigInt(value: string): bigint {
-  try {
-    return BigInt(value);
-  } catch {
-    return 0n;
-  }
-}
 
 const MAX = 400;
 const DIVE_SECONDS = 2;
