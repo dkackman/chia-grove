@@ -237,7 +237,7 @@ export class CropSystem {
       }
       const index = crop.kinds[crop.variant].plant(crop.event, crop.x, crop.z, t, crop.pose);
       if (crop.glowOpacity !== undefined) {
-        const glow = this.sunflowerGlows[this.sunflower.indexOf(crop.kinds[crop.variant])][index];
+        const glow = this.sunflowerGlows[crop.variant][index];
         glow.position.set(crop.x, 0.95 * crop.pose.height, crop.z);
         glow.material.opacity = crop.glowOpacity;
         glow.scale.setScalar(crop.glowOpacity > 0.6 ? 2.4 : 1.6);
