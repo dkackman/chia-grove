@@ -66,6 +66,17 @@ export function showCard(event: SproutEvent): void {
   linkDiv.appendChild(a);
   card.appendChild(linkDiv);
 
+  if (event.nftId) {
+    const mgDiv = el("div");
+    const mg = document.createElement("a");
+    mg.href = `https://mintgarden.io/nfts/${event.nftId}`;
+    mg.target = "_blank";
+    mg.rel = "noopener";
+    mg.textContent = "view on mintgarden ↗";
+    mgDiv.appendChild(mg);
+    card.appendChild(mgDiv);
+  }
+
   card.classList.add("visible");
 }
 
