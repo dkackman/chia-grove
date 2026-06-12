@@ -15,6 +15,32 @@ function el(tag: string, cls?: string, text?: string): HTMLElement {
   return e;
 }
 
+const VIDEO_EXT = new Set([".mp4", ".webm", ".ogv", ".mov"]);
+const AUDIO_EXT = new Set([".mp3", ".wav", ".ogg", ".oga", ".flac", ".aac"]);
+
+function nftMediaEl(url: string): HTMLElement {
+  const ext = url.match(/\.[a-z0-9]+(?=[?#]|$)/i)?.[0]?.toLowerCase() ?? "";
+  if (VIDEO_EXT.has(ext)) {
+    const v = document.createElement("video");
+    v.src = url;
+    v.controls = true;
+    v.muted = true;
+    v.loop = true;
+    return v;
+  }
+  if (AUDIO_EXT.has(ext)) {
+    const a = document.createElement("audio");
+    a.src = url;
+    a.controls = true;
+    return a;
+  }
+  const img = document.createElement("img");
+  img.src = url;
+  img.alt = "NFT";
+  img.loading = "lazy";
+  return img;
+}
+
 export function showCard(event: SproutEvent): void {
   const card = document.getElementById("card") as HTMLDivElement;
   card.replaceChildren();
@@ -40,11 +66,7 @@ export function showCard(event: SproutEvent): void {
     img.className = "cat-icon";
     card.appendChild(img);
   } else if (event.imageUrl) {
-    const img = document.createElement("img");
-    img.src = event.imageUrl;
-    img.alt = "NFT";
-    img.loading = "lazy";
-    card.appendChild(img);
+    card.appendChild(nftMediaEl(event.imageUrl));
   }
 
   card.appendChild(el("div", undefined, `${mojosToXch(event.amount)} XCH · block ${event.height}`));

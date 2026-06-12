@@ -64,9 +64,16 @@ body {
   color: #eafff2;
 }
 
-#card img {
+#card img,
+#card video {
   width: 100%;
   border-radius: 6px;
+  margin: 8px 0;
+  display: block;
+}
+
+#card audio {
+  width: 100%;
   margin: 8px 0;
   display: block;
 }
