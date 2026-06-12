@@ -42,7 +42,7 @@ Hub + RingBuffer  (server/src/web/)
     ↓ WebSocket (JSON)
 GroveFeed  (web/src/net/feed.ts)
     ↓ GroveEvent dispatch
-grove.ts / flora.ts / fireflies.ts  (web/src/scene/)
+active Visualization  (web/src/themes/)
 ```
 
 New WebSocket clients receive a `Snapshot` of the last 500 events from `RingBuffer`, replayed over ~3 seconds by `GroveFeed.replay()`. After that, events stream live.
@@ -56,11 +56,16 @@ New WebSocket clients receive a `Snapshot` of the last 500 events from `RingBuff
 
 ### Web/scene internals
 
-- `grove.ts` owns the Three.js renderer, camera orbit, and event dispatch. It exposes setter hooks (`setSproutHandler`, `setAmbientHandler`, etc.) that `main.ts` wires to `FloraSystem` and `Fireflies`.
-- `FloraSystem` (`scene/flora.ts`) uses `THREE.InstancedMesh` for performance. Each kind (grass, mushroom, bloom, wisp) has 3 geometry variants and a fixed slot cap: grass 800, mushroom 140, bloom 40, wisp 80. Slots wrap (oldest overwritten).
-- `layout.ts` places blocks on a phyllotaxis (sunflower-seed) spiral. Within each block's cluster, `sproutOffset` uses `mulberry32` seeded from the coin id for deterministic, stable scatter.
-- `palette.ts` assigns persistent CAT colors by hashing the asset id into one of 12 bioluminescent hues.
-- `sky.ts` scales moonlight with netspace and pulses on new blocks.
+- The frontend supports multiple visualizations ("themes") behind the `Visualization` interface (`web/src/themes/types.ts`). The registry in `web/src/themes/index.ts` resolves the active theme from `?theme=` query param or `localStorage["grove.theme"]` (default: `grove`). Switching from the legend persists the choice and reloads; the WebSocket snapshot replay repopulates the new scene. Themes own their entire Three.js scene. Shared helpers (instancing, textures, CAT colors, amount scales, PRNG) live in `web/src/themes/shared/`.
+
+- **grove** (`web/src/themes/grove/`): bioluminescent night meadow.
+  - `grove.ts` owns the Three.js renderer, camera orbit, and event dispatch. It exposes setter hooks (`setSproutHandler`, `setAmbientHandler`, etc.) wired by the theme's `start()` to `FloraSystem` and `Fireflies`.
+  - `FloraSystem` (`themes/grove/flora.ts`) uses `THREE.InstancedMesh` for performance. Each kind (grass, mushroom, bloom, wisp) has 3 geometry variants and a fixed slot cap: grass 800, mushroom 140, bloom 40, wisp 80. Slots wrap (oldest overwritten).
+  - `layout.ts` places blocks on a phyllotaxis (sunflower-seed) spiral. Within each block's cluster, `sproutOffset` uses `mulberry32` seeded from the coin id for deterministic, stable scatter.
+  - `palette.ts` provides scene colors; CAT asset colors are hashed into one of 12 bioluminescent hues by `themes/shared/cat-color.ts`.
+  - `sky.ts` scales moonlight with netspace and pulses on new blocks.
+
+- **farm** (`web/src/themes/farm/`): daytime crop field. Each block is a row plowed by a tractor; crops sprout behind it (wheat=XCH, gourd=CAT, sunflower=NFT, scarecrow=DID). Chickens=mempool, sun brightness=netspace, crows=reorg.
 
 ### Event types (`shared/src/index.ts`)
 
