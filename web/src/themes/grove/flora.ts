@@ -152,7 +152,7 @@ export class FloraSystem {
 
     const mushroomMaterial = new THREE.MeshStandardMaterial({
       color: 0xffffff, // tinted per-instance from assetId
-      emissive: 0x10101a,
+      emissive: 0x242430,
       roughness: 0.6,
     });
     this.mushroom = mushroomGeometries().map(
@@ -241,7 +241,7 @@ export class FloraSystem {
     switch (event.kind) {
       case "xch": {
         const jitter = rand();
-        this.color.setHSL(0.33 + jitter * 0.09, 0.45 + rand() * 0.25, 0.26 + rand() * 0.16);
+        this.color.setHSL(0.33 + jitter * 0.09, 0.45 + rand() * 0.25, 0.34 + rand() * 0.18);
         pose.color = this.color;
         pose.height =
           xchHeight(event.amount) * GRASS_VARIANT_HEIGHT[variant] * (0.85 + rand() * 0.35);
@@ -251,7 +251,7 @@ export class FloraSystem {
       case "cat": {
         // hue keyed to the asset (colony identity); shade varies per coin
         const { h } = catColor(event.assetId ?? "0".repeat(64));
-        this.color.setHSL(h, 0.58 + rand() * 0.25, 0.42 + rand() * 0.18);
+        this.color.setHSL(h, 0.58 + rand() * 0.25, 0.5 + rand() * 0.2);
         pose.color = this.color;
         pose.height = 0.8 + rand() * 0.5;
         pose.width = catWidth(event.amount);
