@@ -65,7 +65,7 @@ New WebSocket clients receive a `Snapshot` of the last 500 events from `RingBuff
   - `palette.ts` provides scene colors; CAT asset colors are hashed into one of 12 bioluminescent hues by `themes/shared/cat-color.ts`.
   - `sky.ts` scales moonlight with netspace and pulses on new blocks.
 
-- **farm** (`web/src/themes/farm/`): daytime crop field. Each block is a row plowed by a tractor; crops sprout behind it (wheat=XCH, gourd=CAT, sunflower=NFT, scarecrow=DID). Chickens=mempool, sun brightness=netspace, crows=reorg.
+- **farm** (`web/src/themes/farm/`): daytime crop field with serpentine rows. Each block is the next row, plowed by a tractor in alternating directions; crops sprout behind it (wheat=XCH, gourd=CAT, sunflower=NFT, scarecrow=DID). Chickens=mempool, sun brightness=netspace, crows=reorg.
 
 ### Event types (`shared/src/index.ts`)
 
