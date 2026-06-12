@@ -210,6 +210,50 @@ body {
   box-shadow: 0 0 5px rgba(61, 220, 132, 0.5);
 }
 
+.sw-wheat {
+  width: 4px;
+  height: 13px;
+  border-radius: 2px;
+  background: linear-gradient(to top, #8a6a1f, #e8c95a);
+}
+
+.sw-gourd {
+  background: #e8853c;
+  box-shadow: 0 0 5px rgba(232, 133, 60, 0.7);
+}
+
+.sw-sunflower {
+  background: #ffc93c;
+  box-shadow: 0 0 7px rgba(255, 201, 60, 0.9);
+}
+
+.sw-scarecrow {
+  background: #a88a5c;
+}
+
+.sw-chicken {
+  width: 6px;
+  height: 6px;
+  margin: 0 2px;
+  background: #fff4e0;
+  box-shadow: 0 0 6px rgba(255, 244, 224, 0.9);
+}
+
+.sw-sun {
+  background: #ffe9a8;
+  box-shadow: 0 0 6px rgba(255, 233, 168, 0.8);
+}
+
+.sw-tractor {
+  background: #c94f35;
+  border-radius: 3px;
+}
+
+.sw-crow {
+  background: #23232c;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
 #console {
   position: fixed;
   bottom: 24px;

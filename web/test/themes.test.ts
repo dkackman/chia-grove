@@ -19,3 +19,9 @@ test("every theme has an id, label, and non-empty legend", () => {
     expect(theme.legend.length).toBeGreaterThan(0);
   }
 });
+
+test("farm theme is registered and resolvable", () => {
+  expect(THEMES.map((t) => t.id)).toContain("farm");
+  expect(resolveTheme("?theme=farm", null).id).toBe("farm");
+  expect(resolveTheme("", "farm").id).toBe("farm");
+});

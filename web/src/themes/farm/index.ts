@@ -1,0 +1,120 @@
+import * as THREE from "three";
+import type { Visualization } from "../types.js";
+import { glowTexture } from "../shared/textures.js";
+import { FIELD, rowZ } from "./layout.js";
+import { FARM } from "./palette.js";
+import { CropSystem } from "./crops.js";
+import { Tractor } from "./tractor.js";
+import { createField } from "./field.js";
+import { createFarmSky } from "./sky.js";
+import { Chickens } from "./chickens.js";
+import { Crows } from "./crows.js";
+
+export const farm: Visualization = {
+  id: "farm",
+  label: "farm",
+  legend: [
+    ["sw-wheat", "wheat — XCH spend (taller = larger)"],
+    ["sw-gourd", "gourd — CAT transfer (color = asset, plumper = larger)"],
+    ["sw-sunflower", "sunflower — NFT (blooms big on mint)"],
+    ["sw-scarecrow", "scarecrow — DID activity"],
+    ["sw-chicken", "chickens — mempool"],
+    ["sw-sun", "sunlight — netspace"],
+    ["sw-tractor", "tractor pass — new block"],
+    ["sw-crow", "crows — reorg"],
+  ],
+  start(canvas, feed) {
+    const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
+    renderer.setSize(innerWidth, innerHeight);
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(FARM.sky);
+    scene.fog = new THREE.FogExp2(FARM.haze, 0.007);
+
+    const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 500);
+    scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x3f5a33, 0.85));
+
+    const sky = createFarmSky(scene);
+    const field = createField(scene);
+    const crops = new CropSystem(scene, glowTexture());
+    const tractor = new Tractor(scene);
+    const chickens = new Chickens(scene, reducedMotion ? 40 : 120);
+    const crows = new Crows(scene, reducedMotion ? 10 : 24);
+
+    let blockIndex = 0;
+    let currentRow = 0;
+    let plantIndex = 0;
+    let clockT = 0;
+    const frameCallbacks: Array<() => void> = [];
+
+    feed.onEvent((event) => {
+      switch (event.type) {
+        case "block":
+          currentRow = blockIndex % FIELD.rows;
+          blockIndex += 1;
+          plantIndex = 0;
+          tractor.startRow(currentRow, clockT);
+          field.plow(currentRow);
+          chickens.chase(0, rowZ(currentRow), clockT);
+          break;
+        case "sprout":
+          crops.plant(event, currentRow, plantIndex);
+          plantIndex += 1;
+          break;
+        case "ambient":
+          sky.setNetspace(event.netspace);
+          chickens.setMempool(event.mempoolSize);
+          break;
+        case "reorg": {
+          // sweep the crows over the last ~6 plowed rows
+          const newest = rowZ(currentRow);
+          const oldest = rowZ(Math.max(0, currentRow - 5));
+          crows.fly(Math.min(newest, oldest), Math.max(newest, oldest), clockT);
+          crops.wilt(clockT);
+          break;
+        }
+      }
+    });
+    feed.onStatus((status) => sky.setSignalLost(status === "stale"));
+
+    const clock = new THREE.Clock();
+    function frame(): void {
+      requestAnimationFrame(frame);
+      const dt = Math.min(clock.getDelta(), 0.1);
+      const t = clock.elapsedTime;
+      clockT = t;
+
+      // drift along the field's near edge, looking across the rows at the barn
+      const x = reducedMotion ? 8 : Math.sin(t * 0.02) * 16;
+      const z = rowZ(0) + 14 + (reducedMotion ? 0 : Math.cos(t * 0.013) * 2);
+      camera.position.set(x, 11 + Math.sin(t * 0.05) * 0.6, z);
+      camera.lookAt(0, 1, -6);
+
+      sky.update(dt, t);
+      tractor.update(t);
+      crops.update(t, dt, tractor);
+      chickens.update(t, dt);
+      crows.update(t);
+      for (const fn of frameCallbacks) fn();
+      renderer.render(scene, camera);
+    }
+    frame();
+
+    addEventListener("resize", () => {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+
+    return {
+      camera,
+      onFrame: (fn) => frameCallbacks.push(fn),
+      pickables: () => crops.pickables(),
+      metaFor: (object, instanceId) => crops.metaFor(object, instanceId),
+      setHovered: (object, instanceId) => crops.setHovered(object, instanceId),
+    };
+  },
+};
