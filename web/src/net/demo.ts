@@ -17,6 +17,15 @@ const DEMO_CATS: Array<{ name: string; ticker: string } | undefined> = [
   undefined,
 ];
 
+const DEMO_NFT_IDS = [
+  "nft14w46h2at4w46h2at4w46h2at4w46h2at4w46h2at4w46h2at4w4skd8c6g",
+  "nft1ehxumnwdehxumnwdehxumnwdehxumnwdehxumnwdehxumnwdehxscu9kvc",
+  "nft1zgfpyysjzgfpyysjzgfpyysjzgfpyysjzgfpyysjzgfpyysjzgfq682z48",
+  "nft1xs6rgdp5xs6rgdp5xs6rgdp5xs6rgdp5xs6rgdp5xs6rgdp5xs6qwu3rh2",
+  "nft12et9v4jk2et9v4jk2et9v4jk2et9v4jk2et9v4jk2et9v4jk2etquh65s4",
+  "nft10pu8s7rc0pu8s7rc0pu8s7rc0pu8s7rc0pu8s7rc0pu8s7rc0puqpqmyv9",
+];
+
 function randomKind(): SproutKind {
   const roll = Math.random();
   if (roll < 0.85) return "xch";
@@ -46,6 +55,7 @@ function sprout(height: number): SproutEvent {
   }
   if (kind === "nft") {
     event.launcherId = randomHex(32);
+    event.nftId = DEMO_NFT_IDS[Math.floor(Math.random() * DEMO_NFT_IDS.length)];
     if (Math.random() < 0.25) event.mint = true;
   }
   return event;
