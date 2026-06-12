@@ -139,6 +139,22 @@ body {
   margin-top: 6px;
 }
 
+#legend-scene {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+#legend-scene select {
+  background: rgba(4, 17, 10, 0.9);
+  color: #eafff2;
+  border: 1px solid rgba(61, 220, 132, 0.35);
+  border-radius: 6px;
+  font: inherit;
+  padding: 1px 4px;
+}
+
 #legend li {
   display: flex;
   align-items: center;

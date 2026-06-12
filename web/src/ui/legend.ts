@@ -1,30 +1,40 @@
+import { switchTheme, THEMES } from "../themes/index.js";
+import type { Visualization } from "../themes/types.js";
+
 const COLLAPSED_KEY = "grove.legend.collapsed";
 
-const ITEMS: Array<[swatchClass: string, label: string]> = [
-  ["sw-grass", "grass — XCH spend (taller = larger)"],
-  ["sw-cat", "mushroom — CAT transfer (color = asset)"],
-  ["sw-nft", "bloom — NFT (bursts on mint)"],
-  ["sw-did", "wisp — DID activity"],
-  ["sw-firefly", "fireflies — mempool"],
-  ["sw-moon", "moonlight — netspace"],
-  ["sw-ripple", "ripple — new block"],
-];
-
-export function initLegend(): void {
+export function initLegend(active: Visualization): void {
   const legend = document.getElementById("legend") as HTMLDivElement;
 
   const header = document.createElement("button");
   header.id = "legend-toggle";
   header.type = "button";
 
-  const body = document.createElement("ul");
-  for (const [swatchClass, label] of ITEMS) {
+  const body = document.createElement("div");
+
+  const picker = document.createElement("label");
+  picker.id = "legend-scene";
+  picker.append("scene");
+  const select = document.createElement("select");
+  for (const theme of THEMES) {
+    const option = document.createElement("option");
+    option.value = theme.id;
+    option.textContent = theme.label;
+    option.selected = theme.id === active.id;
+    select.appendChild(option);
+  }
+  select.addEventListener("change", () => switchTheme(select.value));
+  picker.appendChild(select);
+
+  const list = document.createElement("ul");
+  for (const [swatchClass, label] of active.legend) {
     const item = document.createElement("li");
     const swatch = document.createElement("span");
     swatch.className = `sw ${swatchClass}`;
     item.append(swatch, label);
-    body.appendChild(item);
+    list.appendChild(item);
   }
+  body.append(picker, list);
 
   let collapsed = localStorage.getItem(COLLAPSED_KEY) === "1";
   const render = () => {

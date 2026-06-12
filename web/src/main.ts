@@ -8,7 +8,7 @@ const canvas = document.getElementById("grove") as HTMLCanvasElement;
 const status = document.getElementById("status") as HTMLDivElement;
 
 const theme = resolveTheme(location.search, localStorage.getItem(THEME_STORAGE_KEY));
-initLegend();
+initLegend(theme);
 const blockConsole = new BlockConsole(document.getElementById("console") as HTMLDivElement);
 
 const feed = new GroveFeed();
