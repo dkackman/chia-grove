@@ -30,3 +30,58 @@ export function auroraTexture(): THREE.CanvasTexture {
   ctx.fillRect(0, 0, 512, 128);
   return new THREE.CanvasTexture(canvas);
 }
+
+const hex = (c: number) => "#" + c.toString(16).padStart(6, "0");
+
+/**
+ * A base color flecked with soft lighter/darker blotches, for use as a ground
+ * `map` so a large flat disc reads as a varied surface instead of felt. Set the
+ * material color to white so the texture supplies the color.
+ */
+export function mottledTexture(base: number, light: number, dark: number): THREE.CanvasTexture {
+  const size = 256;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = hex(base);
+  ctx.fillRect(0, 0, size, size);
+  for (let i = 0; i < 120; i++) {
+    const r = 8 + Math.random() * 40;
+    const x = Math.random() * size;
+    const y = Math.random() * size;
+    const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
+    grad.addColorStop(0, Math.random() < 0.5 ? hex(light) : hex(dark));
+    grad.addColorStop(1, "transparent");
+    ctx.globalAlpha = 0.1 + Math.random() * 0.16;
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+/** Transparent texture with faint horizontal furrow lines; `lines` ≈ row count. */
+export function furrowTexture(lines: number): THREE.CanvasTexture {
+  const w = 8;
+  const h = 512;
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d")!;
+  ctx.strokeStyle = "rgba(58,72,38,0.65)";
+  ctx.lineWidth = 1.5;
+  for (let i = 0; i < lines; i++) {
+    const y = ((i + 0.5) / lines) * h;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(w, y);
+    ctx.stroke();
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}

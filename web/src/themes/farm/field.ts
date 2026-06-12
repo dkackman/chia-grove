@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { FIELD, rowZ } from "./layout.js";
 import { FARM } from "./palette.js";
-import { glowTexture } from "../shared/textures.js";
+import { furrowTexture, glowTexture, mottledTexture } from "../shared/textures.js";
 
 export interface Field {
   /** Reveal the soil strip for a row the first time the tractor plows it. */
@@ -383,13 +383,56 @@ function addHills(scene: THREE.Scene): void {
   );
 }
 
+/** A soft dark patch on the ground that seats a prop (a cheap fake shadow). */
+function blobShadow(
+  scene: THREE.Scene,
+  map: THREE.Texture,
+  x: number,
+  z: number,
+  w: number,
+  d: number,
+  opacity: number
+): void {
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(w, d),
+    new THREE.MeshBasicMaterial({
+      map,
+      color: 0x202a18,
+      transparent: true,
+      opacity,
+      depthWrite: false,
+    })
+  );
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.position.set(x, 0.03, z);
+  scene.add(mesh);
+}
+
 export function createField(scene: THREE.Scene, reducedMotion = false): Field {
   const turf = new THREE.Mesh(
     new THREE.CircleGeometry(140, 48),
-    new THREE.MeshStandardMaterial({ color: FARM.turf, roughness: 1 })
+    new THREE.MeshStandardMaterial({
+      map: mottledTexture(FARM.turf, 0x8fbf72, 0x5e8348),
+      roughness: 1,
+    })
   );
   turf.rotation.x = -Math.PI / 2;
   scene.add(turf);
+
+  // faint furrow lines give the field direction even before it's plowed; sits
+  // just above the turf and below the soil strips, which cover it once plowed
+  const furrows = new THREE.Mesh(
+    new THREE.PlaneGeometry(FIELD.rowLength + 2, FIELD.rows * FIELD.rowSpacing),
+    new THREE.MeshBasicMaterial({
+      map: furrowTexture(FIELD.rows),
+      transparent: true,
+      opacity: 0.22,
+      depthWrite: false,
+    })
+  );
+  furrows.rotation.x = -Math.PI / 2;
+  furrows.position.set(0, 0.012, 0);
+  scene.add(furrows);
 
   const stripGeometry = new THREE.PlaneGeometry(FIELD.rowLength + 1.4, FIELD.rowSpacing * 0.78);
   const stripMaterial = new THREE.MeshStandardMaterial({ color: FARM.soil, roughness: 1 });
@@ -410,6 +453,15 @@ export function createField(scene: THREE.Scene, reducedMotion = false): Field {
   addFence(scene);
   addTrees(scene);
   addHills(scene);
+
+  // soft ground shadows so the props don't read as floating on the turf
+  // (offset slightly toward the camera / away from the sun)
+  const shadowMap = glowTexture();
+  blobShadow(scene, shadowMap, barnX - 0.8, barnZ + 0.7, 10, 6.5, 0.34);
+  blobShadow(scene, shadowMap, barnX + 5.4 - 0.4, barnZ + 0.4, 3.9, 3.9, 0.32);
+  for (const [tx, tz, s] of TREES) {
+    blobShadow(scene, shadowMap, tx - 0.3 * s, tz + 0.25 * s, 2.6 * s, 2.6 * s, 0.3);
+  }
 
   // smoke curling up from the barn's stove pipe
   const updateSmoke = createSmoke(scene, barnX - 2, 6, barnZ + 0.7, reducedMotion);

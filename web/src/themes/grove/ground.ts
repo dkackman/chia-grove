@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { COLORS } from "./palette.js";
-import { glowTexture } from "../shared/textures.js";
+import { glowTexture, mottledTexture } from "../shared/textures.js";
 
 const RIPPLE_SECONDS = 3.5;
 const POOL = 6;
@@ -14,7 +14,10 @@ export interface Ground {
 export function createGround(scene: THREE.Scene, reducedMotion = false): Ground {
   const disc = new THREE.Mesh(
     new THREE.CircleGeometry(70, 64),
-    new THREE.MeshStandardMaterial({ color: COLORS.ground, roughness: 1 })
+    new THREE.MeshStandardMaterial({
+      map: mottledTexture(COLORS.ground, 0x183828, 0x081710),
+      roughness: 1,
+    })
   );
   disc.rotation.x = -Math.PI / 2;
   scene.add(disc);

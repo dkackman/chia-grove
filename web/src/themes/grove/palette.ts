@@ -1,7 +1,7 @@
 export const COLORS = {
   background: 0x020806,
   fog: 0x04110a,
-  ground: 0x07150c,
+  ground: 0x0e2015,
   grass: 0x2fae66,
   grassEmissive: 0x0c3a1f,
   bloom: 0xfff2c9,

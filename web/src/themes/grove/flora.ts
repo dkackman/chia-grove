@@ -26,7 +26,9 @@ interface Wisp {
 
 interface BloomGlow {
   sprite: THREE.Sprite;
-  /** settled glow level (mint starts hot at 0.9 and decays toward 0.55) */
+  /** a fainter flat pool of the same light on the ground, seating the bloom */
+  pool: THREE.Mesh;
+  /** settled glow level (mint starts hot, then decays toward the resting level) */
   base: number;
   /** per-instance phase so blooms breathe out of sync, not as one throb */
   phase: number;
@@ -181,7 +183,20 @@ export class FloraSystem {
           })
         );
         scene.add(sprite);
-        return { sprite, base: 0, phase: Math.random() * Math.PI * 2 };
+        const pool = new THREE.Mesh(
+          new THREE.PlaneGeometry(1, 1),
+          new THREE.MeshBasicMaterial({
+            map: glowMap,
+            color: COLORS.bloomEmissive,
+            transparent: true,
+            opacity: 0,
+            depthWrite: false,
+            blending: THREE.AdditiveBlending,
+          })
+        );
+        pool.rotation.x = -Math.PI / 2;
+        scene.add(pool);
+        return { sprite, pool, base: 0, phase: Math.random() * Math.PI * 2 };
       })
     );
 
@@ -253,9 +268,11 @@ export class FloraSystem {
         const index = this.bloom[variant].plant(event, x, z, t, pose);
         const glow = this.bloomGlows[variant][index];
         glow.sprite.position.set(x, 0.85 * pose.height, z);
-        glow.base = event.mint ? 0.9 : 0.55;
+        glow.base = event.mint ? 0.5 : 0.3;
         glow.sprite.material.opacity = glow.base;
-        glow.sprite.scale.setScalar(event.mint ? 2.6 : 1.7);
+        glow.sprite.scale.setScalar(event.mint ? 1.7 : 1.15);
+        glow.pool.position.set(x, 0.05, z);
+        glow.pool.scale.setScalar(event.mint ? 2.6 : 1.8);
         break;
       }
       case "did": {
@@ -288,9 +305,12 @@ export class FloraSystem {
       for (const g of glows) {
         if (g.base <= 0) continue;
         // mint blooms cool from their bright birth glow toward the resting level
-        if (g.base > 0.55) g.base = Math.max(0.55, g.base - dt * 0.12);
+        if (g.base > 0.3) g.base = Math.max(0.3, g.base - dt * 0.12);
         // gentle out-of-sync breathing on top of the settled level
-        g.sprite.material.opacity = g.base * (1 + breatheAmp * Math.sin(t * 0.7 + g.phase));
+        const breathe = 1 + breatheAmp * Math.sin(t * 0.7 + g.phase);
+        g.sprite.material.opacity = g.base * breathe;
+        // a fainter ground pool of the same light seats the bloom
+        (g.pool.material as THREE.MeshBasicMaterial).opacity = g.base * 0.5 * breathe;
       }
     }
     for (const wisp of this.wisps) {

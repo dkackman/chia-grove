@@ -2,6 +2,7 @@ import * as THREE from "three";
 import type { Visualization } from "../types.js";
 import { glowTexture } from "../shared/textures.js";
 import { Motes } from "../shared/motes.js";
+import { createPostFx } from "../shared/postfx.js";
 import { FIELD, rowZ } from "./layout.js";
 import { FARM } from "./palette.js";
 import { CropSystem } from "./crops.js";
@@ -33,10 +34,18 @@ export const farm: Visualization = {
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(FARM.sky);
-    scene.fog = new THREE.FogExp2(FARM.haze, 0.007);
+    scene.fog = new THREE.FogExp2(FARM.haze, 0.005);
 
     const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 500);
-    scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x3f5a33, 0.85));
+    scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x3f5a33, 0.72));
+
+    // no tone-map curve, so the bright daylight palette is preserved; a high
+    // threshold means only the sun and the brightest highlights bloom softly
+    const postfx = createPostFx(renderer, scene, camera, {
+      bloomStrength: 0.04,
+      bloomRadius: 0.35,
+      bloomThreshold: 0.85,
+    });
 
     const sky = createFarmSky(scene);
     const field = createField(scene, reducedMotion);
@@ -120,7 +129,7 @@ export const farm: Visualization = {
       crows.update(t);
       motes.update(t, dt);
       for (const fn of frameCallbacks) fn();
-      renderer.render(scene, camera);
+      postfx.render();
     }
     frame();
 
@@ -128,6 +137,7 @@ export const farm: Visualization = {
       camera.aspect = innerWidth / innerHeight;
       camera.updateProjectionMatrix();
       renderer.setSize(innerWidth, innerHeight);
+      postfx.setSize(innerWidth, innerHeight);
     });
 
     return {

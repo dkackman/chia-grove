@@ -6,9 +6,34 @@ import { createGround } from "./ground.js";
 import { blockPosition } from "./layout.js";
 import { COLORS } from "./palette.js";
 import { createSky } from "./sky.js";
+import { createPostFx } from "../shared/postfx.js";
 
 /** Spiral slots wrap so the grove never grows beyond the meadow. */
 const MAX_BLOCK_SLOTS = 300;
+
+/**
+ * Vertical night-sky gradient: a near-black zenith easing to a faint teal
+ * horizon glow, so the dark meadow reads as a silhouette against the sky
+ * instead of blending into a flat black void. (Background is not fogged, so
+ * the glow stays visible behind the fogged-out far ground.)
+ */
+function nightSkyGradient(): THREE.CanvasTexture {
+  const canvas = document.createElement("canvas");
+  canvas.width = 4;
+  canvas.height = 256;
+  const ctx = canvas.getContext("2d")!;
+  const g = ctx.createLinearGradient(0, 0, 0, 256);
+  g.addColorStop(0, "#03070d"); // zenith
+  g.addColorStop(0.25, "#0a2330");
+  g.addColorStop(0.4, "#1f5a70"); // horizon glow — sits where the tilted camera puts the horizon
+  g.addColorStop(0.58, "#0e2f3c");
+  g.addColorStop(1, "#071520");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 4, 256);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
 
 // NOTE: no explicit return-type annotation — the inferred type must include
 // the handler setters added via Object.assign (later tasks rely on them).
@@ -20,7 +45,7 @@ export function startGrove(canvas: HTMLCanvasElement, feed: GroveFeed) {
   renderer.setSize(innerWidth, innerHeight);
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(COLORS.background);
+  scene.background = nightSkyGradient();
   scene.fog = new THREE.FogExp2(COLORS.fog, 0.016);
 
   const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 500);
@@ -29,6 +54,16 @@ export function startGrove(canvas: HTMLCanvasElement, feed: GroveFeed) {
 
   const sky = createSky(scene, reducedMotion);
   const ground = createGround(scene, reducedMotion);
+
+  // bloom makes the bioluminescent emissives, moon, and fireflies truly glow;
+  // ACES rolls the bright additive highlights off instead of clipping to white
+  const postfx = createPostFx(renderer, scene, camera, {
+    toneMapping: THREE.ACESFilmicToneMapping,
+    exposure: 1.15,
+    bloomStrength: 0.1,
+    bloomRadius: 0.4,
+    bloomThreshold: 0.5,
+  });
 
   // wired up by later tasks (flora, fireflies):
   let onSprout = (_event: SproutEvent, _blockPos: XZ) => {};
@@ -83,7 +118,7 @@ export function startGrove(canvas: HTMLCanvasElement, feed: GroveFeed) {
     sky.update(dt, t);
     ground.update(dt);
     extraUpdate(dt, t);
-    renderer.render(scene, camera);
+    postfx.render();
   }
   frame();
 
@@ -91,6 +126,7 @@ export function startGrove(canvas: HTMLCanvasElement, feed: GroveFeed) {
     camera.aspect = innerWidth / innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(innerWidth, innerHeight);
+    postfx.setSize(innerWidth, innerHeight);
   });
 
   // hooks consumed by later tasks (kept on the handle object via closure setters)

@@ -24,6 +24,7 @@ export class Tractor {
   private readonly dust: Dust[];
   private nextDust = 0;
   private lastEmit = -Infinity;
+  private readonly shadow: THREE.Mesh;
 
   constructor(
     scene: THREE.Scene,
@@ -130,6 +131,21 @@ export class Tractor {
       scene.add(sprite);
       return { sprite, bornAt: -Infinity, x: 0, z: 0 };
     });
+
+    // soft blob shadow so the tractor sits on the soil instead of hovering
+    this.shadow = new THREE.Mesh(
+      new THREE.PlaneGeometry(2, 1.2),
+      new THREE.MeshBasicMaterial({
+        map: dustMap ?? null,
+        color: 0x1f2616,
+        transparent: true,
+        opacity: 0.28,
+        depthWrite: false,
+      })
+    );
+    this.shadow.rotation.x = -Math.PI / 2;
+    this.shadow.visible = false;
+    scene.add(this.shadow);
   }
 
   /** Begin plowing `row`. If a pass is still running it jumps — snapshot replay compresses. */
@@ -157,6 +173,8 @@ export class Tractor {
     this.group.position.set(this.plowX(t), 0.04 + Math.sin(t * 14) * 0.012, rowZ(this.row));
     this.group.rotation.y = this.direction === 1 ? 0 : Math.PI;
     for (const wheel of this.wheels) wheel.rotation.z = -this.direction * t * 6;
+    this.shadow.visible = true;
+    this.shadow.position.set(this.group.position.x, 0.03, rowZ(this.row));
     this.updateDust(t);
   }
 

@@ -37,7 +37,7 @@ export function createSky(scene: THREE.Scene, reducedMotion = false): Sky {
   const starColors = new Float32Array(starCount * 3);
   const starPhase = new Float32Array(starCount);
   const starTwinkleSpeed = new Float32Array(starCount);
-  const baseStar = new THREE.Color(0x9fb8aa);
+  const baseStar = new THREE.Color(0xd6e8e2);
   for (let i = 0; i < starCount; i++) {
     starColors[i * 3] = baseStar.r;
     starColors[i * 3 + 1] = baseStar.g;
@@ -51,7 +51,7 @@ export function createSky(scene: THREE.Scene, reducedMotion = false): Sky {
   const stars = new THREE.Points(
     starGeometry,
     new THREE.PointsMaterial({
-      size: 1.1,
+      size: 1.5,
       map: glowMap,
       vertexColors: true,
       transparent: true,
