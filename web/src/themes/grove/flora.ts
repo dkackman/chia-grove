@@ -24,6 +24,14 @@ interface Wisp {
   baseScale: number;
 }
 
+interface BloomGlow {
+  sprite: THREE.Sprite;
+  /** settled glow level (mint starts hot at 0.9 and decays toward 0.55) */
+  base: number;
+  /** per-instance phase so blooms breathe out of sync, not as one throb */
+  phase: number;
+}
+
 /** Tilt a grown-from-base geometry outward without lifting it off the ground. */
 function lean(geometry: THREE.BufferGeometry, angleZ: number, shiftX = 0): THREE.BufferGeometry {
   geometry.rotateZ(angleZ);
@@ -122,12 +130,15 @@ export class FloraSystem {
   private readonly mushroom: InstancedKind[];
   private readonly bloom: InstancedKind[];
   private readonly wisps: Wisp[];
-  private readonly bloomGlows: THREE.Sprite[][];
+  private readonly bloomGlows: BloomGlow[][];
   private nextWisp = 0;
   private gustUntil = 0;
   private readonly color = new THREE.Color();
 
-  constructor(scene: THREE.Scene) {
+  constructor(
+    scene: THREE.Scene,
+    private readonly reducedMotion = false
+  ) {
     const grassMaterial = new THREE.MeshStandardMaterial({
       color: COLORS.grass,
       emissive: COLORS.grassEmissive,
@@ -170,7 +181,7 @@ export class FloraSystem {
           })
         );
         scene.add(sprite);
-        return sprite;
+        return { sprite, base: 0, phase: Math.random() * Math.PI * 2 };
       })
     );
 
@@ -241,9 +252,10 @@ export class FloraSystem {
         pose.height = (event.mint ? 1.35 : 1) * (0.9 + rand() * 0.3);
         const index = this.bloom[variant].plant(event, x, z, t, pose);
         const glow = this.bloomGlows[variant][index];
-        glow.position.set(x, 0.85 * pose.height, z);
-        glow.material.opacity = event.mint ? 0.9 : 0.55;
-        glow.scale.setScalar(event.mint ? 2.6 : 1.7);
+        glow.sprite.position.set(x, 0.85 * pose.height, z);
+        glow.base = event.mint ? 0.9 : 0.55;
+        glow.sprite.material.opacity = glow.base;
+        glow.sprite.scale.setScalar(event.mint ? 2.6 : 1.7);
         break;
       }
       case "did": {
@@ -271,11 +283,14 @@ export class FloraSystem {
       kind.update(t, gustDip);
     }
 
+    const breatheAmp = this.reducedMotion ? 0 : 0.16;
     for (const glows of this.bloomGlows) {
-      for (const glow of glows) {
-        if (glow.material.opacity > 0.55) {
-          glow.material.opacity = Math.max(0.55, glow.material.opacity - dt * 0.12);
-        }
+      for (const g of glows) {
+        if (g.base <= 0) continue;
+        // mint blooms cool from their bright birth glow toward the resting level
+        if (g.base > 0.55) g.base = Math.max(0.55, g.base - dt * 0.12);
+        // gentle out-of-sync breathing on top of the settled level
+        g.sprite.material.opacity = g.base * (1 + breatheAmp * Math.sin(t * 0.7 + g.phase));
       }
     }
     for (const wisp of this.wisps) {

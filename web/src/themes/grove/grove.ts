@@ -27,8 +27,8 @@ export function startGrove(canvas: HTMLCanvasElement, feed: GroveFeed) {
 
   scene.add(new THREE.HemisphereLight(0x23402e, 0x050a06, 0.7));
 
-  const sky = createSky(scene);
-  const ground = createGround(scene);
+  const sky = createSky(scene, reducedMotion);
+  const ground = createGround(scene, reducedMotion);
 
   // wired up by later tasks (flora, fireflies):
   let onSprout = (_event: SproutEvent, _blockPos: XZ) => {};

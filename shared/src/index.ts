@@ -21,7 +21,7 @@ export interface SproutEvent {
   catTicker?: string; // CAT only, from Dexie registry
   catIconUrl?: string; // CAT only, from Dexie registry
   launcherId?: string; // NFT only, hex
-  nftId?: string;      // NFT only, bech32m launcher ID e.g. "nft1..."
+  nftId?: string; // NFT only, bech32m launcher ID e.g. "nft1..."
   imageUrl?: string; // NFT only, first http(s) data URI
 }
 

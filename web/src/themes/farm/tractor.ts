@@ -5,6 +5,15 @@ import { FARM } from "./palette.js";
 export const PASS_SECONDS = 10;
 /** Start/end just outside the field so crops at the row ends get a pass too. */
 const EDGE_X = FIELD.rowLength / 2 + 2;
+const DUST_LIFE = 1.6;
+const DUST_INTERVAL = 0.12;
+
+interface Dust {
+  sprite: THREE.Sprite;
+  bornAt: number;
+  x: number;
+  z: number;
+}
 
 export class Tractor {
   readonly group = new THREE.Group();
@@ -12,8 +21,15 @@ export class Tractor {
   private startedAt = -Infinity;
   private direction: 1 | -1 = 1;
   private readonly wheels: THREE.Mesh[] = [];
+  private readonly dust: Dust[];
+  private nextDust = 0;
+  private lastEmit = -Infinity;
 
-  constructor(scene: THREE.Scene) {
+  constructor(
+    scene: THREE.Scene,
+    private readonly reducedMotion = false,
+    dustMap?: THREE.Texture
+  ) {
     const bodyMaterial = new THREE.MeshStandardMaterial({ color: FARM.tractor, roughness: 0.6 });
     const darkMaterial = new THREE.MeshStandardMaterial({
       color: FARM.tractorDark,
@@ -97,6 +113,23 @@ export class Tractor {
     this.group.add(chassis, hood, grill, headlight, cabBase, cabGlass, cabRoof, pipe);
     this.group.visible = false;
     scene.add(this.group);
+
+    // soft dust kicked up behind the plow; texture is shared in (null in
+    // tests, which never render, keeping the constructor off the DOM)
+    this.dust = Array.from({ length: 14 }, () => {
+      const sprite = new THREE.Sprite(
+        new THREE.SpriteMaterial({
+          map: dustMap ?? null,
+          color: 0xb39c7a,
+          transparent: true,
+          opacity: 0,
+          depthWrite: false,
+        })
+      );
+      sprite.visible = false;
+      scene.add(sprite);
+      return { sprite, bornAt: -Infinity, x: 0, z: 0 };
+    });
   }
 
   /** Begin plowing `row`. If a pass is still running it jumps — snapshot replay compresses. */
@@ -124,5 +157,33 @@ export class Tractor {
     this.group.position.set(this.plowX(t), 0.04 + Math.sin(t * 14) * 0.012, rowZ(this.row));
     this.group.rotation.y = this.direction === 1 ? 0 : Math.PI;
     for (const wheel of this.wheels) wheel.rotation.z = -this.direction * t * 6;
+    this.updateDust(t);
+  }
+
+  private updateDust(t: number): void {
+    const progress = (t - this.startedAt) / PASS_SECONDS;
+    // emit only while the tractor is actually crossing the row (not parked at
+    // either edge), just behind the plow
+    if (!this.reducedMotion && progress > 0 && progress < 1 && t - this.lastEmit > DUST_INTERVAL) {
+      const d = this.dust[this.nextDust];
+      this.nextDust = (this.nextDust + 1) % this.dust.length;
+      d.bornAt = t;
+      d.x = this.group.position.x - this.direction * 0.85 + (Math.random() - 0.5) * 0.2;
+      d.z = rowZ(this.row) + (Math.random() - 0.5) * 0.4;
+      d.sprite.visible = true;
+      this.lastEmit = t;
+    }
+    for (const d of this.dust) {
+      if (d.bornAt === -Infinity) continue;
+      const age = (t - d.bornAt) / DUST_LIFE;
+      if (age >= 1) {
+        d.sprite.visible = false;
+        d.bornAt = -Infinity;
+        continue;
+      }
+      d.sprite.position.set(d.x, 0.15 + age * 0.5, d.z);
+      d.sprite.scale.setScalar(0.4 + age * 0.9);
+      d.sprite.material.opacity = Math.sin(age * Math.PI) * 0.5;
+    }
   }
 }

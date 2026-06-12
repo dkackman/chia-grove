@@ -12,13 +12,13 @@
 
 ## File Map
 
-| File | Change |
-|------|--------|
-| `shared/src/index.ts` | Add `nftId?: string` to `SproutEvent` |
+| File                              | Change                                                        |
+| --------------------------------- | ------------------------------------------------------------- |
+| `shared/src/index.ts`             | Add `nftId?: string` to `SproutEvent`                         |
 | `server/src/classify/classify.ts` | Import `Address`; encode `launcherId` → `nftId` in NFT branch |
-| `server/test/classify.test.ts` | Assert `nftId` present and valid on NFT sprouts |
-| `web/src/net/demo.ts` | Set `nftId` on synthetic NFT events from a stable pool |
-| `web/src/ui/detail-card.ts` | Render MintGarden link when `event.nftId` is set |
+| `server/test/classify.test.ts`    | Assert `nftId` present and valid on NFT sprouts               |
+| `web/src/net/demo.ts`             | Set `nftId` on synthetic NFT events from a stable pool        |
+| `web/src/ui/detail-card.ts`       | Render MintGarden link when `event.nftId` is set              |
 
 ---
 
@@ -182,27 +182,27 @@ if (event.nftId) {
 The completed `showCard` function bottom should look like:
 
 ```ts
-  const linkDiv = el("div");
-  const a = document.createElement("a");
-  a.href = `https://www.spacescan.io/coin/0x${event.coinId}`;
-  a.target = "_blank";
-  a.rel = "noopener";
-  a.textContent = "view on spacescan ↗";
-  linkDiv.appendChild(a);
-  card.appendChild(linkDiv);
+const linkDiv = el("div");
+const a = document.createElement("a");
+a.href = `https://www.spacescan.io/coin/0x${event.coinId}`;
+a.target = "_blank";
+a.rel = "noopener";
+a.textContent = "view on spacescan ↗";
+linkDiv.appendChild(a);
+card.appendChild(linkDiv);
 
-  if (event.nftId) {
-    const mgDiv = el("div");
-    const mg = document.createElement("a");
-    mg.href = `https://mintgarden.io/nfts/${event.nftId}`;
-    mg.target = "_blank";
-    mg.rel = "noopener";
-    mg.textContent = "view on mintgarden ↗";
-    mgDiv.appendChild(mg);
-    card.appendChild(mgDiv);
-  }
+if (event.nftId) {
+  const mgDiv = el("div");
+  const mg = document.createElement("a");
+  mg.href = `https://mintgarden.io/nfts/${event.nftId}`;
+  mg.target = "_blank";
+  mg.rel = "noopener";
+  mg.textContent = "view on mintgarden ↗";
+  mgDiv.appendChild(mg);
+  card.appendChild(mgDiv);
+}
 
-  card.classList.add("visible");
+card.classList.add("visible");
 ```
 
 - [ ] **Step 2: Run typecheck**

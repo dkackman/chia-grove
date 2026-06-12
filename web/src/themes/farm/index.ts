@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import type { Visualization } from "../types.js";
 import { glowTexture } from "../shared/textures.js";
+import { Motes } from "../shared/motes.js";
 import { FIELD, rowZ } from "./layout.js";
 import { FARM } from "./palette.js";
 import { CropSystem } from "./crops.js";
@@ -38,11 +39,29 @@ export const farm: Visualization = {
     scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x3f5a33, 0.85));
 
     const sky = createFarmSky(scene);
-    const field = createField(scene);
-    const crops = new CropSystem(scene, glowTexture());
-    const tractor = new Tractor(scene);
+    const field = createField(scene, reducedMotion);
+    const glow = glowTexture();
+    const crops = new CropSystem(scene, glow);
+    const tractor = new Tractor(scene, reducedMotion, glow);
     const chickens = new Chickens(scene, reducedMotion ? 40 : 120);
     const crows = new Crows(scene, reducedMotion ? 10 : 24);
+    // pollen drifting in the sun, centred over the rows — atmosphere only
+    const motes = new Motes(scene, {
+      count: reducedMotion ? 35 : 100,
+      color: 0xfff0c0,
+      size: 0.2,
+      opacity: 0.3,
+      radius: 26,
+      centerZ: -2,
+      minY: 0.6,
+      maxY: 9,
+      windX: 1,
+      windZ: 0.6,
+      windSpeed: 0.6,
+      gust: 0.45,
+      rise: 0.12,
+      motion: reducedMotion ? 0.12 : 1,
+    });
 
     let blockIndex = 0;
     let currentRow = 0;
@@ -94,10 +113,12 @@ export const farm: Visualization = {
       camera.lookAt(0, 1, -6);
 
       sky.update(dt, t);
+      field.update(t);
       tractor.update(t);
       crops.update(t, dt, tractor);
       chickens.update(t, dt);
       crows.update(t);
+      motes.update(t, dt);
       for (const fn of frameCallbacks) fn();
       renderer.render(scene, camera);
     }

@@ -51,6 +51,28 @@ export function createFarmSky(scene: THREE.Scene): FarmSky {
     return cloud;
   });
 
+  // soft cloud shadows creeping across the field. Not a literal projection of
+  // the cloud sprites (those sit far back on the horizon) — just dark patches
+  // that drift with the same wind, adding gentle dynamism where the crops are.
+  const shadows = Array.from({ length: 4 }, (_, i) => {
+    const mesh = new THREE.Mesh(
+      new THREE.PlaneGeometry(1, 1),
+      new THREE.MeshBasicMaterial({
+        map: glowMap,
+        color: 0x3f5a30, // a darker turf green, so the patch reads as shade
+        transparent: true,
+        opacity: 0.13,
+        depthWrite: false,
+      })
+    );
+    mesh.rotation.x = -Math.PI / 2;
+    const w = 20 + i * 4;
+    mesh.scale.set(w, w * 0.7, 1);
+    mesh.position.set(-50 + i * 34, 0.04, -8 + (i % 2) * 12);
+    scene.add(mesh);
+    return mesh;
+  });
+
   let sunTarget = 1.0;
   let signalLost = false;
 
@@ -62,6 +84,10 @@ export function createFarmSky(scene: THREE.Scene): FarmSky {
       for (const cloud of clouds) {
         cloud.position.x += dt * 1.2;
         if (cloud.position.x > 140) cloud.position.x = -140;
+      }
+      for (const shadow of shadows) {
+        shadow.position.x += dt * 0.9;
+        if (shadow.position.x > 60) shadow.position.x = -60;
       }
     },
     setNetspace(bytes) {
