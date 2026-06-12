@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import type { SproutEvent } from "@grove/shared";
-import type { FloraSystem } from "../themes/grove/flora.js";
+import type { VisualizationHandle } from "../themes/types.js";
 import { hideCard, showCard } from "./detail-card.js";
 
 interface Hit {
@@ -9,21 +9,16 @@ interface Hit {
   meta: SproutEvent;
 }
 
-export function attachPicker(
-  canvas: HTMLCanvasElement,
-  camera: THREE.PerspectiveCamera,
-  flora: FloraSystem,
-  onFrame: (fn: () => void) => void
-): void {
+export function attachPicker(canvas: HTMLCanvasElement, viz: VisualizationHandle): void {
   const raycaster = new THREE.Raycaster();
   const pointer = new THREE.Vector2();
 
   function intersect(eventX: number, eventY: number): Hit | null {
     pointer.set((eventX / innerWidth) * 2 - 1, -(eventY / innerHeight) * 2 + 1);
-    raycaster.setFromCamera(pointer, camera);
-    const hits = raycaster.intersectObjects(flora.pickables(), false);
+    raycaster.setFromCamera(pointer, viz.camera);
+    const hits = raycaster.intersectObjects(viz.pickables(), false);
     for (const hit of hits) {
-      const meta = flora.metaFor(hit.object, hit.instanceId);
+      const meta = viz.metaFor(hit.object, hit.instanceId);
       if (meta) return { object: hit.object, instanceId: hit.instanceId, meta };
     }
     return null;
@@ -70,7 +65,7 @@ export function attachPicker(
     pendingY = event.clientY;
   });
 
-  onFrame(() => {
+  viz.onFrame(() => {
     if (pendingX < 0) return;
     const hit = intersect(pendingX, pendingY);
     pendingX = -1;
@@ -79,7 +74,7 @@ export function attachPicker(
     if (coinId === hoveredCoinId) return;
     hoveredCoinId = coinId;
 
-    flora.setHovered(hit?.object ?? null, hit?.instanceId);
+    viz.setHovered(hit?.object ?? null, hit?.instanceId);
     canvas.style.cursor = hit ? "pointer" : "default";
     if (!pinned && !insideCard) {
       clearCardTimers();
