@@ -39,7 +39,16 @@ export function initLegend(active: Visualization): void {
   let collapsed = localStorage.getItem(COLLAPSED_KEY) === "1";
   const render = () => {
     body.hidden = collapsed;
-    header.textContent = collapsed ? "ⓘ" : "chia grove ✕";
+    if (collapsed) {
+      header.textContent = "ⓘ";
+    } else {
+      // title left, ✕ pushed to the right edge (the button is a flex row)
+      const title = document.createElement("span");
+      title.textContent = "chia grove";
+      const close = document.createElement("span");
+      close.textContent = "✕";
+      header.replaceChildren(title, close);
+    }
     legend.classList.toggle("collapsed", collapsed);
   };
   header.addEventListener("click", () => {

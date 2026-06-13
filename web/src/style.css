@@ -132,7 +132,10 @@ body {
 }
 
 #legend-toggle {
-  display: block;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
   width: 100%;
   background: none;
   border: none;
