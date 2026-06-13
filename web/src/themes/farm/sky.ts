@@ -41,12 +41,15 @@ export function createFarmSky(scene: THREE.Scene): FarmSky {
         map: glowMap,
         color: 0xffffff,
         transparent: true,
-        opacity: 0.4,
+        opacity: 0.62,
         depthWrite: false,
+        // distant atmosphere: keep the haze from washing them into the sky
+        // (matches the grove sky elements, which also opt out of fog)
+        fog: false,
       })
     );
-    cloud.position.set(-120 + i * 45, 38 + (i % 3) * 7, -110 - (i % 2) * 25);
-    cloud.scale.set(34, 12, 1);
+    cloud.position.set(-120 + i * 45, 31 + (i % 3) * 6, -110 - (i % 2) * 25);
+    cloud.scale.set(44, 11, 1);
     scene.add(cloud);
     return cloud;
   });
@@ -59,9 +62,9 @@ export function createFarmSky(scene: THREE.Scene): FarmSky {
       new THREE.PlaneGeometry(1, 1),
       new THREE.MeshBasicMaterial({
         map: glowMap,
-        color: 0x3f5a30, // a darker turf green, so the patch reads as shade
+        color: 0x33502a, // a darker turf green, so the patch reads as shade
         transparent: true,
-        opacity: 0.13,
+        opacity: 0.34,
         depthWrite: false,
       })
     );

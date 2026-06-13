@@ -152,9 +152,21 @@ export class FloraSystem {
 
     const mushroomMaterial = new THREE.MeshStandardMaterial({
       color: 0xffffff, // tinted per-instance from assetId
-      emissive: 0x242430,
+      // grey glow strength; multiplied by the per-instance color in the shader
+      // below so each mushroom self-illuminates in its own CAT hue
+      emissive: 0x4d4d4d,
       roughness: 0.6,
     });
+    // The CAT hue lives in instanceColor (-> vColor). three.js already tints the
+    // diffuse by it, but in the dark meadow only the emissive is really visible,
+    // and a single global emissive flattens every mushroom to one colour. Route
+    // vColor into the emissive too so the colony hues survive the night lighting.
+    mushroomMaterial.onBeforeCompile = (shader) => {
+      shader.fragmentShader = shader.fragmentShader.replace(
+        "#include <emissivemap_fragment>",
+        "#include <emissivemap_fragment>\n\ttotalEmissiveRadiance *= vColor.rgb;"
+      );
+    };
     this.mushroom = mushroomGeometries().map(
       (geometry) => new InstancedKind(scene, geometry, mushroomMaterial, CAPS.mushroom, 0.022)
     );

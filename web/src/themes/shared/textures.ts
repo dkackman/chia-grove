@@ -41,7 +41,12 @@ const hex = (c: number) => "#" + c.toString(16).padStart(6, "0");
  * `map` so a large flat disc reads as a varied surface instead of felt. Set the
  * material color to white so the texture supplies the color.
  */
-export function mottledTexture(base: number, light: number, dark: number): THREE.CanvasTexture {
+export function mottledTexture(
+  base: number,
+  light: number,
+  dark: number,
+  strength = 1
+): THREE.CanvasTexture {
   const size = 256;
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = size;
@@ -55,7 +60,7 @@ export function mottledTexture(base: number, light: number, dark: number): THREE
     const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
     grad.addColorStop(0, Math.random() < 0.5 ? hex(light) : hex(dark));
     grad.addColorStop(1, "transparent");
-    ctx.globalAlpha = 0.1 + Math.random() * 0.16;
+    ctx.globalAlpha = Math.min(1, (0.1 + Math.random() * 0.16) * strength);
     ctx.fillStyle = grad;
     ctx.beginPath();
     ctx.arc(x, y, r, 0, Math.PI * 2);

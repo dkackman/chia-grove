@@ -12,10 +12,18 @@ export interface Ground {
 }
 
 export function createGround(scene: THREE.Scene, reducedMotion = false): Ground {
+  // One mottled texture drives both the diffuse map and the emissive map: under
+  // the meadow's near-black lighting a lit-only ground crushes to flat grey, so
+  // the brighter blotches also self-illuminate (faintly, below the bloom
+  // threshold) and read as bioluminescent patches on the dark floor.
+  const mottle = mottledTexture(COLORS.ground, 0x256b46, 0x05100a, 2.0);
   const disc = new THREE.Mesh(
     new THREE.CircleGeometry(70, 64),
     new THREE.MeshStandardMaterial({
-      map: mottledTexture(COLORS.ground, 0x183828, 0x081710),
+      map: mottle,
+      emissive: 0xffffff,
+      emissiveMap: mottle,
+      emissiveIntensity: 0.32,
       roughness: 1,
     })
   );
@@ -30,9 +38,9 @@ export function createGround(scene: THREE.Scene, reducedMotion = false): Ground 
       new THREE.PlaneGeometry(1, 1),
       new THREE.MeshBasicMaterial({
         map: mistMap,
-        color: 0x1f5a3a,
+        color: 0x2f8a55,
         transparent: true,
-        opacity: 0.06,
+        opacity: 0.16,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
       })
