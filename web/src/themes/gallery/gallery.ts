@@ -12,12 +12,14 @@ import { SpendDust } from "./dust.js";
 import { netspaceLight } from "./ambience.js";
 import { shouldHang } from "./select.js";
 import { loadArtTexture } from "./media.js";
-import { framePiece, panEye } from "./camera.js";
+import { framePiece } from "./camera.js";
 
 const FOV = 45;
-const REST_Y = 2.6;
-const REST_Z = 9;
-const VIEW_BACK = 6; // keep the camera a little behind the newest piece while panning
+const REST_Y = 4.2; // vertical center of the 3-row grid
+const REST_Z = 12; // pulled back so ~10–15 pieces are in frame at once
+const VIEW_AHEAD = 5; // keep the newest column right-of-center while auto-following
+const IDLE_RESUME_S = 4; // resume auto-follow this long after the last manual pan
+const PAN_LEFT_LIMIT = -2; // how far left of the first column the view may pan
 
 export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): VisualizationHandle {
   const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -57,8 +59,20 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
   let lightTarget = 0.9;
   let breath = 0;
   const panTarget = new THREE.Vector3(0, REST_Y, REST_Z);
-  const lookTarget = new THREE.Vector3(0, REST_Y - 0.4, WALL.z);
+  const lookTarget = new THREE.Vector3(0, REST_Y, WALL.z);
   const tmpLook = new THREE.Vector3();
+
+  // horizontal browsing: the camera auto-follows the newest column, but a drag or
+  // ←/→ takes manual control (manualX) until IDLE_RESUME_S of quiet, after which it
+  // eases back to "live". The camera's own lerp is the single smoother.
+  let manualX = 0;
+  let manualUntil = 0;
+  let nowT = 0; // latest frame time, so input handlers share the render clock
+
+  const clampPan = (x: number): number =>
+    Math.max(PAN_LEFT_LIMIT, Math.min(pieces.newestX(), x));
+  const worldPerPixel = (): number =>
+    (2 * (REST_Z - WALL.z) * Math.tan((FOV * Math.PI) / 180 / 2) * camera.aspect) / innerWidth;
 
   // launchers whose art is mid-load — guards the async window so a burst of
   // events for the same brand-new NFT doesn't hang duplicate frames
@@ -135,18 +149,57 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
     raycaster.setFromCamera(pointer, camera);
     return raycaster.intersectObjects(pieces.pickables(), false)[0]?.object ?? null;
   }
+  // a pointer drag pans the wall; a tap (no real movement) focuses/unfocuses
+  const DRAG_THRESHOLD = 6; // px before a press counts as a pan, not a tap
+  let downX = 0;
+  let downY = 0;
+  let lastX = 0;
+  let dragging = false;
+
+  canvas.addEventListener("pointerdown", (e) => {
+    downX = lastX = e.clientX;
+    downY = e.clientY;
+    dragging = false;
+    manualX = camera.position.x; // seed manual control from where the view is now
+    canvas.setPointerCapture?.(e.pointerId);
+  });
   canvas.addEventListener("pointermove", (e) => {
+    if (e.buttons & 1) {
+      const dx = e.clientX - lastX;
+      lastX = e.clientX;
+      if (!dragging && Math.abs(e.clientX - downX) + Math.abs(e.clientY - downY) > DRAG_THRESHOLD) {
+        dragging = true;
+      }
+      if (dragging) {
+        manualX = clampPan(manualX - dx * worldPerPixel());
+        manualUntil = nowT + IDLE_RESUME_S;
+        canvas.style.cursor = "grabbing";
+      }
+      return;
+    }
     const hit = pick(e.clientX, e.clientY);
     pieces.setHovered(hit);
     canvas.style.cursor = hit ? "pointer" : "default";
   });
-  canvas.addEventListener("click", (e) => {
+  canvas.addEventListener("pointerup", (e) => {
+    canvas.releasePointerCapture?.(e.pointerId);
+    if (dragging) {
+      dragging = false;
+      return; // a pan, not a tap
+    }
     const hit = pick(e.clientX, e.clientY);
     if (hit) focus(hit);
     else unfocus();
   });
   addEventListener("keydown", (e) => {
-    if (e.key === "Escape") unfocus();
+    if (e.key === "Escape") {
+      unfocus();
+    } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+      const from = nowT < manualUntil ? manualX : camera.position.x;
+      manualX = clampPan(from + (e.key === "ArrowLeft" ? -1 : 1) * WALL.colStep * 2);
+      manualUntil = nowT + IDLE_RESUME_S;
+      e.preventDefault();
+    }
   });
 
   const frameCallbacks: Array<() => void> = [];
@@ -155,6 +208,7 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
     requestAnimationFrame(frame);
     const dt = Math.min(clock.getDelta(), 0.1);
     const t = clock.elapsedTime;
+    nowT = t;
 
     pieces.update(t, dt);
     dust.setFocused(focused !== null);
@@ -173,15 +227,21 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
     spot.intensity += (litTarget - spot.intensity) * Math.min(dt * 2, 1) + breath * dt * 2;
     fill.intensity += (0.4 + litTarget * 0.2 - fill.intensity) * Math.min(dt * 2, 1);
 
+    let ease: number;
     if (focused) {
       panTarget.copy(focused.eye);
       lookTarget.copy(focused.target);
+      ease = reducedMotion ? 1 : Math.min(dt * 1.6, 1);
     } else {
-      const newestX = pieces.newestX();
-      panTarget.copy(panEye(reducedMotion ? newestX : newestX - VIEW_BACK, REST_Y, REST_Z));
-      lookTarget.set(newestX, REST_Y - 0.4, WALL.z);
+      const manual = nowT < manualUntil;
+      // auto target keeps the newest column right-of-center; a slow ease means a
+      // mint burst fills the visible area instead of whipping past, while manual
+      // panning eases quickly so a drag feels responsive
+      const targetX = manual ? manualX : pieces.newestX() - VIEW_AHEAD;
+      panTarget.set(targetX, REST_Y, REST_Z);
+      lookTarget.set(targetX, REST_Y, WALL.z);
+      ease = reducedMotion ? 1 : Math.min(dt * (manual ? 6 : 0.9), 1);
     }
-    const ease = reducedMotion ? 1 : Math.min(dt * 1.6, 1);
     camera.position.lerp(panTarget, ease);
     tmpLook.lerp(lookTarget, ease);
     camera.lookAt(tmpLook);

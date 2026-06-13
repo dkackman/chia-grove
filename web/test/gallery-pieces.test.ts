@@ -48,11 +48,11 @@ test("removeRecent drops pieces at or above the fork height", () => {
   expect(pieces.count()).toBe(1);
 });
 
-test("newestX advances rightward as pieces are added", () => {
+test("newestX advances to new columns as pieces fill", () => {
   const pieces = new Pieces(new THREE.Scene(), 28);
   pieces.add(mint(id(1)), new THREE.Texture());
   const first = pieces.newestX();
-  pieces.add(mint(id(2)), new THREE.Texture());
+  for (let i = 2; i <= 6; i++) pieces.add(mint(id(i)), new THREE.Texture()); // into later columns
   expect(pieces.newestX()).toBeGreaterThan(first);
 });
 

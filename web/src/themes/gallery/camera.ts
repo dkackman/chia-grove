@@ -20,8 +20,3 @@ export function framePiece(
   const dist = (height * margin) / (2 * Math.tan(fov / 2));
   return { eye: new THREE.Vector3(center.x, center.y, center.z + dist), target: center.clone() };
 }
-
-/** Resting camera pose while panning: centered on the newest piece's x. */
-export function panEye(newestX: number, restY: number, restZ: number): THREE.Vector3 {
-  return new THREE.Vector3(newestX, restY, restZ);
-}

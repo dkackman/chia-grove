@@ -1,17 +1,22 @@
 import { expect, test } from "vitest";
 import { WALL, hangSlot, frameSize } from "../src/themes/gallery/layout.js";
 
-test("pieces advance rightward by a fixed step", () => {
-  expect(hangSlot(1).x - hangSlot(0).x).toBeCloseTo(WALL.step);
-  expect(hangSlot(5).x).toBeGreaterThan(hangSlot(4).x);
+test("pieces stack into columns of WALL.rows, advancing right per column", () => {
+  // first column (indices 0..rows-1) shares an x band, one new column to the right
+  const col0 = Array.from({ length: WALL.rows }, (_, i) => hangSlot(i).x);
+  expect(Math.max(...col0) - Math.min(...col0)).toBeLessThanOrEqual(WALL.xJitter + 1e-9);
+  const gap = hangSlot(WALL.rows).x - hangSlot(0).x; // first piece of the next column
+  expect(gap).toBeGreaterThan(WALL.colStep - WALL.xJitter);
+  expect(gap).toBeLessThan(WALL.colStep + WALL.xJitter);
+  expect(hangSlot(30).x).toBeGreaterThan(hangSlot(3).x); // columns advance monotonically
 });
 
-test("slots alternate between two salon bands and stay on the wall plane", () => {
-  expect(hangSlot(0).y).toBeGreaterThan(hangSlot(1).y); // even = high band, odd = low band
-  expect(hangSlot(0).z).toBe(WALL.z);
-  for (let i = 0; i < 20; i++) {
+test("a column spans the rows vertically and stays on the wall plane", () => {
+  const ys = Array.from({ length: WALL.rows }, (_, i) => hangSlot(i).y).sort((a, b) => a - b);
+  expect(ys[ys.length - 1] - ys[0]).toBeGreaterThan(WALL.rowGap); // at least one row gap
+  for (let i = 0; i < 30; i++) {
     expect(hangSlot(i).y).toBeGreaterThan(0);
-    expect(hangSlot(i).y).toBeLessThan(WALL.bandHigh + WALL.yJitter);
+    expect(hangSlot(i).z).toBe(WALL.z);
   }
 });
 
