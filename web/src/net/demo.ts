@@ -1,4 +1,5 @@
 import type { GroveEvent, SproutEvent, SproutKind } from "@grove/shared";
+import { demoNftImage } from "./demo-art.js";
 
 const randomHex = (bytes: number): string =>
   Array.from({ length: bytes * 2 }, () => "0123456789abcdef"[Math.floor(Math.random() * 16)]).join(
@@ -56,6 +57,7 @@ function sprout(height: number): SproutEvent {
   if (kind === "nft") {
     event.launcherId = randomHex(32);
     event.nftId = DEMO_NFT_IDS[Math.floor(Math.random() * DEMO_NFT_IDS.length)];
+    event.imageUrl = demoNftImage(event.nftId ?? event.coinId);
     if (Math.random() < 0.25) event.mint = true;
   }
   return event;

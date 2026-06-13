@@ -25,3 +25,9 @@ test("farm theme is registered and resolvable", () => {
   expect(resolveTheme("?theme=farm", null).id).toBe("farm");
   expect(resolveTheme("", "farm").id).toBe("farm");
 });
+
+test("gallery theme is registered and resolvable", () => {
+  expect(THEMES.map((t) => t.id)).toContain("gallery");
+  expect(resolveTheme("?theme=gallery", null).id).toBe("gallery");
+  expect(resolveTheme("", "gallery").id).toBe("gallery");
+});
