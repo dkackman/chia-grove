@@ -40,10 +40,13 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
   spot.position.set(0, 30, 18);
   scene.add(spot);
 
+  // threshold sits at 1.0 so flat (LDR) art — most NFTs are near-white — never
+  // blooms and washes out the wall; only the hot frame glow (emissive >1.0 on an
+  // active piece) and additive dust cross it
   const postfx = createPostFx(renderer, scene, camera, {
     bloomStrength: 0.18,
     bloomRadius: 0.5,
-    bloomThreshold: 0.7,
+    bloomThreshold: 1.0,
   });
 
   createWall(scene);
