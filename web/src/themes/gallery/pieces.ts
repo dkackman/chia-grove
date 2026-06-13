@@ -79,6 +79,9 @@ export class Pieces {
     const mat = old.image.material as THREE.MeshBasicMaterial;
     mat.map?.dispose();
     mat.dispose();
+    // drop a stale hover pointer so the next piece to occupy this slot isn't
+    // mistakenly reset to the un-hovered material
+    if (this.hovered === slotId) this.hovered = null;
     this.slots[slotId] = null;
   }
 
