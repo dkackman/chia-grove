@@ -51,7 +51,7 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
   });
 
   createWall(scene);
-  const pieces = new Pieces(scene, reducedMotion ? 16 : 28);
+  const pieces = new Pieces(scene, reducedMotion ? 24 : 60);
   const dust = new SpendDust(scene, glowTexture(), reducedMotion ? 80 : 220);
   const placard = new Placard$();
 

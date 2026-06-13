@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import type { SproutEvent } from "@grove/shared";
 import { GALLERY } from "./palette.js";
-import { hangSlot, frameSize } from "./layout.js";
+import { WALL, hangSlot, frameSize } from "./layout.js";
 
 interface Piece {
   group: THREE.Group;
@@ -160,7 +160,14 @@ export class Pieces {
   }
 
   newestX(): number {
-    return hangSlot(Math.max(0, this.next - 1)).x;
+    if (this.next === 0) return 0;
+    const rows = WALL.rows;
+    const lastIdx = this.next - 1;
+    const rowInCol = lastIdx % rows;
+    // snap to the last *complete* column so the camera doesn't trail an
+    // incomplete column and show empty row slots on the right edge
+    const completedThrough = rowInCol === rows - 1 ? lastIdx : lastIdx - rowInCol - 1;
+    return hangSlot(Math.max(0, completedThrough)).x;
   }
 
   pickables(): THREE.Object3D[] {
