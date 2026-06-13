@@ -213,7 +213,9 @@ export class CropSystem {
         pose.color = new THREE.Color().setHSL(0.13 + rand() * 0.03, 0.85, 0.6 + rand() * 0.1);
         pose.height = (event.mint ? 1.4 : 1) * (0.9 + rand() * 0.25);
         kinds = this.sunflower;
-        glowOpacity = event.mint ? 0.5 : 0.28;
+        // a gentle warm bloom, not a beacon: a glowing sunflower in full
+        // daylight reads as on-fire, so keep it subtle (mint still pops)
+        glowOpacity = event.mint ? 0.22 : 0.12;
         break;
       case "did":
         pose.height = 0.95 + rand() * 0.2;
@@ -240,7 +242,7 @@ export class CropSystem {
         const glow = this.sunflowerGlows[crop.variant][index];
         glow.position.set(crop.x, 0.95 * crop.pose.height, crop.z);
         glow.material.opacity = crop.glowOpacity;
-        glow.scale.setScalar(crop.glowOpacity > 0.4 ? 1.7 : 1.15);
+        glow.scale.setScalar(crop.glowOpacity > 0.18 ? 1.7 : 1.15);
       }
     }
     this.pending = keep;
@@ -259,8 +261,8 @@ export class CropSystem {
     for (const kind of this.allKinds()) kind.update(t, dip);
     for (const glows of this.sunflowerGlows) {
       for (const glow of glows) {
-        if (glow.material.opacity > 0.28) {
-          glow.material.opacity = Math.max(0.28, glow.material.opacity - dt * 0.12);
+        if (glow.material.opacity > 0.12) {
+          glow.material.opacity = Math.max(0.12, glow.material.opacity - dt * 0.12);
         }
       }
     }
