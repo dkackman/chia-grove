@@ -13,7 +13,7 @@ import { netspaceLight } from "./ambience.js";
 import { shouldHang } from "./select.js";
 import { loadArtTexture } from "./media.js";
 import { framePiece } from "./camera.js";
-import { classifySwipe } from "./swipe.js";
+import { FlingTracker } from "./swipe.js";
 
 const FOV = 45;
 const REST_Y = 4.2; // vertical center of the 3-row grid
@@ -158,15 +158,14 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
   let downY = 0;
   let lastX = 0;
   let dragging = false;
-  let downT = 0; // gesture start time (clock seconds) — for swipe-velocity classification
-  let panStartX = 0; // camera-x at gesture start — swipe jumps from here, ignoring mid-flick pan
+  // release velocity → a decaying momentum glide; the camera lerp is the decelerator
+  const fling = new FlingTracker();
 
   canvas.addEventListener("pointerdown", (e) => {
     downX = lastX = e.clientX;
     downY = e.clientY;
     dragging = false;
-    downT = nowT;
-    panStartX = camera.position.x;
+    fling.reset(e.timeStamp);
     manualX = camera.position.x; // seed manual control from where the view is now
     canvas.setPointerCapture?.(e.pointerId);
   });
@@ -178,8 +177,10 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
         dragging = true;
       }
       if (dragging) {
-        manualX = clampPan(manualX - dx * worldPerPixel());
+        const step = -dx * worldPerPixel();
+        manualX = clampPan(manualX + step);
         manualUntil = nowT + IDLE_RESUME_S;
+        fling.sample(step, e.timeStamp);
         canvas.style.cursor = "grabbing";
       }
       return;
@@ -192,14 +193,14 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
     canvas.releasePointerCapture?.(e.pointerId);
     if (dragging) {
       dragging = false;
-      // a fast horizontal flick browses a discrete column (touch equivalent of the
-      // arrow keys); jump from panStartX so the mid-flick freeform pan isn't double-counted
-      const dir = classifySwipe(e.clientX - downX, e.clientY - downY, nowT - downT);
-      if (dir !== 0) {
-        manualX = clampPan(panStartX + dir * WALL.colStep * 2);
+      // carry the release velocity into a momentum glide; the camera's lerp
+      // decelerates into the projected landing (reduced-motion users skip it)
+      const glide = reducedMotion ? 0 : fling.release(e.timeStamp);
+      if (glide !== 0) {
+        manualX = clampPan(manualX + glide);
         manualUntil = nowT + IDLE_RESUME_S;
       }
-      return; // a drag (pan or swipe), not a tap
+      return; // a drag, not a tap
     }
     const hit = pick(e.clientX, e.clientY);
     if (hit) focus(hit);

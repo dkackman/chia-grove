@@ -1,18 +1,39 @@
-/** Horizontal-flick thresholds separating a discrete "browse" swipe from a slow pan. */
-export const SWIPE_DIST = 35; // px of horizontal travel required
-export const SWIPE_TIME = 0.4; // seconds; longer than this is a deliberate pan, not a flick
+const SMOOTHING = 0.4; // weight of the newest sample in the velocity EMA
+const GLIDE_FACTOR = 0.18; // seconds of travel projected from the release velocity
+const STALE_MS = 80; // a release this long after the last move carries no momentum
 
 /**
- * Classify a finished pointer gesture into a discrete column-jump direction.
- * Returns -1 (swipe right → older pieces), +1 (swipe left → newer pieces),
- * or 0 (not a swipe — caller keeps the existing freeform-pan result).
+ * Turns a drag's movement samples into a momentum "glide" offset on release.
  *
- * The sign matches the arrow keys (ArrowLeft = -1) and the drag grab metaphor:
- * pulling the wall to the right reveals older pieces.
+ * Feed it the per-move world-space displacement (same units as the pan target)
+ * with the event timestamp; it keeps an exponentially-smoothed velocity. On
+ * release it projects how far the pan should coast — the caller adds that offset
+ * to the pan target and lets the camera's existing lerp decelerate into it.
+ *
+ * A gesture that ends with the finger held still (no recent sample) releases
+ * zero, so a deliberate stop doesn't fling.
  */
-export function classifySwipe(dx: number, dy: number, dt: number): -1 | 0 | 1 {
-  if (Math.abs(dx) < SWIPE_DIST) return 0;
-  if (Math.abs(dx) <= Math.abs(dy)) return 0; // must be horizontal-dominant
-  if (dt > SWIPE_TIME) return 0;
-  return dx > 0 ? -1 : 1;
+export class FlingTracker {
+  private velocity = 0; // world units per second
+  private lastMs = 0;
+
+  reset(nowMs: number): void {
+    this.velocity = 0;
+    this.lastMs = nowMs;
+  }
+
+  /** dx is the world-space displacement applied to the pan target this sample. */
+  sample(dx: number, nowMs: number): void {
+    const dt = nowMs - this.lastMs;
+    this.lastMs = nowMs;
+    if (dt <= 0) return;
+    const instant = (dx / dt) * 1000; // world units per second
+    this.velocity = this.velocity * (1 - SMOOTHING) + instant * SMOOTHING;
+  }
+
+  /** Glide offset to add to the pan target; 0 if the gesture stalled before lifting. */
+  release(nowMs: number): number {
+    if (nowMs - this.lastMs > STALE_MS) return 0;
+    return this.velocity * GLIDE_FACTOR;
+  }
 }
