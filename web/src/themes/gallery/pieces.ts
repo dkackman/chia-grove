@@ -42,8 +42,14 @@ export class Pieces {
     const slotId = index % this.cap;
     this.retire(slotId);
 
-    const img = texture.image as { width?: number; height?: number } | undefined;
-    const aspect = img && img.width && img.height ? img.width / img.height : 1;
+    // a still image exposes width/height; a video element exposes
+    // videoWidth/videoHeight (its width/height attributes are usually 0)
+    const media = texture.image as
+      | { width?: number; height?: number; videoWidth?: number; videoHeight?: number }
+      | undefined;
+    const mw = media?.videoWidth || media?.width;
+    const mh = media?.videoHeight || media?.height;
+    const aspect = mw && mh ? mw / mh : 1;
     const { w, h } = frameSize(index, aspect);
     const pos = hangSlot(index);
 
@@ -77,6 +83,16 @@ export class Pieces {
     old.frame.geometry.dispose();
     old.image.geometry.dispose();
     const mat = old.image.material as THREE.MeshBasicMaterial;
+    // if the texture is a VideoTexture, stop and release its <video> element so
+    // a wrapped-out or reorg-removed clip doesn't keep downloading/looping
+    const media = mat.map?.image as
+      | { pause?: () => void; removeAttribute?: (name: string) => void; load?: () => void }
+      | undefined;
+    if (media && typeof media.pause === "function") {
+      media.pause();
+      media.removeAttribute?.("src");
+      media.load?.();
+    }
     mat.map?.dispose();
     mat.dispose();
     // drop a stale hover pointer so the next piece to occupy this slot isn't

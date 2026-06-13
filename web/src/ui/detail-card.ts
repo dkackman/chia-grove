@@ -1,5 +1,6 @@
 import type { SproutEvent } from "@grove/shared";
 import { mojosToXch, shortHex } from "./format.js";
+import { mediaKind } from "./media.js";
 
 const KIND_LABELS: Record<SproutEvent["kind"], string> = {
   xch: "XCH spend",
@@ -15,12 +16,9 @@ function el(tag: string, cls?: string, text?: string): HTMLElement {
   return e;
 }
 
-const VIDEO_EXT = new Set([".mp4", ".webm", ".ogv", ".mov"]);
-const AUDIO_EXT = new Set([".mp3", ".wav", ".ogg", ".oga", ".flac", ".aac"]);
-
 function nftMediaEl(url: string): HTMLElement {
-  const ext = url.match(/\.[a-z0-9]+(?=[?#]|$)/i)?.[0]?.toLowerCase() ?? "";
-  if (VIDEO_EXT.has(ext)) {
+  const kind = mediaKind(url);
+  if (kind === "video") {
     const v = document.createElement("video");
     v.src = url;
     v.controls = true;
@@ -28,7 +26,7 @@ function nftMediaEl(url: string): HTMLElement {
     v.loop = true;
     return v;
   }
-  if (AUDIO_EXT.has(ext)) {
+  if (kind === "audio") {
     const a = document.createElement("audio");
     a.src = url;
     a.controls = true;

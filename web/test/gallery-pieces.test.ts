@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import type { SproutEvent } from "@grove/shared";
 import { Pieces } from "../src/themes/gallery/pieces.js";
 
@@ -50,6 +50,18 @@ const frameOf = (pieces: Pieces) =>
   pieces.pickables().find((o) => (o as THREE.Mesh).geometry instanceof THREE.BoxGeometry) as
     | THREE.Mesh
     | undefined;
+
+test("retiring a video piece pauses and releases its <video> element", () => {
+  const pieces = new Pieces(new THREE.Scene(), 1); // cap 1 → next add retires this one
+  const fakeVideo = { pause: vi.fn(), removeAttribute: vi.fn(), load: vi.fn() };
+  const videoTexture = new THREE.Texture();
+  videoTexture.image = fakeVideo; // stand in for a VideoTexture's <video> element
+  pieces.add(mint(id(1)), videoTexture);
+
+  pieces.add(mint(id(2)), new THREE.Texture()); // wraps → retires the video piece
+  expect(fakeVideo.pause).toHaveBeenCalledTimes(1);
+  expect(fakeVideo.removeAttribute).toHaveBeenCalledWith("src");
+});
 
 test("hovering a new piece that reuses a retired slot still highlights it", () => {
   const pieces = new Pieces(new THREE.Scene(), 1); // cap 1 → every add wraps slot 0

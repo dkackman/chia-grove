@@ -9,6 +9,7 @@ import { Pieces } from "./pieces.js";
 import { Placard$ } from "./label.js";
 import { netspaceLight } from "./ambience.js";
 import { shouldHang } from "./select.js";
+import { loadArtTexture } from "./media.js";
 import { framePiece, panEye } from "./camera.js";
 
 const FOV = 45;
@@ -42,8 +43,6 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
   });
 
   createWall(scene);
-  const loader = new THREE.TextureLoader();
-  loader.crossOrigin = "anonymous";
   const pieces = new Pieces(scene, reducedMotion ? 16 : 28);
   const placard = new Placard$();
 
@@ -62,12 +61,9 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
     switch (event.type) {
       case "sprout":
         if (shouldHang(event) && event.imageUrl) {
-          loader.load(
-            event.imageUrl,
-            (texture) => pieces.add(event, texture),
-            undefined,
-            () => {} // CORS / 404 → discard quietly, no blank frame
-          );
+          // image → texture, video → looping VideoTexture, audio → skipped;
+          // CORS / 404 / decode errors discard quietly (no blank frame)
+          loadArtTexture(event.imageUrl, (texture) => pieces.add(event, texture));
         }
         break;
       case "ambient":
