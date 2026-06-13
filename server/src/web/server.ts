@@ -5,12 +5,14 @@ import fastify, { type FastifyInstance } from "fastify";
 import websocket from "@fastify/websocket";
 import fastifyStatic from "@fastify/static";
 import type { Hub, WireSocket } from "./hub.js";
+import { registerImageProxy } from "./img-proxy.js";
 
 export async function buildServer(hub: Hub): Promise<FastifyInstance> {
   const app = fastify({ logger: false });
   await app.register(websocket);
 
   app.get("/healthz", async () => ({ ok: true }));
+  registerImageProxy(app);
 
   app.register(async (instance) => {
     instance.get("/ws", { websocket: true }, (socket) => {

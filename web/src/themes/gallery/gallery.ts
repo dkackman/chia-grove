@@ -2,11 +2,13 @@ import * as THREE from "three";
 import type { GroveFeed } from "../../net/feed.js";
 import type { VisualizationHandle } from "../types.js";
 import { createPostFx } from "../shared/postfx.js";
+import { glowTexture } from "../shared/textures.js";
 import { GALLERY } from "./palette.js";
 import { WALL } from "./layout.js";
 import { createWall } from "./wall.js";
 import { Pieces } from "./pieces.js";
 import { Placard$ } from "./label.js";
+import { SpendDust } from "./dust.js";
 import { netspaceLight } from "./ambience.js";
 import { shouldHang } from "./select.js";
 import { loadArtTexture } from "./media.js";
@@ -44,6 +46,7 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
 
   createWall(scene);
   const pieces = new Pieces(scene, reducedMotion ? 16 : 28);
+  const dust = new SpendDust(scene, glowTexture(), reducedMotion ? 80 : 220);
   const placard = new Placard$();
 
   // camera state machine
@@ -67,10 +70,17 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
     }
   }
 
+  let dustThrottle = 0;
+
   feed.onEvent((event) => {
     switch (event.type) {
       case "sprout": {
-        if (event.kind !== "nft" || !event.launcherId) break;
+        if (event.kind !== "nft") {
+          // non-NFT spends are ambient filler; subsample so big blocks stay calm
+          if (dustThrottle++ % 3 === 0) dust.emit(event, pieces.newestX());
+          break;
+        }
+        if (!event.launcherId) break;
         const launcher = event.launcherId;
         if (pieces.hasLauncher(launcher)) {
           // already hung → register activity on the existing frame, no duplicate
@@ -147,6 +157,8 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
     const t = clock.elapsedTime;
 
     pieces.update(t, dt);
+    dust.setFocused(focused !== null);
+    dust.update(dt);
 
     // drop focus if the focused piece is gone (reorg removal, or slot-pool wrap
     // overwriting it) — otherwise the camera stays locked on an empty wall and
