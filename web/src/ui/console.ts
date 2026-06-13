@@ -2,6 +2,7 @@ import type { GroveEvent } from "@grove/shared";
 import { mojosToXch } from "./format.js";
 
 const MAX_LINES = 6;
+const COLLAPSED_KEY = "grove.console.collapsed";
 
 export interface BlockAgg {
   height: number;
@@ -26,12 +27,41 @@ export function formatBlockLine(agg: BlockAgg): string {
 
 /**
  * Scrolling block log: one line per block, newest on top. Sprout events
- * arriving after their block tick the asset counts up live.
+ * arriving after their block tick the asset counts up live. The log can be
+ * collapsed (toggle persisted to localStorage; defaults collapsed on phones).
  */
 export class BlockConsole {
   private readonly aggs = new Map<number, { agg: BlockAgg; line: HTMLElement }>();
+  private readonly toggle: HTMLButtonElement;
+  private readonly body: HTMLElement;
+  private collapsed: boolean;
 
-  constructor(private readonly root: HTMLElement) {}
+  constructor(private readonly root: HTMLElement) {
+    this.toggle = document.createElement("button");
+    this.toggle.id = "console-toggle";
+    this.toggle.type = "button";
+
+    this.body = document.createElement("div");
+    this.body.id = "console-body";
+
+    const stored = localStorage.getItem(COLLAPSED_KEY);
+    this.collapsed =
+      stored === null ? matchMedia("(max-width: 640px)").matches : stored === "1";
+
+    this.toggle.addEventListener("click", () => {
+      this.collapsed = !this.collapsed;
+      localStorage.setItem(COLLAPSED_KEY, this.collapsed ? "1" : "0");
+      this.render();
+    });
+
+    root.append(this.toggle, this.body);
+    this.render();
+  }
+
+  private render(): void {
+    this.body.hidden = this.collapsed;
+    this.toggle.textContent = this.collapsed ? "▤" : "log ✕";
+  }
 
   handle(event: GroveEvent): void {
     switch (event.type) {
@@ -67,9 +97,9 @@ export class BlockConsole {
   private prependLine(text: string): HTMLElement {
     const line = document.createElement("div");
     line.textContent = text;
-    this.root.prepend(line);
-    while (this.root.children.length > MAX_LINES) {
-      const last = this.root.lastElementChild!;
+    this.body.prepend(line);
+    while (this.body.children.length > MAX_LINES) {
+      const last = this.body.lastElementChild!;
       for (const [height, entry] of this.aggs) {
         if (entry.line === last) this.aggs.delete(height);
       }
