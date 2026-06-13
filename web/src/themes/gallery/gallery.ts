@@ -203,7 +203,7 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
       return; // a drag, not a tap
     }
     const hit = pick(e.clientX, e.clientY);
-    if (hit) focus(hit);
+    if (hit && hit !== focusedObject) focus(hit);
     else unfocus();
   });
   addEventListener("keydown", (e) => {

@@ -45,8 +45,7 @@ export class BlockConsole {
     this.body.id = "console-body";
 
     const stored = localStorage.getItem(COLLAPSED_KEY);
-    this.collapsed =
-      stored === null ? matchMedia("(max-width: 640px)").matches : stored === "1";
+    this.collapsed = stored === null ? matchMedia("(max-width: 640px)").matches : stored === "1";
 
     this.toggle.addEventListener("click", () => {
       this.collapsed = !this.collapsed;

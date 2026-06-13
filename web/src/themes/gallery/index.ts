@@ -2,8 +2,7 @@ import type { Visualization } from "../types.js";
 import { startGallery } from "./gallery.js";
 
 // touch devices browse by swipe; pointer devices by arrow keys
-const coarsePointer =
-  typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches;
+const coarsePointer = typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches;
 
 export const gallery: Visualization = {
   id: "gallery",

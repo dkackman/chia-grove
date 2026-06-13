@@ -26,6 +26,7 @@
 ## Task 1: Scene selector — mobile tap target & text size
 
 **Files:**
+
 - Modify: `web/src/style.css` (append a media query)
 
 - [ ] **Step 1: Add the mobile selector rule**
@@ -58,6 +59,7 @@ git commit -m "feat(web): enlarge scene selector on mobile"
 ## Task 2: Console — collapsible, mirroring the legend
 
 **Files:**
+
 - Modify: `web/src/ui/console.ts` (full rewrite of the `BlockConsole` class; `formatBlockLine`/`BlockAgg` unchanged)
 - Modify: `web/src/style.css` (`#console-toggle` rule; retarget fade selectors to `#console-body`)
 - Test: `web/test/console.test.ts` (existing — must still pass; covers `formatBlockLine` only)
@@ -114,8 +116,7 @@ export class BlockConsole {
     this.body.id = "console-body";
 
     const stored = localStorage.getItem(COLLAPSED_KEY);
-    this.collapsed =
-      stored === null ? matchMedia("(max-width: 640px)").matches : stored === "1";
+    this.collapsed = stored === null ? matchMedia("(max-width: 640px)").matches : stored === "1";
 
     this.toggle.addEventListener("click", () => {
       this.collapsed = !this.collapsed;
@@ -271,6 +272,7 @@ git commit -m "feat(web): collapsible block console, hidden by default on phones
 ## Task 3: Gallery swipe — `classifySwipe` pure helper (TDD)
 
 **Files:**
+
 - Create: `web/src/themes/gallery/swipe.ts`
 - Test: `web/test/gallery-swipe.test.ts`
 
@@ -348,6 +350,7 @@ git commit -m "feat(web): classifySwipe helper for gallery browse gesture"
 ## Task 4: Wire swipe into gallery + device-aware legend hint
 
 **Files:**
+
 - Modify: `web/src/themes/gallery/gallery.ts` (import helper; capture `downT`/`panStartX`; handle swipe at `pointerup`)
 - Modify: `web/src/themes/gallery/index.ts` (coarse-pointer hint label)
 
@@ -364,23 +367,23 @@ import { classifySwipe } from "./swipe.js";
 Find the pointer-input state declarations:
 
 ```ts
-  const DRAG_THRESHOLD = 6; // px before a press counts as a pan, not a tap
-  let downX = 0;
-  let downY = 0;
-  let lastX = 0;
-  let dragging = false;
+const DRAG_THRESHOLD = 6; // px before a press counts as a pan, not a tap
+let downX = 0;
+let downY = 0;
+let lastX = 0;
+let dragging = false;
 ```
 
 Replace with (adds `downT` and `panStartX`):
 
 ```ts
-  const DRAG_THRESHOLD = 6; // px before a press counts as a pan, not a tap
-  let downX = 0;
-  let downY = 0;
-  let lastX = 0;
-  let dragging = false;
-  let downT = 0; // gesture start time (clock seconds) — for swipe-velocity classification
-  let panStartX = 0; // camera-x at gesture start — swipe jumps from here, ignoring mid-flick pan
+const DRAG_THRESHOLD = 6; // px before a press counts as a pan, not a tap
+let downX = 0;
+let downY = 0;
+let lastX = 0;
+let dragging = false;
+let downT = 0; // gesture start time (clock seconds) — for swipe-velocity classification
+let panStartX = 0; // camera-x at gesture start — swipe jumps from here, ignoring mid-flick pan
 ```
 
 - [ ] **Step 3: Record the gesture start in the `pointerdown` handler**
@@ -388,27 +391,27 @@ Replace with (adds `downT` and `panStartX`):
 Find:
 
 ```ts
-  canvas.addEventListener("pointerdown", (e) => {
-    downX = lastX = e.clientX;
-    downY = e.clientY;
-    dragging = false;
-    manualX = camera.position.x; // seed manual control from where the view is now
-    canvas.setPointerCapture?.(e.pointerId);
-  });
+canvas.addEventListener("pointerdown", (e) => {
+  downX = lastX = e.clientX;
+  downY = e.clientY;
+  dragging = false;
+  manualX = camera.position.x; // seed manual control from where the view is now
+  canvas.setPointerCapture?.(e.pointerId);
+});
 ```
 
 Replace with:
 
 ```ts
-  canvas.addEventListener("pointerdown", (e) => {
-    downX = lastX = e.clientX;
-    downY = e.clientY;
-    dragging = false;
-    downT = nowT;
-    panStartX = camera.position.x;
-    manualX = camera.position.x; // seed manual control from where the view is now
-    canvas.setPointerCapture?.(e.pointerId);
-  });
+canvas.addEventListener("pointerdown", (e) => {
+  downX = lastX = e.clientX;
+  downY = e.clientY;
+  dragging = false;
+  downT = nowT;
+  panStartX = camera.position.x;
+  manualX = camera.position.x; // seed manual control from where the view is now
+  canvas.setPointerCapture?.(e.pointerId);
+});
 ```
 
 - [ ] **Step 4: Handle the swipe in the `pointerup` handler**
@@ -416,38 +419,38 @@ Replace with:
 Find:
 
 ```ts
-  canvas.addEventListener("pointerup", (e) => {
-    canvas.releasePointerCapture?.(e.pointerId);
-    if (dragging) {
-      dragging = false;
-      return; // a pan, not a tap
-    }
-    const hit = pick(e.clientX, e.clientY);
-    if (hit) focus(hit);
-    else unfocus();
-  });
+canvas.addEventListener("pointerup", (e) => {
+  canvas.releasePointerCapture?.(e.pointerId);
+  if (dragging) {
+    dragging = false;
+    return; // a pan, not a tap
+  }
+  const hit = pick(e.clientX, e.clientY);
+  if (hit) focus(hit);
+  else unfocus();
+});
 ```
 
 Replace with:
 
 ```ts
-  canvas.addEventListener("pointerup", (e) => {
-    canvas.releasePointerCapture?.(e.pointerId);
-    if (dragging) {
-      dragging = false;
-      // a fast horizontal flick browses a discrete column (touch equivalent of the
-      // arrow keys); jump from panStartX so the mid-flick freeform pan isn't double-counted
-      const dir = classifySwipe(e.clientX - downX, e.clientY - downY, nowT - downT);
-      if (dir !== 0) {
-        manualX = clampPan(panStartX + dir * WALL.colStep * 2);
-        manualUntil = nowT + IDLE_RESUME_S;
-      }
-      return; // a drag (pan or swipe), not a tap
+canvas.addEventListener("pointerup", (e) => {
+  canvas.releasePointerCapture?.(e.pointerId);
+  if (dragging) {
+    dragging = false;
+    // a fast horizontal flick browses a discrete column (touch equivalent of the
+    // arrow keys); jump from panStartX so the mid-flick freeform pan isn't double-counted
+    const dir = classifySwipe(e.clientX - downX, e.clientY - downY, nowT - downT);
+    if (dir !== 0) {
+      manualX = clampPan(panStartX + dir * WALL.colStep * 2);
+      manualUntil = nowT + IDLE_RESUME_S;
     }
-    const hit = pick(e.clientX, e.clientY);
-    if (hit) focus(hit);
-    else unfocus();
-  });
+    return; // a drag (pan or swipe), not a tap
+  }
+  const hit = pick(e.clientX, e.clientY);
+  if (hit) focus(hit);
+  else unfocus();
+});
 ```
 
 - [ ] **Step 5: Make the legend hint device-aware in `web/src/themes/gallery/index.ts`**
@@ -459,8 +462,7 @@ import type { Visualization } from "../types.js";
 import { startGallery } from "./gallery.js";
 
 // touch devices browse by swipe; pointer devices by arrow keys
-const coarsePointer =
-  typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches;
+const coarsePointer = typeof matchMedia !== "undefined" && matchMedia("(pointer: coarse)").matches;
 
 export const gallery: Visualization = {
   id: "gallery",
@@ -500,4 +502,7 @@ git commit -m "feat(web): swipe to browse the gallery wall on touch"
 - **Deviation from spec:** `classifySwipe` lives in a dedicated `swipe.ts` (not exported from `gallery.ts`) so the node test env doesn't import Three/WebGL module side effects — consistent with the gallery's existing focused-submodule pattern.
 - **Type/name consistency:** `classifySwipe(dx, dy, dt) → -1 | 0 | 1` is defined in Task 3 and called identically in Task 4. `WALL.colStep`, `IDLE_RESUME_S`, `clampPan`, `manualX`, `manualUntil`, `nowT` are all already in scope in `startGallery` (used by the existing keydown handler). `COLLAPSED_KEY` for the console (`grove.console.collapsed`) is distinct from the legend's `grove.legend.collapsed`.
 - **No placeholders:** every code step shows complete code.
+
+```
+
 ```

@@ -16,12 +16,12 @@ collapse/restore pattern.
 
 ## Behavior
 
-| Action                | Result                                                     |
-| --------------------- | ---------------------------------------------------------- |
-| Tap a piece           | Camera zooms in; card shows in its remembered state        |
-| **✕** (card corner)   | Card collapses to a small `ⓘ` pill; camera stays zoomed    |
-| **ⓘ** (pill)          | Card re-expands to the full detail panel                   |
-| Escape / tap-away     | Full unfocus — camera resets, card *and* pill both vanish  |
+| Action              | Result                                                    |
+| ------------------- | --------------------------------------------------------- |
+| Tap a piece         | Camera zooms in; card shows in its remembered state       |
+| **✕** (card corner) | Card collapses to a small `ⓘ` pill; camera stays zoomed   |
+| **ⓘ** (pill)        | Card re-expands to the full detail panel                  |
+| Escape / tap-away   | Full unfocus — camera resets, card _and_ pill both vanish |
 
 - The collapsed/expanded choice **persists** via
   `localStorage["grove.gallery.card.collapsed"]`, parallel to the legend's
