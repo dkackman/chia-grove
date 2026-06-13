@@ -30,7 +30,10 @@ const DEMO_NFT_IDS = [
 // a pool of stable demo NFTs (each a fixed launcher id) so the gallery can dedup
 // by launcher and replay repeat activity as pings instead of every event being a
 // brand-new piece — and so the wall shows a fuller mix than the 6 nft ids alone
-const DEMO_LAUNCHERS = Array.from({ length: 20 }, (_, i) => "ee" + i.toString(16).padStart(62, "0"));
+const DEMO_LAUNCHERS = Array.from(
+  { length: 20 },
+  (_, i) => "ee" + i.toString(16).padStart(62, "0")
+);
 
 function randomKind(): SproutKind {
   const roll = Math.random();

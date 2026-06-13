@@ -9,6 +9,7 @@ export const gallery: Visualization = {
     ["sw-spotlight", "light warmth — netspace"],
     ["sw-breath", "light pulse — new block"],
     ["sw-reorg", "pieces removed — reorg"],
+    ["sw-key", "← → keys — browse pieces"],
   ],
   start: (canvas, feed) => startGallery(canvas, feed),
 };

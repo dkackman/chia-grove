@@ -14,17 +14,17 @@ switcher and the `?theme=gallery` query parameter.
 
 ## Decisions (locked during brainstorming)
 
-| Question            | Decision                                                                 |
-| ------------------- | ------------------------------------------------------------------------ |
-| Rendering           | Three.js 3D scene implementing the existing `Visualization` interface     |
-| Spatial layout      | Salon wall — varied-size pieces; new pieces append to the right          |
-| What hangs          | NFT **mints only** (`kind === "nft" && mint === true`) with a usable image |
-| Missing/failed image | Skipped — no blank frames                                                |
-| Image CORS failures | **Direct-load, discard on failure** (no server proxy)                    |
-| Click interaction   | Camera **flies in** to frame the piece; rest dims; click-away/Esc returns |
-| Transaction details | Bespoke **gallery wall label** (museum placard), not the shared detail card |
-| Non-NFT events      | **Subtle ambience**: netspace→lighting, block→light "breath", reorg→remove recent pieces |
-| Mood                | **Dark contemporary** — near-black walls, warm picture-spotlights, glossy floor |
+| Question             | Decision                                                                                 |
+| -------------------- | ---------------------------------------------------------------------------------------- |
+| Rendering            | Three.js 3D scene implementing the existing `Visualization` interface                    |
+| Spatial layout       | Salon wall — varied-size pieces; new pieces append to the right                          |
+| What hangs           | NFT **mints only** (`kind === "nft" && mint === true`) with a usable image               |
+| Missing/failed image | Skipped — no blank frames                                                                |
+| Image CORS failures  | **Direct-load, discard on failure** (no server proxy)                                    |
+| Click interaction    | Camera **flies in** to frame the piece; rest dims; click-away/Esc returns                |
+| Transaction details  | Bespoke **gallery wall label** (museum placard), not the shared detail card              |
+| Non-NFT events       | **Subtle ambience**: netspace→lighting, block→light "breath", reorg→remove recent pieces |
+| Mood                 | **Dark contemporary** — near-black walls, warm picture-spotlights, glossy floor          |
 
 ## Architecture
 
@@ -34,15 +34,15 @@ New package directory `web/src/themes/gallery/`, registered as the third entry i
 
 ### Files
 
-| File          | Responsibility                                                                   |
-| ------------- | -------------------------------------------------------------------------------- |
-| `index.ts`    | The `Visualization` object: `id: "gallery"`, `label`, `legend`, `start()`.       |
-| `gallery.ts`  | Renderer, scene, lighting, camera state machine, pointer input, event dispatch.  |
-| `wall.ts`     | The dark salon wall, glossy floor, and backdrop geometry/materials.              |
-| `pieces.ts`   | Framed-art piece pool: async texture loading, slot cap + wrap, arrival animation, hover highlight, raycast targets, reorg removal. |
-| `layout.ts`   | Pure salon-hang placement (positions + frame sizes). Unit-tested.                |
-| `label.ts`    | The DOM museum placard: build, position, show/hide.                              |
-| `palette.ts`  | Dark-contemporary scene colors.                                                  |
+| File         | Responsibility                                                                                                                     |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `index.ts`   | The `Visualization` object: `id: "gallery"`, `label`, `legend`, `start()`.                                                         |
+| `gallery.ts` | Renderer, scene, lighting, camera state machine, pointer input, event dispatch.                                                    |
+| `wall.ts`    | The dark salon wall, glossy floor, and backdrop geometry/materials.                                                                |
+| `pieces.ts`  | Framed-art piece pool: async texture loading, slot cap + wrap, arrival animation, hover highlight, raycast targets, reorg removal. |
+| `layout.ts`  | Pure salon-hang placement (positions + frame sizes). Unit-tested.                                                                  |
+| `label.ts`   | The DOM museum placard: build, position, show/hide.                                                                                |
+| `palette.ts` | Dark-contemporary scene colors.                                                                                                    |
 
 Reuses `web/src/themes/shared/`: `textures` (glow/spotlight sprite), `scales`
 (amount/netspace mapping), `util.mulberry32` (deterministic per-coin jitter),
@@ -108,6 +108,7 @@ Easing via per-frame lerp toward target vectors. Respects
 `prefers-reduced-motion` (minimal drift, near-instant transitions).
 
 Pointer input (own listeners on the canvas):
+
 - `pointermove` → raycast against piece frames → highlight hovered piece +
   pointer cursor.
 - `click` → raycast; hit → FOCUSED on that piece; miss → return to PANNING.

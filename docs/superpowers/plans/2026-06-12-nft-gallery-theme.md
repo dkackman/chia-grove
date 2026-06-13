@@ -14,25 +14,25 @@
 
 ## File map
 
-| File | Responsibility | Tested |
-| --- | --- | --- |
-| `web/src/themes/types.ts` (modify) | Make picker methods optional, add `selfManagedInput` | typecheck |
-| `web/src/ui/picker.ts` (modify) | Guard now-optional handle methods | typecheck |
-| `web/src/main.ts` (modify) | Gate `attachPicker` on `selfManagedInput` | typecheck |
-| `web/src/themes/gallery/ambience.ts` | `netspaceLight(bytes)` pure mapping | ✅ unit |
-| `web/src/themes/gallery/layout.ts` | Salon hang slots + frame sizing (pure) | ✅ unit |
-| `web/src/themes/gallery/select.ts` | `shouldHang(event)` predicate (pure) | ✅ unit |
-| `web/src/themes/gallery/camera.ts` | `framePiece`, `panEye` framing math (pure) | ✅ unit |
-| `web/src/themes/gallery/label.ts` | `placardModel(event)` (pure) + DOM placard shell | ✅ unit (model) |
-| `web/src/themes/gallery/palette.ts` | Dark-contemporary colors (data) | — |
-| `web/src/themes/gallery/pieces.ts` | Framed-piece pool: add/wrap/removeRecent/pick/hover | ✅ unit |
-| `web/src/themes/gallery/wall.ts` | Wall + floor + backdrop (rendering shell) | typecheck/build |
-| `web/src/themes/gallery/gallery.ts` | Renderer, lighting, camera state machine, input, dispatch | typecheck/build |
-| `web/src/themes/gallery/index.ts` | `Visualization` object | ✅ unit (registry) |
-| `web/src/themes/index.ts` (modify) | Register `gallery` in `THEMES` | ✅ unit |
-| `web/src/net/demo-art.ts` | `demoNftImage(seed)` deterministic SVG data URI | ✅ unit |
-| `web/src/net/demo.ts` (modify) | Assign `imageUrl` to demo NFT events | ✅ unit (via demo-art) |
-| `web/src/style.css` (modify) | Placard + legend swatch styles | build/manual |
+| File                                 | Responsibility                                            | Tested                 |
+| ------------------------------------ | --------------------------------------------------------- | ---------------------- |
+| `web/src/themes/types.ts` (modify)   | Make picker methods optional, add `selfManagedInput`      | typecheck              |
+| `web/src/ui/picker.ts` (modify)      | Guard now-optional handle methods                         | typecheck              |
+| `web/src/main.ts` (modify)           | Gate `attachPicker` on `selfManagedInput`                 | typecheck              |
+| `web/src/themes/gallery/ambience.ts` | `netspaceLight(bytes)` pure mapping                       | ✅ unit                |
+| `web/src/themes/gallery/layout.ts`   | Salon hang slots + frame sizing (pure)                    | ✅ unit                |
+| `web/src/themes/gallery/select.ts`   | `shouldHang(event)` predicate (pure)                      | ✅ unit                |
+| `web/src/themes/gallery/camera.ts`   | `framePiece`, `panEye` framing math (pure)                | ✅ unit                |
+| `web/src/themes/gallery/label.ts`    | `placardModel(event)` (pure) + DOM placard shell          | ✅ unit (model)        |
+| `web/src/themes/gallery/palette.ts`  | Dark-contemporary colors (data)                           | —                      |
+| `web/src/themes/gallery/pieces.ts`   | Framed-piece pool: add/wrap/removeRecent/pick/hover       | ✅ unit                |
+| `web/src/themes/gallery/wall.ts`     | Wall + floor + backdrop (rendering shell)                 | typecheck/build        |
+| `web/src/themes/gallery/gallery.ts`  | Renderer, lighting, camera state machine, input, dispatch | typecheck/build        |
+| `web/src/themes/gallery/index.ts`    | `Visualization` object                                    | ✅ unit (registry)     |
+| `web/src/themes/index.ts` (modify)   | Register `gallery` in `THEMES`                            | ✅ unit                |
+| `web/src/net/demo-art.ts`            | `demoNftImage(seed)` deterministic SVG data URI           | ✅ unit                |
+| `web/src/net/demo.ts` (modify)       | Assign `imageUrl` to demo NFT events                      | ✅ unit (via demo-art) |
+| `web/src/style.css` (modify)         | Placard + legend swatch styles                            | build/manual           |
 
 Commands (run from repo root): `npm run typecheck`, `npm run lint`, `npm test`, `npm run build`. Single test file: `npx vitest run web/test/<file>.test.ts`.
 
@@ -41,6 +41,7 @@ Commands (run from repo root): `npm run typecheck`, `npm run lint`, `npm test`, 
 ## Task 1: Generalize the Visualization interface for self-managed input
 
 **Files:**
+
 - Modify: `web/src/themes/types.ts`
 - Modify: `web/src/ui/picker.ts:12-25`
 - Modify: `web/src/main.ts`
@@ -78,22 +79,22 @@ export interface Visualization {
 In `web/src/ui/picker.ts`, replace the body of `intersect` (lines 16-25) so the optional methods are called safely:
 
 ```ts
-  function intersect(eventX: number, eventY: number): Hit | null {
-    pointer.set((eventX / innerWidth) * 2 - 1, -(eventY / innerHeight) * 2 + 1);
-    raycaster.setFromCamera(pointer, viz.camera);
-    const hits = raycaster.intersectObjects(viz.pickables?.() ?? [], false);
-    for (const hit of hits) {
-      const meta = viz.metaFor?.(hit.object, hit.instanceId) ?? null;
-      if (meta) return { object: hit.object, instanceId: hit.instanceId, meta };
-    }
-    return null;
+function intersect(eventX: number, eventY: number): Hit | null {
+  pointer.set((eventX / innerWidth) * 2 - 1, -(eventY / innerHeight) * 2 + 1);
+  raycaster.setFromCamera(pointer, viz.camera);
+  const hits = raycaster.intersectObjects(viz.pickables?.() ?? [], false);
+  for (const hit of hits) {
+    const meta = viz.metaFor?.(hit.object, hit.instanceId) ?? null;
+    if (meta) return { object: hit.object, instanceId: hit.instanceId, meta };
   }
+  return null;
+}
 ```
 
 And in the frame callback (around line 77) guard `setHovered`:
 
 ```ts
-    viz.setHovered?.(hit?.object ?? null, hit?.instanceId);
+viz.setHovered?.(hit?.object ?? null, hit?.instanceId);
 ```
 
 - [ ] **Step 3: Gate the picker in main.ts**
@@ -121,6 +122,7 @@ git commit -m "Allow themes to self-manage pointer input"
 ## Task 2: ambience.ts — netspace → light intensity (pure, TDD)
 
 **Files:**
+
 - Create: `web/src/themes/gallery/ambience.ts`
 - Test: `web/test/gallery-ambience.test.ts`
 
@@ -191,6 +193,7 @@ git commit -m "Add gallery netspace-to-light mapping"
 ## Task 3: layout.ts — salon hang slots + frame sizing (pure, TDD)
 
 **Files:**
+
 - Create: `web/src/themes/gallery/layout.ts`
 - Test: `web/test/gallery-layout.test.ts`
 
@@ -297,6 +300,7 @@ git commit -m "Add gallery salon layout math"
 ## Task 4: select.ts — shouldHang predicate (pure, TDD)
 
 **Files:**
+
 - Create: `web/src/themes/gallery/select.ts`
 - Test: `web/test/gallery-select.test.ts`
 
@@ -375,6 +379,7 @@ git commit -m "Add gallery hang predicate"
 ## Task 5: camera.ts — framing math (pure, TDD)
 
 **Files:**
+
 - Create: `web/src/themes/gallery/camera.ts`
 - Test: `web/test/gallery-camera.test.ts`
 
@@ -465,6 +470,7 @@ git commit -m "Add gallery camera framing math"
 ## Task 6: label.ts — placard model (pure, TDD) + DOM shell
 
 **Files:**
+
 - Create: `web/src/themes/gallery/label.ts`
 - Test: `web/test/gallery-label.test.ts`
 
@@ -547,7 +553,10 @@ export function placardModel(event: SproutEvent): Placard {
     { label: "view on spacescan ↗", href: `https://www.spacescan.io/coin/0x${event.coinId}` },
   ];
   if (event.nftId) {
-    links.push({ label: "view on mintgarden ↗", href: `https://mintgarden.io/nfts/${event.nftId}` });
+    links.push({
+      label: "view on mintgarden ↗",
+      href: `https://mintgarden.io/nfts/${event.nftId}`,
+    });
   }
   return {
     title: "NFT mint",
@@ -624,6 +633,7 @@ git commit -m "Add gallery placard model and DOM shell"
 ## Task 7: palette.ts + pieces.ts — the framed-piece pool (TDD)
 
 **Files:**
+
 - Create: `web/src/themes/gallery/palette.ts`
 - Create: `web/src/themes/gallery/pieces.ts`
 - Test: `web/test/gallery-pieces.test.ts`
@@ -877,6 +887,7 @@ git commit -m "Add gallery framed-piece pool"
 ## Task 8: wall.ts — wall, floor, backdrop (rendering shell)
 
 **Files:**
+
 - Create: `web/src/themes/gallery/wall.ts`
 
 - [ ] **Step 1: Write wall.ts**
@@ -940,6 +951,7 @@ git commit -m "Add gallery wall and floor"
 ## Task 9: gallery.ts — renderer, lighting, camera state machine, input
 
 **Files:**
+
 - Create: `web/src/themes/gallery/gallery.ts`
 
 - [ ] **Step 1: Write gallery.ts**
@@ -1128,6 +1140,7 @@ git commit -m "Add gallery scene orchestration"
 ## Task 10: index.ts + register the theme (TDD via registry test)
 
 **Files:**
+
 - Create: `web/src/themes/gallery/index.ts`
 - Modify: `web/src/themes/index.ts:2-5`
 - Test: `web/test/themes.test.ts` (extend)
@@ -1198,6 +1211,7 @@ git commit -m "Register gallery theme"
 ## Task 11: demo-art.ts + demo NFT images (TDD)
 
 **Files:**
+
 - Create: `web/src/net/demo-art.ts`
 - Modify: `web/src/net/demo.ts:56-60`
 - Test: `web/test/demo-art.test.ts`
@@ -1276,12 +1290,12 @@ import { demoNftImage } from "./demo-art.js";
 Then change the NFT block (lines 56-60) to also set an image:
 
 ```ts
-  if (kind === "nft") {
-    event.launcherId = randomHex(32);
-    event.nftId = DEMO_NFT_IDS[Math.floor(Math.random() * DEMO_NFT_IDS.length)];
-    event.imageUrl = demoNftImage(event.nftId ?? event.coinId);
-    if (Math.random() < 0.25) event.mint = true;
-  }
+if (kind === "nft") {
+  event.launcherId = randomHex(32);
+  event.nftId = DEMO_NFT_IDS[Math.floor(Math.random() * DEMO_NFT_IDS.length)];
+  event.imageUrl = demoNftImage(event.nftId ?? event.coinId);
+  if (Math.random() < 0.25) event.mint = true;
+}
 ```
 
 - [ ] **Step 5: Run tests to verify they pass**
@@ -1301,6 +1315,7 @@ git commit -m "Give demo NFTs deterministic inline art"
 ## Task 12: style.css — placard + legend swatches
 
 **Files:**
+
 - Modify: `web/src/style.css`
 
 - [ ] **Step 1: Read the existing card and swatch styles**
@@ -1328,7 +1343,9 @@ Append to `web/src/style.css` (adjust the borrowed values to match what you read
   font: inherit;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.4s ease, transform 0.4s ease;
+  transition:
+    opacity 0.4s ease,
+    transform 0.4s ease;
 }
 .gallery-label.visible {
   opacity: 1;
@@ -1393,6 +1410,7 @@ Expected: all pass; build emits `web/dist/`.
 Run: `npm run dev:web`
 Open: `http://localhost:5173/?demo=1&theme=gallery`
 Verify:
+
 - Framed pieces hang along the wall and the camera pans to follow new ones.
 - Hovering a piece highlights its frame and shows a pointer cursor.
 - Clicking a piece flies the camera in to frame it and shows the placard (amount, block, coin, launcher, spacescan + mintgarden links).

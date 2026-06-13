@@ -39,8 +39,9 @@ export class CatRegistry {
 
     while (true) {
       const res = await fetch(`${DEXIE_API}/assets?page_size=100&page=${page}&type=cat`);
+      if (!res.ok) throw new Error(`Dexie API ${res.status}`);
       const data = (await res.json()) as { assets: DexieAsset[] };
-      if (data.assets.length === 0) break;
+      if (!Array.isArray(data.assets) || data.assets.length === 0) break;
 
       for (const asset of data.assets) {
         if (asset.name && asset.code) {

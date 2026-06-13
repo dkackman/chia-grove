@@ -69,8 +69,7 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
   let manualUntil = 0;
   let nowT = 0; // latest frame time, so input handlers share the render clock
 
-  const clampPan = (x: number): number =>
-    Math.max(PAN_LEFT_LIMIT, Math.min(pieces.newestX(), x));
+  const clampPan = (x: number): number => Math.max(PAN_LEFT_LIMIT, Math.min(pieces.newestX(), x));
   const worldPerPixel = (): number =>
     (2 * (REST_Z - WALL.z) * Math.tan((FOV * Math.PI) / 180 / 2) * camera.aspect) / innerWidth;
 

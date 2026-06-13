@@ -7,7 +7,12 @@ test("accepts public http(s) urls", () => {
 });
 
 test("rejects non-http protocols", () => {
-  for (const u of ["data:image/png;base64,xxx", "ftp://h/x", "file:///etc/passwd", "javascript:alert(1)"]) {
+  for (const u of [
+    "data:image/png;base64,xxx",
+    "ftp://h/x",
+    "file:///etc/passwd",
+    "javascript:alert(1)",
+  ]) {
     expect(validateProxyTarget(u)).toBeNull();
   }
 });

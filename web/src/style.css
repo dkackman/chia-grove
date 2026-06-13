@@ -310,7 +310,9 @@ body {
   font: inherit;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.4s ease, transform 0.4s ease;
+  transition:
+    opacity 0.4s ease,
+    transform 0.4s ease;
 }
 .gallery-label.visible {
   opacity: 1;
@@ -354,4 +356,19 @@ body {
 }
 .sw-reorg {
   background: #5a1f1f;
+}
+.sw-key {
+  width: 22px;
+  height: 10px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+.sw-key::before {
+  content: "←→";
+  font-size: 7px;
+  line-height: 10px;
+  color: rgba(255, 255, 255, 0.6);
+  display: block;
+  text-align: center;
 }

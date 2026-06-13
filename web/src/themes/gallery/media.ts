@@ -62,5 +62,10 @@ export function loadArtTexture(
 
   const loader = new THREE.TextureLoader();
   loader.crossOrigin = "anonymous";
-  loader.load(src, (texture) => onReady(texture), undefined, () => onFail());
+  loader.load(
+    src,
+    (texture) => onReady(texture),
+    undefined,
+    () => onFail()
+  );
 }

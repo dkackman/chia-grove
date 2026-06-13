@@ -25,7 +25,10 @@ export function placardModel(event: SproutEvent, count = 1): Placard {
     { label: "view on spacescan ↗", href: `https://www.spacescan.io/coin/0x${event.coinId}` },
   ];
   if (event.nftId) {
-    links.push({ label: "view on mintgarden ↗", href: `https://mintgarden.io/nfts/${event.nftId}` });
+    links.push({
+      label: "view on mintgarden ↗",
+      href: `https://mintgarden.io/nfts/${event.nftId}`,
+    });
   }
   return {
     title: event.mint ? "NFT mint" : "NFT",

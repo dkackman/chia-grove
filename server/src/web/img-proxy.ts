@@ -68,18 +68,22 @@ function isPrivateV6(ip: string): boolean {
  * gap a separate pre-check would leave open.
  */
 const safeLookup = ((hostname, options, callback) => {
-  dnsLookup(hostname, { all: true, family: options.family, hints: options.hints }, (err, addresses) => {
-    if (err) return callback(err, "", 0);
-    const safe = addresses.filter((a) => !isPrivateAddress(a.address));
-    if (safe.length === 0) {
-      callback(new Error(`blocked non-public address for ${hostname}`), "", 0);
-      return;
+  dnsLookup(
+    hostname,
+    { all: true, family: options.family, hints: options.hints },
+    (err, addresses) => {
+      if (err) return callback(err, "", 0);
+      const safe = addresses.filter((a) => !isPrivateAddress(a.address));
+      if (safe.length === 0) {
+        callback(new Error(`blocked non-public address for ${hostname}`), "", 0);
+        return;
+      }
+      // Node's autoSelectFamily calls lookup with all:true and expects the array
+      // form; otherwise it wants a single (address, family)
+      if (options.all) (callback as (e: Error | null, a: LookupAddress[]) => void)(null, safe);
+      else callback(null, safe[0].address, safe[0].family);
     }
-    // Node's autoSelectFamily calls lookup with all:true and expects the array
-    // form; otherwise it wants a single (address, family)
-    if (options.all) (callback as (e: Error | null, a: LookupAddress[]) => void)(null, safe);
-    else callback(null, safe[0].address, safe[0].family);
-  });
+  );
 }) as LookupFunction;
 
 /** Only serve media types back; anything else (html, svg, …) is made non-renderable. */
