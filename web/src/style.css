@@ -294,3 +294,54 @@ body {
 #console .reorg {
   color: #ffb766;
 }
+
+/* gallery placard — museum wall label for the focused piece */
+.gallery-label {
+  position: fixed;
+  right: 4vw;
+  top: 50%;
+  transform: translateY(-50%) translateX(8px);
+  max-width: 280px;
+  padding: 14px 16px;
+  background: rgba(10, 11, 14, 0.82);
+  border: 1px solid rgba(255, 233, 194, 0.22);
+  border-radius: 8px;
+  color: #e8e4dc;
+  font: inherit;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s ease, transform 0.4s ease;
+}
+.gallery-label.visible {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
+  pointer-events: auto;
+}
+.gallery-label h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+  letter-spacing: 0.02em;
+}
+.gallery-label .dim {
+  opacity: 0.6;
+  font-size: 12px;
+}
+.gallery-label a {
+  color: #ffe9c2;
+}
+
+/* gallery legend swatches */
+.sw-canvas {
+  background: linear-gradient(135deg, #6cb6ff, #c79bff);
+  border: 1px solid #3a3d46;
+}
+.sw-spotlight {
+  background: radial-gradient(circle at 50% 30%, #ffe9c2, #6b5a36);
+}
+.sw-breath {
+  background: #ffe9c2;
+  opacity: 0.7;
+}
+.sw-reorg {
+  background: #5a1f1f;
+}
