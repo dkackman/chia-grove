@@ -329,6 +329,16 @@ body {
 .gallery-label a {
   color: #ffe9c2;
 }
+.gallery-label .activity {
+  display: inline-block;
+  margin-bottom: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: #1a140a;
+  background: #ffe9c2;
+}
 
 /* gallery legend swatches */
 .sw-canvas {

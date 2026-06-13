@@ -57,15 +57,39 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
   const lookTarget = new THREE.Vector3(0, REST_Y - 0.4, WALL.z);
   const tmpLook = new THREE.Vector3();
 
+  // launchers whose art is mid-load — guards the async window so a burst of
+  // events for the same brand-new NFT doesn't hang duplicate frames
+  const pending = new Set<string>();
+
+  function refreshPlacardIf(launcher: string): void {
+    if (focusedObject && pieces.metaFor(focusedObject)?.launcherId === launcher) {
+      placard.show(pieces.metaFor(focusedObject)!, pieces.eventCountFor(focusedObject));
+    }
+  }
+
   feed.onEvent((event) => {
     switch (event.type) {
-      case "sprout":
-        if (shouldHang(event) && event.imageUrl) {
-          // image → texture, video → looping VideoTexture, audio → skipped;
-          // CORS / 404 / decode errors discard quietly (no blank frame)
-          loadArtTexture(event.imageUrl, (texture) => pieces.add(event, texture));
+      case "sprout": {
+        if (event.kind !== "nft" || !event.launcherId) break;
+        const launcher = event.launcherId;
+        if (pieces.hasLauncher(launcher)) {
+          // already hung → register activity on the existing frame, no duplicate
+          if (pieces.ping(event)) refreshPlacardIf(launcher);
+        } else if (shouldHang(event) && event.imageUrl && !pending.has(launcher)) {
+          // first sighting with art → load and hang. image → texture, video →
+          // looping VideoTexture, audio → skipped; CORS/404/decode errors discard.
+          pending.add(launcher);
+          loadArtTexture(
+            event.imageUrl,
+            (texture) => {
+              pending.delete(launcher);
+              pieces.add(event, texture);
+            },
+            () => pending.delete(launcher)
+          );
         }
         break;
+      }
       case "ambient":
         lightTarget = netspaceLight(event.netspace);
         break;
@@ -84,7 +108,7 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
     focused = framePiece(f.center, f.height, FOV);
     focusedObject = object;
     const meta = pieces.metaFor(object);
-    if (meta) placard.show(meta);
+    if (meta) placard.show(meta, pieces.eventCountFor(object));
   }
 
   function unfocus(): void {
@@ -122,7 +146,7 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
     const dt = Math.min(clock.getDelta(), 0.1);
     const t = clock.elapsedTime;
 
-    pieces.update(t);
+    pieces.update(t, dt);
 
     // drop focus if the focused piece is gone (reorg removal, or slot-pool wrap
     // overwriting it) — otherwise the camera stays locked on an empty wall and

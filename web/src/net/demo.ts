@@ -27,6 +27,11 @@ const DEMO_NFT_IDS = [
   "nft10pu8s7rc0pu8s7rc0pu8s7rc0pu8s7rc0pu8s7rc0pu8s7rc0puqpqmyv9",
 ];
 
+// a pool of stable demo NFTs (each a fixed launcher id) so the gallery can dedup
+// by launcher and replay repeat activity as pings instead of every event being a
+// brand-new piece — and so the wall shows a fuller mix than the 6 nft ids alone
+const DEMO_LAUNCHERS = Array.from({ length: 20 }, (_, i) => "ee" + i.toString(16).padStart(62, "0"));
+
 function randomKind(): SproutKind {
   const roll = Math.random();
   if (roll < 0.85) return "xch";
@@ -55,9 +60,10 @@ function sprout(height: number): SproutEvent {
     }
   }
   if (kind === "nft") {
-    event.launcherId = randomHex(32);
-    event.nftId = DEMO_NFT_IDS[Math.floor(Math.random() * DEMO_NFT_IDS.length)];
-    event.imageUrl = demoNftImage(event.nftId ?? event.coinId);
+    const i = Math.floor(Math.random() * DEMO_LAUNCHERS.length);
+    event.launcherId = DEMO_LAUNCHERS[i];
+    event.nftId = DEMO_NFT_IDS[i % DEMO_NFT_IDS.length];
+    event.imageUrl = demoNftImage(event.launcherId); // same launcher → same art
     if (Math.random() < 0.25) event.mint = true;
   }
   return event;

@@ -7,19 +7,16 @@ const sprout = (over: Partial<SproutEvent>): SproutEvent => ({
   kind: "nft",
   height: 1,
   coinId: "ab".repeat(32),
-  amount: "1000000000000",
-  mint: true,
+  amount: "1",
+  launcherId: "cd".repeat(32),
   imageUrl: "https://example.test/a.png",
   ...over,
 });
 
-test("hangs minted NFTs that carry an image", () => {
-  expect(shouldHang(sprout({}))).toBe(true);
-});
-
-test("skips non-mint NFTs", () => {
-  expect(shouldHang(sprout({ mint: false }))).toBe(false);
-  expect(shouldHang(sprout({ mint: undefined }))).toBe(false);
+test("hangs any NFT that carries an image, minted or not", () => {
+  expect(shouldHang(sprout({ mint: true }))).toBe(true);
+  expect(shouldHang(sprout({ mint: false }))).toBe(true);
+  expect(shouldHang(sprout({ mint: undefined }))).toBe(true);
 });
 
 test("skips NFTs without a usable image", () => {

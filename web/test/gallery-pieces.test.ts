@@ -14,6 +14,16 @@ const mint = (coinId: string, height = 1): SproutEvent => ({
 });
 
 const id = (n: number) => n.toString(16).padStart(8, "0") + "00".repeat(28);
+const lid = (n: number) => "ff" + n.toString(16).padStart(62, "0");
+const nft = (coinId: string, launcherId: string, height = 1): SproutEvent => ({
+  type: "sprout",
+  kind: "nft",
+  height,
+  coinId,
+  amount: "1",
+  launcherId,
+  imageUrl: "https://example.test/" + coinId + ".png",
+});
 
 test("each add hangs a pickable piece carrying its event meta", () => {
   const pieces = new Pieces(new THREE.Scene(), 28);
@@ -63,17 +73,63 @@ test("retiring a video piece pauses and releases its <video> element", () => {
   expect(fakeVideo.removeAttribute).toHaveBeenCalledWith("src");
 });
 
-test("hovering a new piece that reuses a retired slot still highlights it", () => {
+const emissiveOf = (frame: THREE.Mesh) =>
+  (frame.material as THREE.MeshStandardMaterial).emissiveIntensity;
+
+test("tracks NFTs by launcher id for dedup", () => {
+  const pieces = new Pieces(new THREE.Scene(), 28);
+  pieces.add(nft(id(1), lid(1)), new THREE.Texture());
+  expect(pieces.hasLauncher(lid(1))).toBe(true);
+  expect(pieces.hasLauncher(lid(2))).toBe(false);
+});
+
+test("ping refreshes the latest event, bumps the count, and reports success", () => {
+  const pieces = new Pieces(new THREE.Scene(), 28);
+  pieces.add(nft(id(1), lid(1), 10), new THREE.Texture());
+  const obj = pieces.pickables()[0];
+  expect(pieces.eventCountFor(obj)).toBe(1);
+
+  expect(pieces.ping(nft(id(9), lid(1), 11))).toBe(true);
+  expect(pieces.eventCountFor(obj)).toBe(2);
+  expect(pieces.metaFor(obj)?.coinId).toBe(id(9)); // latest event wins
+  expect(pieces.metaFor(obj)?.height).toBe(11);
+});
+
+test("ping on an unknown launcher is a no-op", () => {
+  const pieces = new Pieces(new THREE.Scene(), 28);
+  expect(pieces.ping(nft(id(1), lid(1)))).toBe(false);
+});
+
+test("wrapping out an NFT frees its launcher so it can hang again later", () => {
+  const pieces = new Pieces(new THREE.Scene(), 1);
+  pieces.add(nft(id(1), lid(1)), new THREE.Texture());
+  pieces.add(nft(id(2), lid(2)), new THREE.Texture()); // wraps out lid(1)
+  expect(pieces.hasLauncher(lid(1))).toBe(false);
+  expect(pieces.hasLauncher(lid(2))).toBe(true);
+});
+
+test("a pinged frame lights up and then cools back to rest", () => {
+  const pieces = new Pieces(new THREE.Scene(), 28);
+  pieces.add(nft(id(1), lid(1)), new THREE.Texture());
+  const frame = frameOf(pieces)!;
+  pieces.ping(nft(id(2), lid(1)));
+  pieces.update(0, 0); // apply heat, no time elapsed
+  expect(emissiveOf(frame)).toBeGreaterThan(0);
+  pieces.update(10, 10); // 10s later → fully cooled
+  expect(emissiveOf(frame)).toBe(0);
+});
+
+test("hovering lights a frame; a wrapped-out slot does not stay hovered", () => {
   const pieces = new Pieces(new THREE.Scene(), 1); // cap 1 → every add wraps slot 0
-  pieces.add(mint(id(1)), new THREE.Texture());
-  pieces.setHovered(frameOf(pieces)!); // hover piece A
+  pieces.add(nft(id(1), lid(1)), new THREE.Texture());
+  const frameA = frameOf(pieces)!;
+  pieces.setHovered(frameA);
+  pieces.update(0, 0);
+  expect(emissiveOf(frameA)).toBeGreaterThan(0); // hovered frame glows
 
-  pieces.add(mint(id(2)), new THREE.Texture()); // wraps: retires A, B reuses slot 0
+  pieces.add(nft(id(2), lid(2)), new THREE.Texture()); // wraps: retires A, clears hover
   const frameB = frameOf(pieces)!;
-  pieces.setHovered(frameB); // hover the new piece in the reused slot
-
-  // a stale hover pointer left over from A would make this an early-return no-op,
-  // leaving B on the default frame material (black emissive) instead of the
-  // hover material (warm emissive)
-  expect((frameB.material as THREE.MeshStandardMaterial).emissive.getHex()).toBeGreaterThan(0);
+  pieces.update(1, 1);
+  // B reused A's slot but was never hovered — a stale hover pointer would light it
+  expect(emissiveOf(frameB)).toBe(0);
 });

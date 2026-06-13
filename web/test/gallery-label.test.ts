@@ -21,6 +21,17 @@ test("placard summarizes the mint and its amount/block", () => {
   expect(m.coin).toMatch(/^coin ab/);
 });
 
+test("title reflects whether the latest event was a mint", () => {
+  expect(placardModel({ ...base, mint: true }).title).toBe("NFT mint");
+  expect(placardModel({ ...base, mint: undefined }).title).toBe("NFT");
+});
+
+test("activity tally appears only once the NFT has had more than one event", () => {
+  expect(placardModel(base).activity).toBeNull();
+  expect(placardModel(base, 1).activity).toBeNull();
+  expect(placardModel(base, 5).activity).toBe("5 events");
+});
+
 test("links point at spacescan and mintgarden", () => {
   const m = placardModel(base);
   expect(m.links).toContainEqual({
