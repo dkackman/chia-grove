@@ -19,6 +19,6 @@ feed.onStatus((s) => {
 });
 
 const handle = theme.start(canvas, feed);
-attachPicker(canvas, handle);
+if (!handle.selfManagedInput) attachPicker(canvas, handle);
 feed.onEvent((event) => blockConsole.handle(event));
 feed.start();

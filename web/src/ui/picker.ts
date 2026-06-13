@@ -16,9 +16,9 @@ export function attachPicker(canvas: HTMLCanvasElement, viz: VisualizationHandle
   function intersect(eventX: number, eventY: number): Hit | null {
     pointer.set((eventX / innerWidth) * 2 - 1, -(eventY / innerHeight) * 2 + 1);
     raycaster.setFromCamera(pointer, viz.camera);
-    const hits = raycaster.intersectObjects(viz.pickables(), false);
+    const hits = raycaster.intersectObjects(viz.pickables?.() ?? [], false);
     for (const hit of hits) {
-      const meta = viz.metaFor(hit.object, hit.instanceId);
+      const meta = viz.metaFor?.(hit.object, hit.instanceId) ?? null;
       if (meta) return { object: hit.object, instanceId: hit.instanceId, meta };
     }
     return null;
@@ -74,7 +74,7 @@ export function attachPicker(canvas: HTMLCanvasElement, viz: VisualizationHandle
     if (coinId === hoveredCoinId) return;
     hoveredCoinId = coinId;
 
-    viz.setHovered(hit?.object ?? null, hit?.instanceId);
+    viz.setHovered?.(hit?.object ?? null, hit?.instanceId);
     canvas.style.cursor = hit ? "pointer" : "default";
     if (!pinned && !insideCard) {
       clearCardTimers();
