@@ -5,7 +5,6 @@ export const GALLERY = {
   backdrop: 0x05060a,
   frame: 0x26282f,
   frameHover: 0x4a4d57,
-  mat: 0x101218, // inner mat behind the image
   spot: 0xffe9c2, // warm picture-light
   fill: 0x2a3650, // cool ambient fill
 };

@@ -49,6 +49,9 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
 
   // camera state machine
   let focused: { eye: THREE.Vector3; target: THREE.Vector3 } | null = null;
+  // the picked mesh of the focused piece, so we can drop focus if that piece is
+  // later removed (reorg) or overwritten when the slot pool wraps
+  let focusedObject: THREE.Object3D | null = null;
   let lightTarget = 0.9;
   let breath = 0;
   const panTarget = new THREE.Vector3(0, REST_Y, REST_Z);
@@ -83,12 +86,14 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
     const f = pieces.focusOf(object);
     if (!f) return;
     focused = framePiece(f.center, f.height, FOV);
+    focusedObject = object;
     const meta = pieces.metaFor(object);
     if (meta) placard.show(meta);
   }
 
   function unfocus(): void {
     focused = null;
+    focusedObject = null;
     placard.hide();
   }
 
@@ -123,10 +128,18 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
 
     pieces.update(t);
 
-    // lighting eases toward the netspace target, with a decaying block "breath"
+    // drop focus if the focused piece is gone (reorg removal, or slot-pool wrap
+    // overwriting it) — otherwise the camera stays locked on an empty wall and
+    // the placard keeps showing a piece that no longer exists
+    if (focused && focusedObject && !pieces.metaFor(focusedObject)) unfocus();
+
+    // lighting eases toward the netspace target, with a decaying block "breath";
+    // while a piece is focused the room dims so the rest of the wall recedes
+    // (the art planes use an unlit basic material, so the focused piece stays lit)
     breath = Math.max(0, breath - dt * 1.5);
-    spot.intensity += (lightTarget - spot.intensity) * Math.min(dt * 2, 1) + breath * dt * 2;
-    fill.intensity = 0.4 + lightTarget * 0.2;
+    const litTarget = focused ? lightTarget * 0.4 : lightTarget;
+    spot.intensity += (litTarget - spot.intensity) * Math.min(dt * 2, 1) + breath * dt * 2;
+    fill.intensity += (0.4 + litTarget * 0.2 - fill.intensity) * Math.min(dt * 2, 1);
 
     if (focused) {
       panTarget.copy(focused.eye);

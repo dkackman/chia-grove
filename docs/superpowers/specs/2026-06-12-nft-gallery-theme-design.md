@@ -153,8 +153,10 @@ Demo events (`web/src/net/demo.ts`) currently omit `imageUrl` for NFTs, so the
 gallery would be empty under `?demo=1`. Add a small set of bundled **SVG
 data-URI** artworks (abstract gradients/shapes) and assign one to each demo NFT
 event's `imageUrl` (seeded by `nftId` for stability). Data URIs load offline and
-are exempt from CORS, so the demo shows a populated, interactive wall. Existing
-demo mint frequency (NFT ≈ 98% of kinds, 25% of those minted) yields plenty.
+are exempt from CORS, so the demo shows an interactive wall. Note that demo NFT
+mints are sparse (NFTs are ≈4% of demo sprout kinds, ~25% of those minted), so
+the wall fills in gradually under `?demo=1` — consistent with the "as they are
+minted" intent and the sparse-wall risk note below.
 
 ## Testing
 

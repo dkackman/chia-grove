@@ -45,3 +45,23 @@ test("newestX advances rightward as pieces are added", () => {
   pieces.add(mint(id(2)), new THREE.Texture());
   expect(pieces.newestX()).toBeGreaterThan(first);
 });
+
+const frameOf = (pieces: Pieces) =>
+  pieces.pickables().find((o) => (o as THREE.Mesh).geometry instanceof THREE.BoxGeometry) as
+    | THREE.Mesh
+    | undefined;
+
+test("hovering a new piece that reuses a retired slot still highlights it", () => {
+  const pieces = new Pieces(new THREE.Scene(), 1); // cap 1 → every add wraps slot 0
+  pieces.add(mint(id(1)), new THREE.Texture());
+  pieces.setHovered(frameOf(pieces)!); // hover piece A
+
+  pieces.add(mint(id(2)), new THREE.Texture()); // wraps: retires A, B reuses slot 0
+  const frameB = frameOf(pieces)!;
+  pieces.setHovered(frameB); // hover the new piece in the reused slot
+
+  // a stale hover pointer left over from A would make this an early-return no-op,
+  // leaving B on the default frame material (black emissive) instead of the
+  // hover material (warm emissive)
+  expect((frameB.material as THREE.MeshStandardMaterial).emissive.getHex()).toBeGreaterThan(0);
+});
