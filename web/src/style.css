@@ -340,10 +340,53 @@ body {
   transform: translateY(-50%) translateX(0);
   pointer-events: auto;
 }
+/* collapsed: the card shrinks to wrap just the ⓘ pill, anchored where it was */
+.gallery-label.collapsed {
+  padding: 0;
+  background: none;
+  border: none;
+}
+.gallery-label .label-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
 .gallery-label h3 {
-  margin: 0 0 8px;
+  margin: 0;
   font-size: 15px;
   letter-spacing: 0.02em;
+}
+.label-btn {
+  background: none;
+  border: none;
+  color: inherit;
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+.label-close {
+  padding: 2px 4px;
+  font-size: 14px;
+  opacity: 0.55;
+}
+.label-close:hover {
+  opacity: 1;
+}
+.label-info {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 999px;
+  font-size: 15px;
+  color: #e8e4dc;
+  background: rgba(10, 11, 14, 0.82);
+  border: 1px solid rgba(255, 233, 194, 0.22);
+}
+.label-info:hover {
+  border-color: rgba(255, 233, 194, 0.5);
 }
 .gallery-label .dim {
   opacity: 0.6;

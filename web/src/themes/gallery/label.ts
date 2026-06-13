@@ -40,9 +40,19 @@ export function placardModel(event: SproutEvent, count = 1): Placard {
   };
 }
 
-/** A theme-owned DOM placard; created once, shown/hidden as pieces gain focus. */
+const COLLAPSED_KEY = "grove.gallery.card.collapsed";
+
+/**
+ * A theme-owned DOM placard; created once, shown/hidden as pieces gain focus.
+ * A ✕ collapses it to a small ⓘ pill (the art stays focused, just unobstructed);
+ * the ⓘ restores the full card. The collapse choice persists across pieces and
+ * sessions (parallel to the legend's collapse), so browsing stays clean once
+ * dismissed. Focus changes keep the chosen state; only unfocus hides everything.
+ */
 export class Placard$ {
   private el: HTMLDivElement;
+  private current: { event: SproutEvent; count: number } | null = null;
+  private collapsed = localStorage.getItem(COLLAPSED_KEY) === "1";
 
   constructor() {
     this.el = document.createElement("div");
@@ -52,11 +62,51 @@ export class Placard$ {
   }
 
   show(event: SproutEvent, count = 1): void {
-    const model = placardModel(event, count);
+    this.current = { event, count };
+    this.render();
+    this.el.hidden = false;
+    this.el.classList.add("visible");
+  }
+
+  hide(): void {
+    this.el.classList.remove("visible");
+    this.el.hidden = true;
+  }
+
+  private setCollapsed(collapsed: boolean): void {
+    this.collapsed = collapsed;
+    localStorage.setItem(COLLAPSED_KEY, collapsed ? "1" : "0");
+    this.render();
+  }
+
+  private iconButton(glyph: string, label: string, collapse: boolean): HTMLButtonElement {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = `label-btn ${collapse ? "label-close" : "label-info"}`;
+    btn.textContent = glyph;
+    btn.setAttribute("aria-label", label);
+    btn.addEventListener("click", () => this.setCollapsed(collapse));
+    return btn;
+  }
+
+  private render(): void {
+    if (!this.current) return;
+    this.el.classList.toggle("collapsed", this.collapsed);
     this.el.replaceChildren();
+
+    if (this.collapsed) {
+      this.el.appendChild(this.iconButton("ⓘ", "show details", false));
+      return;
+    }
+
+    const model = placardModel(this.current.event, this.current.count);
+    const head = document.createElement("div");
+    head.className = "label-head";
     const h = document.createElement("h3");
     h.textContent = model.title;
-    this.el.appendChild(h);
+    head.append(h, this.iconButton("✕", "collapse details", true));
+    this.el.appendChild(head);
+
     if (model.activity) {
       const a = document.createElement("div");
       a.className = "activity";
@@ -80,13 +130,6 @@ export class Placard$ {
       wrap.appendChild(a);
       this.el.appendChild(wrap);
     }
-    this.el.hidden = false;
-    this.el.classList.add("visible");
-  }
-
-  hide(): void {
-    this.el.classList.remove("visible");
-    this.el.hidden = true;
   }
 
   dispose(): void {
