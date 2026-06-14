@@ -13,6 +13,7 @@
 ### Task 1: Add the reflection tint to the palette
 
 **Files:**
+
 - Modify: `web/src/themes/gallery/palette.ts`
 - Test: `web/test/palette.test.ts` (existing — verify it still passes; no new assertion required for a constant)
 
@@ -50,6 +51,7 @@ git commit -m "feat(gallery): add floorMirror reflection tint to palette"
 ### Task 2: Replace the floor with a Reflector
 
 **Files:**
+
 - Modify: `web/src/themes/gallery/wall.ts`
 - Test: `web/test/gallery-wall.test.ts` (create)
 
@@ -100,31 +102,31 @@ import { WALL } from "./layout.js";
 Replace the floor block:
 
 ```ts
-  const floor = new THREE.Mesh(
-    new THREE.PlaneGeometry(span, 60),
-    new THREE.MeshStandardMaterial({ color: GALLERY.floor, roughness: 0.35, metalness: 0.5 })
-  );
-  floor.rotation.x = -Math.PI / 2;
-  floor.position.set(span / 2 - 20, 0, WALL.z + 14);
-  scene.add(floor);
+const floor = new THREE.Mesh(
+  new THREE.PlaneGeometry(span, 60),
+  new THREE.MeshStandardMaterial({ color: GALLERY.floor, roughness: 0.35, metalness: 0.5 })
+);
+floor.rotation.x = -Math.PI / 2;
+floor.position.set(span / 2 - 20, 0, WALL.z + 14);
+scene.add(floor);
 ```
 
 with a `Reflector`:
 
 ```ts
-  // a real planar mirror: renders the scene from a mirrored virtual camera each
-  // frame (via onBeforeRender) so the cards, wall, and picture-lights reflect.
-  // the dark color tint keeps it a subtle wet-sheen rather than a bright mirror;
-  // the capped resolution softens the reflection slightly (no separate blur pass).
-  const floor = new Reflector(new THREE.PlaneGeometry(span, 60), {
-    color: GALLERY.floorMirror,
-    clipBias: 0.003,
-    textureWidth: 1024,
-    textureHeight: 1024,
-  });
-  floor.rotation.x = -Math.PI / 2;
-  floor.position.set(span / 2 - 20, 0, WALL.z + 14);
-  scene.add(floor);
+// a real planar mirror: renders the scene from a mirrored virtual camera each
+// frame (via onBeforeRender) so the cards, wall, and picture-lights reflect.
+// the dark color tint keeps it a subtle wet-sheen rather than a bright mirror;
+// the capped resolution softens the reflection slightly (no separate blur pass).
+const floor = new Reflector(new THREE.PlaneGeometry(span, 60), {
+  color: GALLERY.floorMirror,
+  clipBias: 0.003,
+  textureWidth: 1024,
+  textureHeight: 1024,
+});
+floor.rotation.x = -Math.PI / 2;
+floor.position.set(span / 2 - 20, 0, WALL.z + 14);
+scene.add(floor);
 ```
 
 Update the JSDoc on `createWall` so it no longer describes a `MeshStandardMaterial`:

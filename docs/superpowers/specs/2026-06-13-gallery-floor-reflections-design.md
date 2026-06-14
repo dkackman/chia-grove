@@ -19,6 +19,7 @@ no scene geometry without an environment map or a real reflector, so the floor
 appears as a flat dark plane.
 
 Geometry/placement to preserve:
+
 - `PlaneGeometry(span, 60)` with `span = 600`
 - `rotation.x = -Math.PI / 2` (laid flat)
 - `position.set(span / 2 - 20, 0, WALL.z + 14)`

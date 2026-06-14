@@ -39,7 +39,9 @@ export function createWall(scene: THREE.Scene): void {
     shader: floorReflectionShader,
   });
   // the dark floor base the faint reflection blends over (kept in the palette)
-  (floor.material as THREE.ShaderMaterial).uniforms.floorBase.value = new THREE.Color(GALLERY.floor);
+  (floor.material as THREE.ShaderMaterial).uniforms.floorBase.value = new THREE.Color(
+    GALLERY.floor
+  );
   floor.rotation.x = -Math.PI / 2;
   floor.position.set(span / 2 - 20, 0, WALL.z + 14);
   scene.add(floor);
