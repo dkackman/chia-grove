@@ -44,11 +44,13 @@ export function createOrbitControl(
   const { sensitivity = 2.0, returnSpeed = 2.0, dragThreshold = 4 } = opts;
   const state = new OrbitState();
   let dragging = false;
+  let suppressNextClick = false;
   let downX = 0;
   let lastX = 0;
 
   function onPointerDown(e: PointerEvent): void {
     if (e.button !== 0) return;
+    suppressNextClick = false;
     downX = lastX = e.clientX;
     dragging = false;
     canvas.setPointerCapture?.(e.pointerId);
@@ -69,6 +71,7 @@ export function createOrbitControl(
     canvas.releasePointerCapture?.(e.pointerId);
     if (dragging) {
       dragging = false;
+      suppressNextClick = true;
       canvas.style.cursor = "";
       state.release();
     }
@@ -81,7 +84,13 @@ export function createOrbitControl(
 
   return {
     getOffset: () => state.offset,
-    isDragging: () => dragging,
+    isDragging: () => {
+      if (suppressNextClick) {
+        suppressNextClick = false;
+        return true;
+      }
+      return dragging;
+    },
     update: (dt) => state.update(dt, returnSpeed),
     dispose: () => {
       canvas.removeEventListener("pointerdown", onPointerDown);
