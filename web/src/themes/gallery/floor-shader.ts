@@ -9,6 +9,10 @@ import type * as THREE from "three";
  * wires it up unchanged, plus `blurSize` (spread) and `reflectivity` (how much
  * the reflection shows over the dark floor base — kept low for a faint sheen).
  *
+ * A Fresnel term makes the reflection angle-dependent like a real wet floor:
+ * faint when looking straight down at the floor underfoot, stronger at grazing
+ * angles toward the distance. `fresnelPower` controls how fast it ramps up.
+ *
  * Drop-in via the Reflector constructor's `shader` option. `floorBase` is set by
  * the caller from the palette so the unreflected floor matches the scene.
  */
@@ -25,6 +29,9 @@ export const floorReflectionShader = {
     // how strongly the reflection shows over the dark floor base. low = quite
     // subtle (the floor is mostly its own color with a faint mirrored hint).
     reflectivity: { value: 0.16 as number },
+    // how sharply the Fresnel ramp favors grazing angles. higher = reflection
+    // stays faint underfoot and only builds up toward the distance.
+    fresnelPower: { value: 3.0 as number },
     // dark floor base the reflection blends over; set by the caller from palette.
     floorBase: { value: null as THREE.Color | null },
   },
@@ -32,12 +39,14 @@ export const floorReflectionShader = {
   vertexShader: /* glsl */ `
     uniform mat4 textureMatrix;
     varying vec4 vUv;
+    varying vec3 vWorldPos;
 
     #include <common>
     #include <logdepthbuf_pars_vertex>
 
     void main() {
       vUv = textureMatrix * vec4( position, 1.0 );
+      vWorldPos = ( modelMatrix * vec4( position, 1.0 ) ).xyz;
       gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
       #include <logdepthbuf_vertex>
     }`,
@@ -47,8 +56,10 @@ export const floorReflectionShader = {
     uniform sampler2D tDiffuse;
     uniform float blurSize;
     uniform float reflectivity;
+    uniform float fresnelPower;
     uniform vec3 floorBase;
     varying vec4 vUv;
+    varying vec3 vWorldPos;
 
     #include <logdepthbuf_pars_fragment>
 
@@ -85,10 +96,18 @@ export const floorReflectionShader = {
       sum += sampleProj( d * vec2(  0.0,  2.0 ) ).rgb * 0.025;
       sum += sampleProj( d * vec2(  0.0, -2.0 ) ).rgb * 0.025;
 
+      // Fresnel: the floor is horizontal so its world normal is up. looking
+      // straight down (view ∥ normal) gives a faint reflection; grazing angles
+      // toward the distance ramp it up, like a real wet floor. a small floor
+      // keeps a hint underfoot so it never vanishes completely.
+      vec3 viewDir = normalize( cameraPosition - vWorldPos );
+      float ndv = clamp( dot( vec3( 0.0, 1.0, 0.0 ), viewDir ), 0.0, 1.0 );
+      float fresnel = mix( 0.12, 1.0, pow( 1.0 - ndv, fresnelPower ) );
+
       // tint the blurred reflection, then keep it subtle by blending it over the
       // dark floor base — the floor stays mostly its own color with a faint hint
       vec3 reflection = blendOverlay( sum, color );
-      gl_FragColor = vec4( mix( floorBase, reflection, reflectivity ), 1.0 );
+      gl_FragColor = vec4( mix( floorBase, reflection, reflectivity * fresnel ), 1.0 );
 
       #include <tonemapping_fragment>
       #include <colorspace_fragment>

@@ -24,4 +24,5 @@ test("the floor uses the custom blur shader (soft wet-sheen, not a crisp mirror)
   const floor = scene.children.find((o) => o instanceof Reflector) as Reflector;
   const material = floor.material as THREE.ShaderMaterial;
   expect(material.uniforms.blurSize.value).toBeGreaterThan(0);
+  expect(material.uniforms.fresnelPower.value).toBeGreaterThan(0);
 });
