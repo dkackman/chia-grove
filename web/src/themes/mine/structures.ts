@@ -3,6 +3,7 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { SproutEvent } from "@grove/shared";
 import type { XZ } from "../shared/util.js";
 import { cellLocal } from "./layout.js";
+import { loadArtTexture } from "../gallery/media.js";
 
 const VILLAGER_CAP = 80;
 
@@ -70,5 +71,84 @@ export class Villagers {
   }
   metaFor(object: THREE.Object3D): SproutEvent | null {
     return this.pool.find((v) => v.mesh === object)?.meta ?? null;
+  }
+}
+
+const PAINTING_CAP = 40;
+
+interface Painting {
+  group: THREE.Group;
+  panel: THREE.Mesh;
+  meta: SproutEvent | null;
+}
+
+export class Paintings {
+  private readonly pool: Painting[];
+  private next = 0;
+
+  constructor(scene: THREE.Scene) {
+    const frameGeo = new THREE.BoxGeometry(1.1, 1.3, 0.12);
+    const frameMat = new THREE.MeshStandardMaterial({ color: 0x5a3d23, roughness: 0.8, flatShading: true });
+    const panelGeo = new THREE.PlaneGeometry(0.9, 1.1);
+    this.pool = Array.from({ length: PAINTING_CAP }, () => {
+      const group = new THREE.Group();
+      const frame = new THREE.Mesh(frameGeo, frameMat);
+      const panel = new THREE.Mesh(panelGeo, new THREE.MeshBasicMaterial({ color: 0x9fb6c9 }));
+      panel.position.z = 0.07;
+      group.add(frame, panel);
+      group.visible = false;
+      scene.add(group);
+      return { group, panel, meta: null };
+    });
+  }
+
+  plant(event: SproutEvent, chunk: XZ, seat: { col: number; row: number; layer: number }): void {
+    const p = this.pool[this.next];
+    this.next = (this.next + 1) % PAINTING_CAP;
+    const local = cellLocal({ col: seat.col, row: seat.row }, seat.layer);
+    p.group.position.set(chunk.x + local.x, local.y + 0.65, chunk.z + local.z);
+    p.group.visible = true;
+    p.meta = event;
+    // reset a recycled slot to the placeholder before the (async) art loads
+    const mat = p.panel.material as THREE.MeshBasicMaterial;
+    mat.map = null;
+    mat.color.set(0x9fb6c9);
+    mat.needsUpdate = true;
+    if (event.imageUrl) {
+      loadArtTexture(
+        event.imageUrl,
+        (tex) => {
+          // guard against a slot recycled before this load resolved
+          if (p.meta !== event) return;
+          tex.magFilter = THREE.NearestFilter;
+          tex.colorSpace = THREE.SRGBColorSpace;
+          mat.map = tex;
+          mat.color.set(0xffffff);
+          mat.needsUpdate = true;
+        },
+        () => {}
+      );
+    }
+  }
+
+  /** Face the painting toward the orbiting camera each frame. */
+  update(camera: THREE.Camera): void {
+    for (const p of this.pool) {
+      if (p.meta) p.group.lookAt(camera.position.x, p.group.position.y, camera.position.z);
+    }
+  }
+  clearAbove(forkHeight: number): void {
+    for (const p of this.pool) {
+      if (p.meta && p.meta.height >= forkHeight) {
+        p.meta = null;
+        p.group.visible = false;
+      }
+    }
+  }
+  pickables(): THREE.Object3D[] {
+    return this.pool.filter((p) => p.meta).map((p) => p.panel);
+  }
+  metaFor(object: THREE.Object3D): SproutEvent | null {
+    return this.pool.find((p) => p.panel === object)?.meta ?? null;
   }
 }

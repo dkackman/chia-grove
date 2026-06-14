@@ -3,7 +3,7 @@ import type { Visualization } from "../types.js";
 import { startMine } from "./mine.js";
 import { Island } from "./island.js";
 import { CatBlocks } from "./cats.js";
-import { Villagers } from "./structures.js";
+import { Villagers, Paintings } from "./structures.js";
 
 export const mine: Visualization = {
   id: "mine",
@@ -23,6 +23,7 @@ export const mine: Visualization = {
     const island = new Island(runtime.scene);
     const cats = new CatBlocks(runtime.scene);
     const villagers = new Villagers(runtime.scene);
+    const paintings = new Paintings(runtime.scene);
     const clock = { t: 0 };
     let hovered: { object: THREE.Object3D; index: number } | null = null;
 
@@ -35,25 +36,18 @@ export const mine: Visualization = {
         island.placeGrass(event, clock.t);
         return;
       }
-      if (event.kind === "cat") {
-        const seat = cats.nextSeat();
-        if (!seat) return;
-        island.ensureGround(event, { col: seat.col, row: seat.row }, clock.t);
-        cats.plant(event, seat, clock.t);
-        return;
-      }
-      if (event.kind === "did") {
-        const seat = cats.nextSeat();
-        if (!seat) return;
-        island.ensureGround(event, { col: seat.col, row: seat.row }, clock.t);
-        villagers.plant(event, chunk, seat, clock.t);
-      }
-      // NFT added in the next task
+      const seat = cats.nextSeat();
+      if (!seat) return;
+      island.ensureGround(event, { col: seat.col, row: seat.row }, clock.t);
+      if (event.kind === "cat") cats.plant(event, seat, clock.t);
+      else if (event.kind === "did") villagers.plant(event, chunk, seat, clock.t);
+      else if (event.kind === "nft") paintings.plant(event, chunk, seat);
     });
     runtime.setReorgHandler((forkHeight) => {
       island.clearAbove(forkHeight);
       cats.clearAbove(forkHeight);
       villagers.clearAbove(forkHeight);
+      paintings.clearAbove(forkHeight);
     });
 
     const frameCallbacks: Array<() => void> = [];
@@ -62,17 +56,24 @@ export const mine: Visualization = {
       island.update(t);
       cats.update(t);
       villagers.update(t);
+      paintings.update(runtime.camera);
       for (const fn of frameCallbacks) fn();
     });
     return {
       camera: runtime.camera,
       onFrame: (fn) => frameCallbacks.push(fn),
       isDragging: () => runtime.isDragging(),
-      pickables: () => [...island.pickables(), ...cats.pickables(), ...villagers.pickables()],
+      pickables: () => [
+        ...island.pickables(),
+        ...cats.pickables(),
+        ...villagers.pickables(),
+        ...paintings.pickables(),
+      ],
       metaFor: (object, instanceId) =>
         island.metaFor(object, instanceId) ??
         cats.metaFor(object, instanceId) ??
-        villagers.metaFor(object),
+        villagers.metaFor(object) ??
+        paintings.metaFor(object),
       setHovered: (object, instanceId) => {
         if (hovered) {
           cats.setHighlight(hovered.object, hovered.index, false);
