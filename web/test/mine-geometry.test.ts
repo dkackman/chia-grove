@@ -7,3 +7,10 @@ test("ground geometry is a valid renderable cube", () => {
   expect(g).toBeInstanceOf(THREE.BufferGeometry);
   expect(g.getAttribute("position").count).toBeGreaterThan(0);
 });
+
+import { cubeGeometry } from "../src/themes/mine/cats.js";
+
+test("cat cube geometry is a valid renderable cube", () => {
+  const g = cubeGeometry();
+  expect(g.getAttribute("position").count).toBeGreaterThan(0);
+});
