@@ -51,7 +51,7 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
   });
 
   createWall(scene);
-  const pieces = new Pieces(scene, reducedMotion ? 16 : 28);
+  const pieces = new Pieces(scene, reducedMotion ? 24 : 60);
   const dust = new SpendDust(scene, glowTexture(), reducedMotion ? 80 : 220);
   const placard = new Placard$();
 
@@ -218,11 +218,12 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
   });
 
   const frameCallbacks: Array<() => void> = [];
-  const clock = new THREE.Clock();
+  const timer = new THREE.Timer();
   function frame(): void {
     requestAnimationFrame(frame);
-    const dt = Math.min(clock.getDelta(), 0.1);
-    const t = clock.elapsedTime;
+    timer.update();
+    const dt = Math.min(timer.getDelta(), 0.1);
+    const t = timer.getElapsed();
     nowT = t;
 
     pieces.update(t, dt);

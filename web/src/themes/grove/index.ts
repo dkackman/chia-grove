@@ -60,6 +60,7 @@ export const grove: Visualization = {
     return {
       camera: runtime.camera,
       onFrame: (fn) => frameCallbacks.push(fn),
+      isDragging: () => runtime.isDragging(),
       pickables: () => flora.pickables(),
       metaFor: (object, instanceId) => flora.metaFor(object, instanceId),
       setHovered: (object, instanceId) => flora.setHovered(object, instanceId),

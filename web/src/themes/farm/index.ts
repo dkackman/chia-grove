@@ -3,6 +3,7 @@ import type { Visualization } from "../types.js";
 import { glowTexture } from "../shared/textures.js";
 import { Motes } from "../shared/motes.js";
 import { createPostFx } from "../shared/postfx.js";
+import { createOrbitControl } from "../shared/orbit.js";
 import { FIELD, rowZ } from "./layout.js";
 import { FARM } from "./palette.js";
 import { CropSystem } from "./crops.js";
@@ -27,6 +28,7 @@ export const farm: Visualization = {
   ],
   start(canvas, feed) {
     const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const orbit = createOrbitControl(canvas);
 
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
     renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
@@ -108,17 +110,32 @@ export const farm: Visualization = {
     });
     feed.onStatus((status) => sky.setSignalLost(status === "stale"));
 
-    const clock = new THREE.Clock();
+    const timer = new THREE.Timer();
     function frame(): void {
       requestAnimationFrame(frame);
-      const dt = Math.min(clock.getDelta(), 0.1);
-      const t = clock.elapsedTime;
+      timer.update();
+      const dt = Math.min(timer.getDelta(), 0.1);
+      const t = timer.getElapsed();
       clockT = t;
 
       // drift along the field's near edge, looking across the rows at the barn
-      const x = reducedMotion ? 8 : Math.sin(t * 0.02) * 16;
-      const z = rowZ(0) + 14 + (reducedMotion ? 0 : Math.cos(t * 0.013) * 2);
-      camera.position.set(x, 11 + Math.sin(t * 0.05) * 0.6, z);
+      const autoX = reducedMotion ? 8 : Math.sin(t * 0.02) * 16;
+      const autoZ = rowZ(0) + 14 + (reducedMotion ? 0 : Math.cos(t * 0.013) * 2);
+
+      // rotate the drift position around the look target (0, _, -6) on the XZ
+      // plane by the user's accumulated orbit offset
+      const ltX = 0,
+        ltZ = -6;
+      const dx = autoX - ltX;
+      const dz = autoZ - ltZ;
+      const a = orbit.getOffset();
+      const cosA = Math.cos(a),
+        sinA = Math.sin(a);
+      camera.position.set(
+        ltX + dx * cosA - dz * sinA,
+        11 + Math.sin(t * 0.05) * 0.6,
+        ltZ + dx * sinA + dz * cosA
+      );
       camera.lookAt(0, 1, -6);
 
       sky.update(dt, t);
@@ -143,6 +160,7 @@ export const farm: Visualization = {
     return {
       camera,
       onFrame: (fn) => frameCallbacks.push(fn),
+      isDragging: () => orbit.isDragging(),
       pickables: () => crops.pickables(),
       metaFor: (object, instanceId) => crops.metaFor(object, instanceId),
       setHovered: (object, instanceId) => crops.setHovered(object, instanceId),
