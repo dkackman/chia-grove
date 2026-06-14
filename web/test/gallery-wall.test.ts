@@ -17,3 +17,11 @@ test("the reflective floor lies flat at y=0", () => {
   expect(floor.rotation.x).toBeCloseTo(-Math.PI / 2);
   expect(floor.position.y).toBe(0);
 });
+
+test("the floor uses the custom blur shader (soft wet-sheen, not a crisp mirror)", () => {
+  const scene = new THREE.Scene();
+  createWall(scene);
+  const floor = scene.children.find((o) => o instanceof Reflector) as Reflector;
+  const material = floor.material as THREE.ShaderMaterial;
+  expect(material.uniforms.blurSize.value).toBeGreaterThan(0);
+});

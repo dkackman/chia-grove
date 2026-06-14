@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { Reflector } from "three/examples/jsm/objects/Reflector.js";
 import { GALLERY } from "./palette.js";
 import { WALL } from "./layout.js";
+import { floorReflectionShader } from "./floor-shader.js";
 
 /**
  * The salon backdrop: a long dark wall behind the pieces, a reflective floor that
@@ -28,13 +29,14 @@ export function createWall(scene: THREE.Scene): void {
 
   // a real planar mirror: renders the scene from a mirrored virtual camera each
   // frame (via onBeforeRender) so the cards, wall, and picture-lights reflect.
-  // the dark color tint keeps it a subtle wet-sheen rather than a bright mirror;
-  // the capped resolution softens the reflection slightly (no separate blur pass).
+  // the dark color tint dims it and the custom blur shader softens it, so the
+  // reflection reads as a subtle wet-sheen rather than a crisp mirror image.
   const floor = new Reflector(new THREE.PlaneGeometry(span, 60), {
     color: GALLERY.floorMirror,
     clipBias: 0.003,
     textureWidth: 1024,
     textureHeight: 1024,
+    shader: floorReflectionShader,
   });
   floor.rotation.x = -Math.PI / 2;
   floor.position.set(span / 2 - 20, 0, WALL.z + 14);
