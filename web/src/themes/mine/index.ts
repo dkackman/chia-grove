@@ -27,9 +27,11 @@ export const mine: Visualization = {
     const paintings = new Paintings(runtime.scene);
     const vfx = new Vfx(runtime.scene, runtime.sky);
     const clock = { t: 0 };
+    const currentChunkRef = { value: { x: 0, z: 0 } };
     let hovered: { object: THREE.Object3D; index: number } | null = null;
 
     runtime.setBlockHandler((chunk) => {
+      currentChunkRef.value = chunk;
       island.startBlock(chunk);
       cats.startBlock(chunk);
     });
@@ -51,6 +53,7 @@ export const mine: Visualization = {
       cats.clearAbove(forkHeight);
       villagers.clearAbove(forkHeight);
       paintings.clearAbove(forkHeight);
+      vfx.creeper(currentChunkRef.value, clock.t);
     });
     runtime.setAmbientHandler((mempoolSize) => vfx.setMempool(mempoolSize));
 

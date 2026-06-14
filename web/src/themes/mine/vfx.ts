@@ -4,6 +4,7 @@ import { MINE } from "./palette.js";
 
 const BEACON_CAP = 12;
 const TORCH_CAP = 60;
+const BURST_N = 80;
 
 export function torchGeometry(): THREE.BufferGeometry {
   const g = new THREE.BoxGeometry(0.12, 0.6, 0.12);
@@ -23,11 +24,15 @@ export class Vfx {
   private readonly torches: THREE.Mesh[];
   private readonly flames: THREE.Sprite[];
   private litCount = 0;
+  private readonly burst: THREE.Points;
+  private readonly burstVel: Float32Array;
+  private burstStart = -1;
 
   constructor(
     scene: THREE.Scene,
     private readonly sky: { daylight: number }
   ) {
+    // beacons
     const beamGeo = new THREE.CylinderGeometry(0.18, 0.18, 60, 8, 1, true);
     beamGeo.translate(0, 30, 0);
     this.beacons = Array.from({ length: BEACON_CAP }, () => {
@@ -40,6 +45,7 @@ export class Vfx {
       return { mesh, bornAt: 0, active: false };
     });
 
+    // torches
     const torchGeo = torchGeometry();
     const torchMat = new THREE.MeshStandardMaterial({ color: 0x5a3d23, roughness: 0.9 });
     const flameMat = () => new THREE.SpriteMaterial({ color: MINE.torch, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, fog: false });
@@ -59,6 +65,22 @@ export class Vfx {
       this.torches.push(torch);
       this.flames.push(flame);
     }
+
+    // creeper burst (reorg)
+    const pos = new Float32Array(BURST_N * 3);
+    this.burstVel = new Float32Array(BURST_N * 3);
+    const dir = new THREE.Vector3();
+    for (let i = 0; i < BURST_N; i++) {
+      dir.randomDirection();
+      this.burstVel[i * 3] = dir.x * 6;
+      this.burstVel[i * 3 + 1] = Math.abs(dir.y) * 6 + 2;
+      this.burstVel[i * 3 + 2] = dir.z * 6;
+    }
+    const bg = new THREE.BufferGeometry();
+    bg.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    this.burst = new THREE.Points(bg, new THREE.PointsMaterial({ color: 0x5bbb5b, size: 0.5, transparent: true, opacity: 0, depthWrite: false }));
+    this.burst.visible = false;
+    scene.add(this.burst);
   }
 
   /** Mint flag → fire a beacon beam from the block's chunk. */
@@ -76,6 +98,15 @@ export class Vfx {
     this.litCount = Math.max(0, Math.min(TORCH_CAP, Math.round(size / 4)));
   }
 
+  /** Reorg → a creeper detonation at the affected chunk. */
+  creeper(at: XZ, t: number): void {
+    const p = this.burst.geometry.getAttribute("position") as THREE.BufferAttribute;
+    for (let i = 0; i < p.count; i++) p.setXYZ(i, at.x, 1, at.z);
+    p.needsUpdate = true;
+    this.burst.visible = true;
+    this.burstStart = t;
+  }
+
   update(t: number): void {
     for (const b of this.beacons) {
       if (!b.active) continue;
@@ -90,6 +121,21 @@ export class Vfx {
       this.torches[i].visible = lit;
       const flicker = 0.7 + 0.3 * Math.sin(t * 6 + i);
       (this.flames[i].material as THREE.SpriteMaterial).opacity = lit ? night * flicker : 0;
+    }
+    if (this.burstStart >= 0) {
+      const age = t - this.burstStart;
+      const p = this.burst.geometry.getAttribute("position") as THREE.BufferAttribute;
+      for (let i = 0; i < p.count; i++) {
+        p.setXYZ(
+          i,
+          p.getX(i) + this.burstVel[i * 3] * 0.016,
+          Math.max(0, p.getY(i) + (this.burstVel[i * 3 + 1] - age * 9) * 0.016),
+          p.getZ(i) + this.burstVel[i * 3 + 2] * 0.016
+        );
+      }
+      p.needsUpdate = true;
+      (this.burst.material as THREE.PointsMaterial).opacity = Math.max(0, 1 - age / 0.8);
+      if (age > 0.8) { this.burst.visible = false; this.burstStart = -1; }
     }
   }
 }
