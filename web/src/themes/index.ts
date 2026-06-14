@@ -2,8 +2,9 @@ import type { Visualization } from "./types.js";
 import { grove } from "./grove/index.js";
 import { farm } from "./farm/index.js";
 import { gallery } from "./gallery/index.js";
+import { mine } from "./mine/index.js";
 
-export const THEMES: readonly Visualization[] = [grove, farm, gallery];
+export const THEMES: readonly Visualization[] = [grove, farm, gallery, mine];
 export const THEME_STORAGE_KEY = "grove.theme";
 
 /** Pure (no DOM access) so it's unit-testable: URL param wins, then stored, then grove. */

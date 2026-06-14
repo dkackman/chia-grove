@@ -266,6 +266,42 @@ body {
   background: #23232c;
   border: 1px solid rgba(255, 255, 255, 0.25);
 }
+.sw-land {
+  width: 4px;
+  height: 13px;
+  border-radius: 2px;
+  background: linear-gradient(to top, #7a5a3a, #6aa84f);
+}
+.sw-block {
+  background: #3aafd9;
+  box-shadow: 0 0 5px rgba(58, 175, 217, 0.7);
+}
+.sw-painting {
+  background: #e3a0c8;
+  border: 1px solid #5a3d23;
+}
+.sw-villager {
+  background: #7a6a52;
+}
+.sw-beacon {
+  background: #bafff0;
+  box-shadow: 0 0 7px rgba(186, 255, 240, 0.9);
+}
+.sw-torch {
+  width: 6px;
+  height: 6px;
+  margin: 0 2px;
+  background: #ffb347;
+  box-shadow: 0 0 6px rgba(255, 179, 71, 0.9);
+}
+.sw-suncycle {
+  background: #fff4c2;
+  box-shadow: 0 0 6px rgba(255, 244, 194, 0.8);
+}
+.sw-creeper {
+  background: #5bbb5b;
+  border: 1px solid rgba(0, 0, 0, 0.3);
+}
 
 #console {
   position: fixed;
