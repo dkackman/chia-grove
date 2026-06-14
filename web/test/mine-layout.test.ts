@@ -1,5 +1,25 @@
 import { expect, test } from "vitest";
-import { chunkPosition, FLOOR_TILES, floorCell, seatCell, cellLocal, cellKey } from "../src/themes/mine/layout.js";
+import {
+  chunkPosition,
+  chunkElevation,
+  MAX_ELEVATION,
+  FLOOR_TILES,
+  floorCell,
+  seatCell,
+  cellLocal,
+  cellKey,
+} from "../src/themes/mine/layout.js";
+
+test("chunk elevation is deterministic, integer, and within range", () => {
+  const p = { x: 12.3, z: -7.1 };
+  expect(chunkElevation(p)).toBe(chunkElevation(p));
+  for (let i = 0; i < 250; i++) {
+    const e = chunkElevation(chunkPosition(i));
+    expect(Number.isInteger(e)).toBe(true);
+    expect(e).toBeGreaterThanOrEqual(0);
+    expect(e).toBeLessThanOrEqual(MAX_ELEVATION);
+  }
+});
 
 test("chunks spiral outward monotonically", () => {
   const r = (i: number) => Math.hypot(chunkPosition(i).x, chunkPosition(i).z);

@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import type { SproutEvent } from "@grove/shared";
 import type { XZ } from "../shared/util.js";
-import { cellLocal } from "./layout.js";
+import { cellLocal, chunkElevation } from "./layout.js";
 import { loadArtTexture } from "../gallery/media.js";
 
 const VILLAGER_CAP = 80;
@@ -32,7 +32,11 @@ export class Villagers {
   constructor(scene: THREE.Scene) {
     scene.add(this.group);
     const geometry = villagerGeometry();
-    const material = new THREE.MeshStandardMaterial({ color: 0x7a6a52, roughness: 0.9, flatShading: true });
+    const material = new THREE.MeshStandardMaterial({
+      color: 0x7a6a52,
+      roughness: 0.9,
+      flatShading: true,
+    });
     this.pool = Array.from({ length: VILLAGER_CAP }, () => {
       const mesh = new THREE.Mesh(geometry, material);
       mesh.visible = false;
@@ -41,11 +45,16 @@ export class Villagers {
     });
   }
 
-  plant(event: SproutEvent, chunk: XZ, seat: { col: number; row: number; layer: number }, t: number): void {
+  plant(
+    event: SproutEvent,
+    chunk: XZ,
+    seat: { col: number; row: number; layer: number },
+    t: number
+  ): void {
     const v = this.pool[this.next];
     this.next = (this.next + 1) % VILLAGER_CAP;
     const local = cellLocal({ col: seat.col, row: seat.row }, seat.layer);
-    v.mesh.position.set(chunk.x + local.x, local.y, chunk.z + local.z);
+    v.mesh.position.set(chunk.x + local.x, chunkElevation(chunk) + local.y, chunk.z + local.z);
     v.mesh.scale.setScalar(0); // start collapsed so the pop-in grows from nothing
     v.mesh.visible = true;
     v.meta = event;
@@ -89,7 +98,11 @@ export class Paintings {
 
   constructor(scene: THREE.Scene) {
     const frameGeo = new THREE.BoxGeometry(1.1, 1.3, 0.12);
-    const frameMat = new THREE.MeshStandardMaterial({ color: 0x5a3d23, roughness: 0.8, flatShading: true });
+    const frameMat = new THREE.MeshStandardMaterial({
+      color: 0x5a3d23,
+      roughness: 0.8,
+      flatShading: true,
+    });
     const panelGeo = new THREE.PlaneGeometry(0.9, 1.1);
     this.pool = Array.from({ length: PAINTING_CAP }, () => {
       const group = new THREE.Group();
@@ -107,7 +120,7 @@ export class Paintings {
     const p = this.pool[this.next];
     this.next = (this.next + 1) % PAINTING_CAP;
     const local = cellLocal({ col: seat.col, row: seat.row }, seat.layer);
-    p.group.position.set(chunk.x + local.x, local.y + 0.65, chunk.z + local.z);
+    p.group.position.set(chunk.x + local.x, chunkElevation(chunk) + local.y + 0.65, chunk.z + local.z);
     p.group.visible = true;
     p.meta = event;
     // reset a recycled slot to the placeholder before the (async) art loads

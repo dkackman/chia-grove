@@ -10,6 +10,20 @@ export function chunkPosition(index: number): XZ {
   return { x: Math.cos(angle) * radius, z: Math.sin(angle) * radius };
 }
 
+export const MAX_ELEVATION = 3;
+
+/**
+ * Seeded, spatially smooth terrace height (0..MAX_ELEVATION) for a chunk.
+ * Driven by the chunk's world position so neighboring chunks land at similar
+ * heights — the island reads as rolling terraces, not random spikes.
+ */
+export function chunkElevation(pos: XZ): number {
+  const n =
+    Math.sin(pos.x * 0.13) + Math.cos(pos.z * 0.11) + 0.6 * Math.sin((pos.x + pos.z) * 0.07);
+  const unit = (n + 2.6) / 5.2; // → ~0..1
+  return Math.max(0, Math.min(MAX_ELEVATION, Math.round(unit * MAX_ELEVATION)));
+}
+
 export interface Cell {
   col: number;
   row: number;

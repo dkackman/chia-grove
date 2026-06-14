@@ -4,7 +4,7 @@ import type { XZ } from "../shared/util.js";
 import { mulberry32 } from "../shared/util.js";
 import { InstancedKind, type Pose } from "../shared/instanced.js";
 import { resolveCatBlock, type CatFamily } from "./material.js";
-import { seatCell, cellLocal } from "./layout.js";
+import { seatCell, cellLocal, chunkElevation } from "./layout.js";
 import { woolTexture, glassTexture, emissiveCellTexture } from "./textures.js";
 
 const CAPS: Record<CatFamily, number> = { opaque: 400, transparent: 120, emissive: 80 };
@@ -106,7 +106,7 @@ export class CatBlocks {
       tiltX: 0,
       tiltZ: 0,
       swayPhase: 0,
-      y: local.y,
+      y: chunkElevation(this.chunk) + local.y,
       color: this.color,
     };
     const jx = (rand() - 0.5) * 0.06;

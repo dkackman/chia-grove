@@ -2,11 +2,11 @@ import * as THREE from "three";
 import type { SproutEvent } from "@grove/shared";
 import type { XZ } from "../shared/util.js";
 import { InstancedKind, type Pose } from "../shared/instanced.js";
-import { floorCell, cellLocal, type Cell } from "./layout.js";
+import { floorCell, cellLocal, chunkElevation, type Cell } from "./layout.js";
 import { grassTopTexture, dirtTexture, grassSideTexture } from "./textures.js";
 
 const GRASS_CAP = 2000;
-const DIRT_CAP = 800;
+const DIRT_CAP = 3000;
 
 /** Unit cube whose base sits at y=0 so it grows upward from its seat. */
 export function groundGeometry(): THREE.BufferGeometry {
@@ -73,9 +73,20 @@ export class Island {
     if (this.occupied.has(key)) return;
     this.occupied.add(key);
     const local = cellLocal(cell, 0);
-    const pose = FLAT_POSE();
-    pose.y = local.y; // no color → white → the baked textures show their own hues
-    kind.plant(event, this.chunk.x + local.x, this.chunk.z + local.z, t, pose);
+    const e = chunkElevation(this.chunk);
+    const wx = this.chunk.x + local.x;
+    const wz = this.chunk.z + local.z;
+    // the surface block sits at the chunk's terrace height
+    const top = FLAT_POSE();
+    top.y = e; // no color → white → the baked textures show their own hues
+    kind.plant(event, wx, wz, t, top);
+    // one dirt pillar fills the cliff down to the waterline when the chunk is raised
+    if (e > 0) {
+      const pillar = FLAT_POSE();
+      pillar.y = 0;
+      pillar.height = e;
+      this.dirt.plant(event, wx, wz, t, pillar);
+    }
   }
 
   update(t: number): void {

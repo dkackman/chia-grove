@@ -6,6 +6,7 @@ import { createOrbitControl } from "../shared/orbit.js";
 import { createPostFx } from "../shared/postfx.js";
 import { chunkPosition } from "./layout.js";
 import { createMineSky } from "./sky.js";
+import { createWater } from "./water.js";
 
 const MAX_BLOCK_SLOTS = 400;
 
@@ -22,6 +23,7 @@ export function startMine(canvas: HTMLCanvasElement, feed: GroveFeed) {
 
   scene.add(new THREE.HemisphereLight(0xcfe6ff, 0x3a3326, 0.4));
   const sky = createMineSky(scene, reducedMotion);
+  const water = createWater(scene);
 
   const postfx = createPostFx(renderer, scene, camera, {
     toneMapping: THREE.ACESFilmicToneMapping,
@@ -79,6 +81,7 @@ export function startMine(canvas: HTMLCanvasElement, feed: GroveFeed) {
     camera.lookAt(0, 3, 0);
 
     sky.update(dt, t);
+    water.update(t);
     extraUpdate(dt, t);
     postfx.render();
   }
