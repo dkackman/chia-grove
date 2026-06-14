@@ -21,3 +21,9 @@ test("villager geometry is valid and renderable", () => {
   const g = villagerGeometry();
   expect(g.getAttribute("position").count).toBeGreaterThan(0);
 });
+
+import { torchGeometry } from "../src/themes/mine/vfx.js";
+
+test("torch geometry is valid and renderable", () => {
+  expect(torchGeometry().getAttribute("position").count).toBeGreaterThan(0);
+});

@@ -4,6 +4,7 @@ import { startMine } from "./mine.js";
 import { Island } from "./island.js";
 import { CatBlocks } from "./cats.js";
 import { Villagers, Paintings } from "./structures.js";
+import { Vfx } from "./vfx.js";
 
 export const mine: Visualization = {
   id: "mine",
@@ -24,6 +25,7 @@ export const mine: Visualization = {
     const cats = new CatBlocks(runtime.scene);
     const villagers = new Villagers(runtime.scene);
     const paintings = new Paintings(runtime.scene);
+    const vfx = new Vfx(runtime.scene, runtime.sky);
     const clock = { t: 0 };
     let hovered: { object: THREE.Object3D; index: number } | null = null;
 
@@ -36,6 +38,7 @@ export const mine: Visualization = {
         island.placeGrass(event, clock.t);
         return;
       }
+      if (event.mint) vfx.beacon(chunk, clock.t);
       const seat = cats.nextSeat();
       if (!seat) return;
       island.ensureGround(event, { col: seat.col, row: seat.row }, clock.t);
@@ -49,6 +52,7 @@ export const mine: Visualization = {
       villagers.clearAbove(forkHeight);
       paintings.clearAbove(forkHeight);
     });
+    runtime.setAmbientHandler((mempoolSize) => vfx.setMempool(mempoolSize));
 
     const frameCallbacks: Array<() => void> = [];
     runtime.setUpdateHandler((_dt, t) => {
@@ -57,6 +61,7 @@ export const mine: Visualization = {
       cats.update(t);
       villagers.update(t);
       paintings.update(runtime.camera);
+      vfx.update(t);
       for (const fn of frameCallbacks) fn();
     });
     return {
