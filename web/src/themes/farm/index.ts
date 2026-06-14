@@ -123,15 +123,17 @@ export const farm: Visualization = {
 
       // rotate the drift position around the look target (0, _, -6) on the XZ
       // plane by the user's accumulated orbit offset
-      const ltX = 0, ltZ = -6;
+      const ltX = 0,
+        ltZ = -6;
       const dx = autoX - ltX;
       const dz = autoZ - ltZ;
       const a = orbit.getOffset();
-      const cosA = Math.cos(a), sinA = Math.sin(a);
+      const cosA = Math.cos(a),
+        sinA = Math.sin(a);
       camera.position.set(
         ltX + dx * cosA - dz * sinA,
         11 + Math.sin(t * 0.05) * 0.6,
-        ltZ + dx * sinA + dz * cosA,
+        ltZ + dx * sinA + dz * cosA
       );
       camera.lookAt(0, 1, -6);
 

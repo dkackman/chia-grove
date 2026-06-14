@@ -12,21 +12,22 @@
 
 ## File Map
 
-| File | Action | Responsibility |
-|---|---|---|
+| File                             | Action | Responsibility                                                             |
+| -------------------------------- | ------ | -------------------------------------------------------------------------- |
 | `web/src/themes/shared/orbit.ts` | Create | `OrbitState` class (pure decay logic) + `createOrbitControl` (DOM binding) |
-| `web/test/orbit.test.ts` | Create | Unit tests for `OrbitState` decay behaviour |
-| `web/src/themes/types.ts` | Modify | Add `isDragging?(): boolean` to `VisualizationHandle` |
-| `web/src/ui/picker.ts` | Modify | Skip hover + click when `viz.isDragging?.()` is true |
-| `web/src/themes/grove/grove.ts` | Modify | Instantiate orbit control, add offset to camera angle, expose `isDragging` |
-| `web/src/themes/grove/index.ts` | Modify | Forward `isDragging` from runtime to `VisualizationHandle` |
-| `web/src/themes/farm/index.ts` | Modify | Instantiate orbit control, rotate camera around look target by offset |
+| `web/test/orbit.test.ts`         | Create | Unit tests for `OrbitState` decay behaviour                                |
+| `web/src/themes/types.ts`        | Modify | Add `isDragging?(): boolean` to `VisualizationHandle`                      |
+| `web/src/ui/picker.ts`           | Modify | Skip hover + click when `viz.isDragging?.()` is true                       |
+| `web/src/themes/grove/grove.ts`  | Modify | Instantiate orbit control, add offset to camera angle, expose `isDragging` |
+| `web/src/themes/grove/index.ts`  | Modify | Forward `isDragging` from runtime to `VisualizationHandle`                 |
+| `web/src/themes/farm/index.ts`   | Modify | Instantiate orbit control, rotate camera around look target by offset      |
 
 ---
 
 ## Task 1: `OrbitState` class and `createOrbitControl` utility
 
 **Files:**
+
 - Create: `web/src/themes/shared/orbit.ts`
 
 - [ ] **Step 1: Write the file**
@@ -140,6 +141,7 @@ Expected: no errors.
 ## Task 2: Unit tests for `OrbitState`
 
 **Files:**
+
 - Create: `web/test/orbit.test.ts`
 
 - [ ] **Step 1: Write the failing tests**
@@ -232,11 +234,13 @@ git commit -m "feat(web): OrbitState and createOrbitControl for horizontal drag 
 ## Task 3: Extend `VisualizationHandle` with `isDragging`
 
 **Files:**
+
 - Modify: `web/src/themes/types.ts`
 
 - [ ] **Step 1: Add the optional field**
 
 Current file (`web/src/themes/types.ts`):
+
 ```ts
 export interface VisualizationHandle {
   camera: THREE.PerspectiveCamera;
@@ -249,6 +253,7 @@ export interface VisualizationHandle {
 ```
 
 Add `isDragging?` after `selfManagedInput`:
+
 ```ts
 export interface VisualizationHandle {
   camera: THREE.PerspectiveCamera;
@@ -281,11 +286,13 @@ git commit -m "feat(web): add isDragging to VisualizationHandle for orbit suppre
 ## Task 4: Suppress picker hover and click while dragging
 
 **Files:**
+
 - Modify: `web/src/ui/picker.ts`
 
 - [ ] **Step 1: Update `onFrame` to bail when dragging**
 
 In `attachPicker`, the `viz.onFrame(...)` callback currently starts:
+
 ```ts
 viz.onFrame(() => {
   if (pendingX < 0) return;
@@ -295,6 +302,7 @@ viz.onFrame(() => {
 ```
 
 Change to:
+
 ```ts
 viz.onFrame(() => {
   if (pendingX < 0) return;
@@ -310,6 +318,7 @@ viz.onFrame(() => {
 - [ ] **Step 2: Update `click` handler to bail when dragging**
 
 Current:
+
 ```ts
 canvas.addEventListener("click", (event) => {
   const hit = intersect(event.clientX, event.clientY);
@@ -318,6 +327,7 @@ canvas.addEventListener("click", (event) => {
 ```
 
 Change to:
+
 ```ts
 canvas.addEventListener("click", (event) => {
   if (viz.isDragging?.()) return;
@@ -346,22 +356,26 @@ git commit -m "fix(web): suppress picker hover and click while orbit dragging"
 ## Task 5: Wire orbit into grove
 
 **Files:**
+
 - Modify: `web/src/themes/grove/grove.ts`
 - Modify: `web/src/themes/grove/index.ts`
 
 - [ ] **Step 1: Update `grove.ts`**
 
 Add the import at the top of `web/src/themes/grove/grove.ts`:
+
 ```ts
 import { createOrbitControl } from "../shared/orbit.js";
 ```
 
 Inside `startGrove`, after the renderer is created (after `renderer.setSize(innerWidth, innerHeight);`), add:
+
 ```ts
 const orbit = createOrbitControl(canvas);
 ```
 
 In the `frame()` function, replace the angle line and add `orbit.update`:
+
 ```ts
 // before:
 const angle = reducedMotion ? 0.8 : t * 0.02;
@@ -394,6 +408,7 @@ extraUpdate(dt, t);
 ```
 
 In the `return Object.assign(...)` at the bottom, add `isDragging`:
+
 ```ts
 return Object.assign(
   { renderer, camera, scene },
@@ -412,6 +427,7 @@ return Object.assign(
 - [ ] **Step 2: Update `grove/index.ts` to forward `isDragging`**
 
 In the `return { ... }` block at the bottom of `start()`:
+
 ```ts
 // before:
 return {
@@ -461,11 +477,13 @@ git commit -m "feat(web): interactive horizontal orbit for grove scene"
 ## Task 6: Wire orbit into farm
 
 **Files:**
+
 - Modify: `web/src/themes/farm/index.ts`
 
 - [ ] **Step 1: Add import**
 
 At the top of `web/src/themes/farm/index.ts`, add:
+
 ```ts
 import { createOrbitControl } from "../shared/orbit.js";
 ```
@@ -473,6 +491,7 @@ import { createOrbitControl } from "../shared/orbit.js";
 - [ ] **Step 2: Instantiate the orbit control**
 
 Inside `start()`, after `const reducedMotion = ...` and before the renderer is created, add:
+
 ```ts
 const orbit = createOrbitControl(canvas);
 ```
@@ -480,6 +499,7 @@ const orbit = createOrbitControl(canvas);
 - [ ] **Step 3: Replace the camera block in the frame loop**
 
 Current frame loop camera code:
+
 ```ts
 const x = reducedMotion ? 8 : Math.sin(t * 0.02) * 16;
 const z = rowZ(0) + 14 + (reducedMotion ? 0 : Math.cos(t * 0.013) * 2);
@@ -488,21 +508,24 @@ camera.lookAt(0, 1, -6);
 ```
 
 Replace with:
+
 ```ts
 // Auto-drift position
 const autoX = reducedMotion ? 8 : Math.sin(t * 0.02) * 16;
 const autoZ = rowZ(0) + 14 + (reducedMotion ? 0 : Math.cos(t * 0.013) * 2);
 
 // Rotate auto position around the look target (0, _, -6) on the XZ plane
-const ltX = 0, ltZ = -6;
+const ltX = 0,
+  ltZ = -6;
 const dx = autoX - ltX;
 const dz = autoZ - ltZ;
 const a = orbit.getOffset();
-const cosA = Math.cos(a), sinA = Math.sin(a);
+const cosA = Math.cos(a),
+  sinA = Math.sin(a);
 camera.position.set(
   ltX + dx * cosA - dz * sinA,
   11 + Math.sin(t * 0.05) * 0.6,
-  ltZ + dx * sinA + dz * cosA,
+  ltZ + dx * sinA + dz * cosA
 );
 camera.lookAt(0, 1, -6);
 
@@ -512,6 +535,7 @@ orbit.update(dt);
 - [ ] **Step 4: Add `isDragging` to the returned handle**
 
 The `start()` return at the bottom of the `farm` visualization currently returns:
+
 ```ts
 return {
   camera,
@@ -523,6 +547,7 @@ return {
 ```
 
 Add `isDragging`:
+
 ```ts
 return {
   camera,
@@ -580,6 +605,7 @@ Open `http://localhost:5173/?theme=gallery`. Confirm panning still works and no 
 - [ ] **Step 3: Test reduced-motion**
 
 In browser DevTools → Rendering → Emulate CSS media feature `prefers-reduced-motion: reduce`. Open grove and farm. Confirm:
+
 - Auto-drift is paused (expected existing behaviour)
 - Drag orbit still works (orbit is user-initiated, not motion)
 - Release eases back

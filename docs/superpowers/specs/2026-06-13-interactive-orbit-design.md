@@ -29,11 +29,13 @@ createOrbitControl(canvas: HTMLCanvasElement, opts?: {
 The pure angle state lives in a small `OrbitState` class (`offset` + `accumulate`) so it can be unit-tested without a DOM; `createOrbitControl` owns the pointer wiring around it.
 
 **Internal state:**
+
 - `offset: number` — accumulated horizontal angle offset in radians; persists for the life of the scene
 - `dragging: boolean` — true between pointerdown+threshold and pointerup
 - `suppressNextClick: boolean` — armed on drag release, consumed once by `isDragging()` so the click the browser fires after a drag does not pin the picker card
 
 **Pointer event handling (on `canvas`):**
+
 - `pointerdown` — clear `suppressNextClick`, record `downX`, seed `lastX = e.clientX`, call `canvas.setPointerCapture`
 - `pointermove` (buttons & 1) — if moved more than `dragThreshold` px from `downX`, set `dragging = true`; accumulate `offset += (dx / innerWidth) * Math.PI * 2 * sensitivity`; set cursor to `grabbing`
 - `pointerup` / `pointercancel` — clear `dragging`, arm `suppressNextClick`, release pointer capture, revert cursor
@@ -91,7 +93,7 @@ Pass `isDragging` from the runtime to the returned `VisualizationHandle`:
 return {
   camera: runtime.camera,
   onFrame: (fn) => frameCallbacks.push(fn),
-  isDragging: runtime.isDragging,   // ← add this
+  isDragging: runtime.isDragging, // ← add this
   pickables: () => flora.pickables(),
   metaFor: (object, instanceId) => flora.metaFor(object, instanceId),
   setHovered: (object, instanceId) => flora.setHovered(object, instanceId),
@@ -114,15 +116,17 @@ return {
    const autoZ = rowZ(0) + 14 + (reducedMotion ? 0 : Math.cos(t * 0.013) * 2);
 
    // rotate the drift position around the look target (0, _, -6) on the XZ plane
-   const ltX = 0, ltZ = -6;
+   const ltX = 0,
+     ltZ = -6;
    const dx = autoX - ltX;
    const dz = autoZ - ltZ;
    const a = orbit.getOffset();
-   const cosA = Math.cos(a), sinA = Math.sin(a);
+   const cosA = Math.cos(a),
+     sinA = Math.sin(a);
    camera.position.set(
      ltX + dx * cosA - dz * sinA,
      11 + Math.sin(t * 0.05) * 0.6,
-     ltZ + dx * sinA + dz * cosA,
+     ltZ + dx * sinA + dz * cosA
    );
    camera.lookAt(0, 1, -6);
    ```
@@ -133,15 +137,15 @@ return {
 
 ## Behaviour Details
 
-| Scenario | Behaviour |
-|---|---|
-| Short tap (< 4 px movement) | No orbit; picker fires normally (hover, card pin) |
-| Horizontal drag | Camera rotates; hover suppressed; the post-drag click is suppressed so it doesn't pin the card |
-| Release | Offset stays put; auto-drift resumes from the released angle (no snap-back) |
-| Second drag | Stacks further offset onto the current angle |
-| `prefers-reduced-motion` | Drag still works (orbit is user-initiated); auto-drift is already paused per existing logic |
-| Touch | Works via pointer events (no separate touch handling needed) |
-| Rapid swipe | Offset may be large; no momentum/fling — the view stops where the drag ends |
+| Scenario                    | Behaviour                                                                                      |
+| --------------------------- | ---------------------------------------------------------------------------------------------- |
+| Short tap (< 4 px movement) | No orbit; picker fires normally (hover, card pin)                                              |
+| Horizontal drag             | Camera rotates; hover suppressed; the post-drag click is suppressed so it doesn't pin the card |
+| Release                     | Offset stays put; auto-drift resumes from the released angle (no snap-back)                    |
+| Second drag                 | Stacks further offset onto the current angle                                                   |
+| `prefers-reduced-motion`    | Drag still works (orbit is user-initiated); auto-drift is already paused per existing logic    |
+| Touch                       | Works via pointer events (no separate touch handling needed)                                   |
+| Rapid swipe                 | Offset may be large; no momentum/fling — the view stops where the drag ends                    |
 
 ---
 
@@ -157,11 +161,11 @@ return {
 
 ## Files changed
 
-| File | Change |
-|---|---|
-| `web/src/themes/shared/orbit.ts` | New — `createOrbitControl` utility |
-| `web/src/themes/types.ts` | Add `isDragging?()` to `VisualizationHandle` |
-| `web/src/ui/picker.ts` | Skip hover + click when `isDragging` is true |
-| `web/src/themes/grove/grove.ts` | Instantiate orbit control, wire into angle + frame loop |
-| `web/src/themes/grove/index.ts` | Forward `isDragging` to handle |
-| `web/src/themes/farm/index.ts` | Instantiate orbit control, rotate camera around look target |
+| File                             | Change                                                      |
+| -------------------------------- | ----------------------------------------------------------- |
+| `web/src/themes/shared/orbit.ts` | New — `createOrbitControl` utility                          |
+| `web/src/themes/types.ts`        | Add `isDragging?()` to `VisualizationHandle`                |
+| `web/src/ui/picker.ts`           | Skip hover + click when `isDragging` is true                |
+| `web/src/themes/grove/grove.ts`  | Instantiate orbit control, wire into angle + frame loop     |
+| `web/src/themes/grove/index.ts`  | Forward `isDragging` to handle                              |
+| `web/src/themes/farm/index.ts`   | Instantiate orbit control, rotate camera around look target |
