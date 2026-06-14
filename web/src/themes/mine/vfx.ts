@@ -107,7 +107,7 @@ export class Vfx {
     this.burstStart = t;
   }
 
-  update(t: number): void {
+  update(dt: number, t: number): void {
     for (const b of this.beacons) {
       if (!b.active) continue;
       const age = t - b.bornAt;
@@ -128,9 +128,9 @@ export class Vfx {
       for (let i = 0; i < p.count; i++) {
         p.setXYZ(
           i,
-          p.getX(i) + this.burstVel[i * 3] * 0.016,
-          Math.max(0, p.getY(i) + (this.burstVel[i * 3 + 1] - age * 9) * 0.016),
-          p.getZ(i) + this.burstVel[i * 3 + 2] * 0.016
+          p.getX(i) + this.burstVel[i * 3] * dt,
+          Math.max(0, p.getY(i) + (this.burstVel[i * 3 + 1] - age * 9) * dt),
+          p.getZ(i) + this.burstVel[i * 3 + 2] * dt
         );
       }
       p.needsUpdate = true;

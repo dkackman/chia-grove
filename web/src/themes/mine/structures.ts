@@ -46,6 +46,7 @@ export class Villagers {
     this.next = (this.next + 1) % VILLAGER_CAP;
     const local = cellLocal({ col: seat.col, row: seat.row }, seat.layer);
     v.mesh.position.set(chunk.x + local.x, local.y, chunk.z + local.z);
+    v.mesh.scale.setScalar(0); // start collapsed so the pop-in grows from nothing
     v.mesh.visible = true;
     v.meta = event;
     v.bornAt = t;

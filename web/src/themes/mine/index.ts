@@ -58,13 +58,13 @@ export const mine: Visualization = {
     runtime.setAmbientHandler((mempoolSize) => vfx.setMempool(mempoolSize));
 
     const frameCallbacks: Array<() => void> = [];
-    runtime.setUpdateHandler((_dt, t) => {
+    runtime.setUpdateHandler((dt, t) => {
       clock.t = t;
       island.update(t);
       cats.update(t);
       villagers.update(t);
       paintings.update(runtime.camera);
-      vfx.update(t);
+      vfx.update(dt, t);
       for (const fn of frameCallbacks) fn();
     });
     return {
