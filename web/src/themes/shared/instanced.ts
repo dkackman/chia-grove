@@ -63,7 +63,7 @@ export class InstancedKind {
   constructor(
     scene: THREE.Scene,
     geometry: THREE.BufferGeometry,
-    material: THREE.Material,
+    material: THREE.Material | THREE.Material[],
     cap: number,
     private readonly swayAmp: number,
     boundsRadius = 80,
@@ -83,7 +83,10 @@ export class InstancedKind {
     // happens while every instance is still scale-0, leaving a radius-0
     // sphere that makes every later raycast miss. Pin a fixed sphere that
     // covers the whole meadow instead (spiral max ~44 + cluster + height).
-    this.mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, boundsCenterY, 0), boundsRadius);
+    this.mesh.boundingSphere = new THREE.Sphere(
+      new THREE.Vector3(0, boundsCenterY, 0),
+      boundsRadius
+    );
     scene.add(this.mesh);
   }
 

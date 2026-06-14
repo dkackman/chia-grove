@@ -2,11 +2,11 @@ import * as THREE from "three";
 import type { SproutEvent } from "@grove/shared";
 import type { XZ } from "../shared/util.js";
 import { InstancedKind, type Pose } from "../shared/instanced.js";
-import { MINE } from "./palette.js";
 import { floorCell, cellLocal, type Cell } from "./layout.js";
-import { speckleTexture } from "./textures.js";
+import { grassTopTexture, dirtTexture, grassSideTexture } from "./textures.js";
 
-const GROUND_CAP = 2000;
+const GRASS_CAP = 2000;
+const DIRT_CAP = 800;
 
 /** Unit cube whose base sits at y=0 so it grows upward from its seat. */
 export function groundGeometry(): THREE.BufferGeometry {
@@ -17,23 +17,35 @@ export function groundGeometry(): THREE.BufferGeometry {
 
 const FLAT_POSE = (): Pose => ({ height: 1, rotY: 0, tiltX: 0, tiltZ: 0, swayPhase: 0 });
 
+/**
+ * Per-face materials for a grass block. BoxGeometry group order is
+ * +x, -x, +y(top), -y(bottom), +z, -z — so the top is green grass, the bottom
+ * is dirt, and the four sides carry the grass-overhang texture.
+ */
+function grassMaterials(): THREE.Material[] {
+  const side = new THREE.MeshStandardMaterial({ map: grassSideTexture(), roughness: 0.9, flatShading: true });
+  const top = new THREE.MeshStandardMaterial({ map: grassTopTexture(), roughness: 0.9, flatShading: true });
+  const bottom = new THREE.MeshStandardMaterial({ map: dirtTexture(), roughness: 0.9, flatShading: true });
+  return [side, side, top, bottom, side, side];
+}
+function dirtMaterial(): THREE.Material {
+  return new THREE.MeshStandardMaterial({ map: dirtTexture(), roughness: 0.95, flatShading: true });
+}
+
 export class Island {
-  private readonly ground: InstancedKind;
-  private readonly grass = new THREE.Color(MINE.grassTop);
-  private readonly dirt = new THREE.Color(MINE.dirt);
+  private readonly grass: InstancedKind;
+  private readonly dirt: InstancedKind;
   // per-current-block occupancy + floor cursor (reset on each new block)
   private occupied = new Set<string>();
   private floorCursor = 0;
   private chunk: XZ = { x: 0, z: 0 };
 
   constructor(scene: THREE.Scene) {
-    const material = new THREE.MeshStandardMaterial({
-      color: 0xffffff,
-      roughness: 0.95,
-      flatShading: true,
-      map: speckleTexture(),
-    });
-    this.ground = new InstancedKind(scene, groundGeometry(), material, GROUND_CAP, 0, 140, 1);
+    // grass carries the 6-material array (green top, dirt sides/bottom); dirt is
+    // uniform brown. Both render their baked textures untinted — instances keep
+    // the default white instanceColor.
+    this.grass = new InstancedKind(scene, groundGeometry(), grassMaterials(), GRASS_CAP, 0, 140, 1);
+    this.dirt = new InstancedKind(scene, groundGeometry(), dirtMaterial(), DIRT_CAP, 0, 140, 1);
   }
 
   /** Begin a new block's chunk. */
@@ -54,29 +66,34 @@ export class Island {
     this.place(event, cell, this.dirt, t);
   }
 
-  private place(event: SproutEvent, cell: Cell, color: THREE.Color, t: number): void {
+  // One ground cube per cell per block; whichever kind (grass/dirt) reaches the
+  // cell first wins, so a special never double-stacks ground beneath it.
+  private place(event: SproutEvent, cell: Cell, kind: InstancedKind, t: number): void {
     const key = `${cell.col},${cell.row}`;
     if (this.occupied.has(key)) return;
     this.occupied.add(key);
     const local = cellLocal(cell, 0);
     const pose = FLAT_POSE();
-    pose.color = color;
-    pose.y = local.y;
-    this.ground.plant(event, this.chunk.x + local.x, this.chunk.z + local.z, t, pose);
+    pose.y = local.y; // no color → white → the baked textures show their own hues
+    kind.plant(event, this.chunk.x + local.x, this.chunk.z + local.z, t, pose);
   }
 
   update(t: number): void {
-    this.ground.update(t, 1);
+    this.grass.update(t, 1);
+    this.dirt.update(t, 1);
   }
 
   clearAbove(forkHeight: number): void {
-    this.ground.clearWhere((m) => m.height >= forkHeight);
+    this.grass.clearWhere((m) => m.height >= forkHeight);
+    this.dirt.clearWhere((m) => m.height >= forkHeight);
   }
 
   pickables(): THREE.Object3D[] {
-    return [this.ground.mesh];
+    return [this.grass.mesh, this.dirt.mesh];
   }
   metaFor(object: THREE.Object3D, instanceId: number | undefined): SproutEvent | null {
-    return object === this.ground.mesh ? this.ground.metaAt(instanceId ?? -1) : null;
+    if (object === this.grass.mesh) return this.grass.metaAt(instanceId ?? -1);
+    if (object === this.dirt.mesh) return this.dirt.metaAt(instanceId ?? -1);
+    return null;
   }
 }

@@ -2,10 +2,12 @@ import * as THREE from "three";
 
 /**
  * Procedural 16×16 pixel-art block textures, nearest-filtered for the crisp
- * Minecraft look. All are grayscale (centered near white) so the per-instance
- * `instanceColor` tint shows through — one texture serves every dye/hue. Built
- * once on a <canvas>; document access lives only inside these functions so the
- * module stays importable in the (DOM-less) test environment.
+ * Minecraft look. CAT textures are grayscale (centered near white) so the
+ * per-instance `instanceColor` tint shows through; the ground textures bake in
+ * their own colors (grass green / dirt brown) so the grass block can be green
+ * on top and dirt on the sides. Built once on a <canvas>; document access lives
+ * only inside these functions so the module stays importable in the (DOM-less)
+ * test environment.
  */
 
 function px(size: number): { ctx: CanvasRenderingContext2D; canvas: HTMLCanvasElement } {
@@ -24,25 +26,79 @@ function nearest(canvas: HTMLCanvasElement): THREE.CanvasTexture {
   return tex;
 }
 
+function clamp(v: number): number {
+  return Math.max(0, Math.min(255, Math.round(v)));
+}
 function gray(v: number): string {
-  const c = Math.max(0, Math.min(255, Math.round(v)));
+  const c = clamp(v);
   return `rgb(${c},${c},${c})`;
 }
+function rgb(r: number, g: number, b: number): string {
+  return `rgb(${clamp(r)},${clamp(g)},${clamp(b)})`;
+}
 
-/** Speckled noise with occasional darker clumps — grass / dirt / stone ground. */
-export function speckleTexture(size = 16, base = 206, spread = 34): THREE.CanvasTexture {
-  const { ctx, canvas } = px(size);
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const clump = Math.random() < 0.12 ? -30 : 0;
-      ctx.fillStyle = gray(base + (Math.random() - 0.5) * spread + clump);
+/** Fill a rect with colored noise + occasional darker clumps. */
+function speckRGB(
+  ctx: CanvasRenderingContext2D,
+  x0: number,
+  y0: number,
+  w: number,
+  h: number,
+  r: number,
+  g: number,
+  b: number,
+  spread: number,
+  clumpChance = 0.1,
+  clumpDelta = -24
+): void {
+  for (let y = y0; y < y0 + h; y++) {
+    for (let x = x0; x < x0 + w; x++) {
+      const n = (Math.random() - 0.5) * spread + (Math.random() < clumpChance ? clumpDelta : 0);
+      ctx.fillStyle = rgb(r + n, g + n, b + n);
       ctx.fillRect(x, y, 1, 1);
+    }
+  }
+}
+
+// Ground colors match palette.MINE (grassTop 0x6aa84f, dirt 0x7a5a3a).
+const GRASS = [106, 168, 79] as const;
+const DIRT = [122, 90, 58] as const;
+
+/** Grass block top: speckled green. */
+export function grassTopTexture(size = 16): THREE.CanvasTexture {
+  const { ctx, canvas } = px(size);
+  speckRGB(ctx, 0, 0, size, size, GRASS[0], GRASS[1], GRASS[2], 26);
+  return nearest(canvas);
+}
+
+/** Dirt: speckled brown (block sides/bottom of dirt, and grass-block bottom). */
+export function dirtTexture(size = 16): THREE.CanvasTexture {
+  const { ctx, canvas } = px(size);
+  speckRGB(ctx, 0, 0, size, size, DIRT[0], DIRT[1], DIRT[2], 22, 0.14, -20);
+  return nearest(canvas);
+}
+
+/** Grass block side: dirt with the iconic jagged green overhang along the top. */
+export function grassSideTexture(size = 16): THREE.CanvasTexture {
+  const { ctx, canvas } = px(size);
+  speckRGB(ctx, 0, 0, size, size, DIRT[0], DIRT[1], DIRT[2], 22, 0.14, -20);
+  for (let x = 0; x < size; x++) {
+    const depth = 2 + Math.floor(Math.random() * 3); // 2..4 px of green
+    for (let y = 0; y < depth; y++) {
+      const n = (Math.random() - 0.5) * 26;
+      ctx.fillStyle = rgb(GRASS[0] + n, GRASS[1] + n, GRASS[2] + n);
+      ctx.fillRect(x, y, 1, 1);
+    }
+    if (Math.random() < 0.25) {
+      const n = (Math.random() - 0.5) * 26;
+      ctx.fillStyle = rgb(GRASS[0] + n, GRASS[1] + n, GRASS[2] + n);
+      ctx.fillRect(x, depth, 1, 1); // a dribble below the overhang
     }
   }
   return nearest(canvas);
 }
 
-/** Fine fabric weave for wool / concrete / terracotta CATs. */
+/** Fine fabric weave for wool / concrete / terracotta CATs (tinted per-instance). */
 export function woolTexture(size = 16): THREE.CanvasTexture {
   const { ctx, canvas } = px(size);
   for (let y = 0; y < size; y++) {
