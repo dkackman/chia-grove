@@ -1,13 +1,13 @@
 # Interactive Orbit — Grove & Farm
 
 **Date:** 2026-06-13  
-**Scope:** Add horizontal drag-to-orbit to the grove and farm scenes, with automatic snap-back to auto-drift on release.
+**Scope:** Add horizontal drag-to-orbit to the grove and farm scenes. On release the auto-drift resumes from the released angle (no snap-back).
 
 ---
 
 ## Summary
 
-Users can drag horizontally on the canvas to rotate the camera around the scene. On pointer release, the camera eases back to the existing auto-drift path over roughly 2 seconds. The orbit is horizontal-only (yaw); no pitch change. Touch and mouse both work.
+Users can drag horizontally on the canvas to rotate the camera around the scene. The drag accumulates an angle offset that is added to each scene's existing auto-drift. On pointer release the offset is left in place, so the slow auto-drift simply continues from wherever the user let go; a later drag stacks further onto it. The orbit is horizontal-only (yaw); no pitch change. Touch and mouse both work.
 
 ---
 
@@ -18,31 +18,30 @@ Users can drag horizontally on the canvas to rotate the camera around the scene.
 ```ts
 createOrbitControl(canvas: HTMLCanvasElement, opts?: {
   sensitivity?: number   // default 2.0 — radians per full screen-width drag
-  returnSpeed?: number   // default 2.0 — exponential decay rate (radians/s)
   dragThreshold?: number // default 4 — pixels before a press counts as drag
 }): {
   getOffset(): number
   isDragging(): boolean
-  update(dt: number): void
   dispose(): void
 }
 ```
 
+The pure angle state lives in a small `OrbitState` class (`offset` + `accumulate`) so it can be unit-tested without a DOM; `createOrbitControl` owns the pointer wiring around it.
+
 **Internal state:**
-- `offset: number` — accumulated horizontal angle offset in radians
+- `offset: number` — accumulated horizontal angle offset in radians; persists for the life of the scene
 - `dragging: boolean` — true between pointerdown+threshold and pointerup
-- `easing: boolean` — true after release, while offset decays to 0
+- `suppressNextClick: boolean` — armed on drag release, consumed once by `isDragging()` so the click the browser fires after a drag does not pin the picker card
 
 **Pointer event handling (on `canvas`):**
-- `pointerdown` — record `downX`, seed `lastX = e.clientX`, call `canvas.setPointerCapture`
+- `pointerdown` — clear `suppressNextClick`, record `downX`, seed `lastX = e.clientX`, call `canvas.setPointerCapture`
 - `pointermove` (buttons & 1) — if moved more than `dragThreshold` px from `downX`, set `dragging = true`; accumulate `offset += (dx / innerWidth) * Math.PI * 2 * sensitivity`; set cursor to `grabbing`
-- `pointerup` — clear `dragging`, set `easing = true`, release pointer capture, revert cursor
+- `pointerup` / `pointercancel` — clear `dragging`, arm `suppressNextClick`, release pointer capture, revert cursor
+- The offset is **not** reset on release — auto-drift resumes from the current angle.
 
-**`update(dt)`:**
-- If `easing` and `Math.abs(offset) > 0.0001`: `offset *= Math.pow(Math.E, -returnSpeed * dt)` (exponential decay)
-- Else if easing: `offset = 0; easing = false`
+**`isDragging()`:** returns `true` while actively dragging. It also consumes the one-shot `suppressNextClick` flag (returns `true` once after a drag ends, then clears it) so the picker's click handler ignores the post-drag click.
 
-**`dispose()`:** removes all event listeners.
+**`dispose()`:** removes all event listeners (`pointerdown`, `pointermove`, `pointerup`, `pointercancel`).
 
 ---
 
@@ -81,9 +80,8 @@ Two changes:
    // after
    const angle = (reducedMotion ? 0.8 : t * 0.02) + orbit.getOffset();
    ```
-4. In `extraUpdate` (which is called each frame): add `orbit.update(dt)` call. Since `extraUpdate` is replaced by `setUpdateHandler`, expose `orbit` via the returned object instead — simpler to call `orbit.update(dt)` directly inside the frame loop, before `extraUpdate`.
-5. Add `isDragging: () => orbit.isDragging()` to the returned object.
-6. Call `orbit.dispose()` — no teardown path currently exists; leave `dispose` available but don't wire it (themes aren't torn down without a page reload).
+4. Add `isDragging: () => orbit.isDragging()` to the returned object.
+5. `dispose()` is available but not wired — no teardown path currently exists (themes aren't torn down without a page reload).
 
 **`web/src/themes/grove/index.ts`**
 
@@ -111,11 +109,11 @@ return {
 3. In the frame loop, replace the camera block with orbit-aware positioning:
 
    ```ts
-   // Auto-drift position (unchanged)
+   // auto-drift position (unchanged)
    const autoX = reducedMotion ? 8 : Math.sin(t * 0.02) * 16;
    const autoZ = rowZ(0) + 14 + (reducedMotion ? 0 : Math.cos(t * 0.013) * 2);
 
-   // Rotate auto position around the look target (0, 1, -6) on the XZ plane
+   // rotate the drift position around the look target (0, _, -6) on the XZ plane
    const ltX = 0, ltZ = -6;
    const dx = autoX - ltX;
    const dz = autoZ - ltZ;
@@ -127,8 +125,6 @@ return {
      ltZ + dx * sinA + dz * cosA,
    );
    camera.lookAt(0, 1, -6);
-
-   orbit.update(dt);
    ```
 
 4. Add `isDragging: () => orbit.isDragging()` to the returned handle.
@@ -140,18 +136,20 @@ return {
 | Scenario | Behaviour |
 |---|---|
 | Short tap (< 4 px movement) | No orbit; picker fires normally (hover, card pin) |
-| Horizontal drag | Camera rotates; hover and card pin suppressed |
-| Release | `easing = true`; offset decays exponentially, ~87% return in 1 s, settled by 2 s |
+| Horizontal drag | Camera rotates; hover suppressed; the post-drag click is suppressed so it doesn't pin the card |
+| Release | Offset stays put; auto-drift resumes from the released angle (no snap-back) |
+| Second drag | Stacks further offset onto the current angle |
 | `prefers-reduced-motion` | Drag still works (orbit is user-initiated); auto-drift is already paused per existing logic |
 | Touch | Works via pointer events (no separate touch handling needed) |
-| Rapid swipe | Offset may be large; decay still applies — no momentum/fling (keeps it simple) |
+| Rapid swipe | Offset may be large; no momentum/fling — the view stops where the drag ends |
 
 ---
 
 ## What is NOT in scope
 
 - Vertical tilt / pitch (horizontal only, as specified)
-- Momentum / fling on release (simple decay is sufficient)
+- Momentum / fling on release (the view simply stops where the drag ends)
+- Snap-back to the original angle (the released angle is kept)
 - Gallery scene (it already has its own self-managed pan/zoom input)
 - Any new UI affordance (no drag hint overlay)
 

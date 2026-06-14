@@ -1,7 +1,8 @@
 /**
  * Pure offset state — no DOM, fully testable.
  * Caller converts pixels → radians and passes the result to `accumulate`.
- * Offset persists after release; the auto-drift continues from the released angle.
+ * The offset persists after a drag; the scene's auto-drift continues from the
+ * released angle rather than snapping back.
  */
 export class OrbitState {
   offset = 0;
@@ -9,28 +10,19 @@ export class OrbitState {
   accumulate(deltaRadians: number): void {
     this.offset += deltaRadians;
   }
-
-  release(): void {
-    // offset is already locked in; no snap-back
-  }
-
-  update(_dt: number, _returnSpeed: number): void {
-    // no-op: offset persists after release
-  }
 }
 
 export interface OrbitControl {
   getOffset(): number;
   isDragging(): boolean;
-  update(dt: number): void;
   dispose(): void;
 }
 
 export function createOrbitControl(
   canvas: HTMLCanvasElement,
-  opts: { sensitivity?: number; returnSpeed?: number; dragThreshold?: number } = {}
+  opts: { sensitivity?: number; dragThreshold?: number } = {}
 ): OrbitControl {
-  const { sensitivity = 2.0, returnSpeed = 2.0, dragThreshold = 4 } = opts;
+  const { sensitivity = 2.0, dragThreshold = 4 } = opts;
   const state = new OrbitState();
   let dragging = false;
   let suppressNextClick = false;
@@ -62,7 +54,6 @@ export function createOrbitControl(
       dragging = false;
       suppressNextClick = true;
       canvas.style.cursor = "";
-      state.release();
     }
   }
 
@@ -73,6 +64,8 @@ export function createOrbitControl(
 
   return {
     getOffset: () => state.offset,
+    // Also consumes the one-shot click suppression armed on drag release, so the
+    // picker's click handler ignores the click the browser fires after a drag.
     isDragging: () => {
       if (suppressNextClick) {
         suppressNextClick = false;
@@ -80,7 +73,6 @@ export function createOrbitControl(
       }
       return dragging;
     },
-    update: (dt) => state.update(dt, returnSpeed),
     dispose: () => {
       canvas.removeEventListener("pointerdown", onPointerDown);
       canvas.removeEventListener("pointermove", onPointerMove);

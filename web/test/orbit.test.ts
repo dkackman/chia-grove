@@ -14,41 +14,15 @@ test("accumulate increases offset by the given radians", () => {
   expect(s.offset).toBeCloseTo(0.8);
 });
 
-test("update does not change the offset", () => {
+test("accumulate handles negative deltas", () => {
   const s = new OrbitState();
   s.accumulate(1.0);
-  s.update(2.0, 2.0);
+  s.accumulate(-0.4);
+  expect(s.offset).toBeCloseTo(0.6);
+});
+
+test("offset persists across many accumulations (no decay)", () => {
+  const s = new OrbitState();
+  for (let i = 0; i < 10; i++) s.accumulate(0.1);
   expect(s.offset).toBeCloseTo(1.0);
-});
-
-test("after release, offset persists at the released position", () => {
-  const s = new OrbitState();
-  s.accumulate(1.0);
-  s.release();
-  s.update(1.0, 2.0);
-  expect(s.offset).toBeCloseTo(1.0); // no snap-back
-});
-
-test("offset persists unchanged after release and many updates", () => {
-  const s = new OrbitState();
-  s.accumulate(1.0);
-  s.release();
-  for (let i = 0; i < 300; i++) s.update(1 / 60, 2.0);
-  expect(s.offset).toBeCloseTo(1.0); // no decay
-});
-
-test("subsequent drags accumulate onto the persistent offset", () => {
-  const s = new OrbitState();
-  s.accumulate(1.0);
-  s.release();
-  s.accumulate(0.5); // second drag stacks on top
-  s.update(1.0, 2.0);
-  expect(s.offset).toBeCloseTo(1.5);
-});
-
-test("release on zero offset is a no-op", () => {
-  const s = new OrbitState();
-  s.release();
-  s.update(1.0, 2.0);
-  expect(s.offset).toBe(0);
 });

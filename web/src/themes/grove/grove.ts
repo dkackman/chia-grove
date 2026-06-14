@@ -118,7 +118,6 @@ export function startGrove(canvas: HTMLCanvasElement, feed: GroveFeed) {
     );
     camera.lookAt(0, 2.5, 0);
 
-    orbit.update(dt);
     sky.update(dt, t);
     ground.update(dt);
     extraUpdate(dt, t);

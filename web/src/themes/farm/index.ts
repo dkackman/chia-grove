@@ -118,11 +118,11 @@ export const farm: Visualization = {
       clockT = t;
 
       // drift along the field's near edge, looking across the rows at the barn
-      // Auto-drift position
       const autoX = reducedMotion ? 8 : Math.sin(t * 0.02) * 16;
       const autoZ = rowZ(0) + 14 + (reducedMotion ? 0 : Math.cos(t * 0.013) * 2);
 
-      // Rotate auto position around the look target (0, _, -6) on the XZ plane
+      // rotate the drift position around the look target (0, _, -6) on the XZ
+      // plane by the user's accumulated orbit offset
       const ltX = 0, ltZ = -6;
       const dx = autoX - ltX;
       const dz = autoZ - ltZ;
@@ -134,8 +134,6 @@ export const farm: Visualization = {
         ltZ + dx * sinA + dz * cosA,
       );
       camera.lookAt(0, 1, -6);
-
-      orbit.update(dt);
 
       sky.update(dt, t);
       field.update(t);
