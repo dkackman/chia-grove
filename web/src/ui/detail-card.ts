@@ -1,5 +1,5 @@
 import type { SproutEvent } from "@grove/shared";
-import { mojosToXch, shortHex } from "./format.js";
+import { mojosToXch, mojosToCAT, shortHex } from "./format.js";
 import { mediaKind } from "./media.js";
 
 const KIND_LABELS: Record<SproutEvent["kind"], string> = {
@@ -67,7 +67,11 @@ export function showCard(event: SproutEvent): void {
     card.appendChild(nftMediaEl(event.imageUrl));
   }
 
-  card.appendChild(el("div", undefined, `${mojosToXch(event.amount)} XCH · block ${event.height}`));
+  const amountLabel =
+    event.kind === "cat"
+      ? `${mojosToCAT(event.amount)} ${event.catTicker ?? "CAT"}`
+      : `${mojosToXch(event.amount)} XCH`;
+  card.appendChild(el("div", undefined, `${amountLabel} · block ${event.height}`));
   card.appendChild(el("div", "dim", `coin ${shortHex(event.coinId)}`));
 
   if (event.assetId) {

@@ -6,6 +6,14 @@ export function mojosToXch(mojos: string): string {
   return frac ? `${whole}.${frac}` : whole;
 }
 
+/** CAT mojo string → CAT decimal string (1 CAT = 1000 mojos). */
+export function mojosToCAT(mojos: string): string {
+  const padded = mojos.padStart(4, "0");
+  const whole = padded.slice(0, -3).replace(/^0+(?=\d)/, "");
+  const frac = padded.slice(-3).replace(/0+$/, "");
+  return frac ? `${whole}.${frac}` : whole;
+}
+
 export function shortHex(hex: string): string {
   return `${hex.slice(0, 8)}…${hex.slice(-6)}`;
 }
