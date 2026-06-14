@@ -110,11 +110,12 @@ export const farm: Visualization = {
     });
     feed.onStatus((status) => sky.setSignalLost(status === "stale"));
 
-    const clock = new THREE.Clock();
+    const timer = new THREE.Timer();
     function frame(): void {
       requestAnimationFrame(frame);
-      const dt = Math.min(clock.getDelta(), 0.1);
-      const t = clock.elapsedTime;
+      timer.update();
+      const dt = Math.min(timer.getDelta(), 0.1);
+      const t = timer.getElapsed();
       clockT = t;
 
       // drift along the field's near edge, looking across the rows at the barn

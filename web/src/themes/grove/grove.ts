@@ -103,11 +103,12 @@ export function startGrove(canvas: HTMLCanvasElement, feed: GroveFeed) {
 
   feed.onStatus((status) => sky.setSignalLost(status === "stale"));
 
-  const clock = new THREE.Clock();
+  const timer = new THREE.Timer();
   function frame(): void {
     requestAnimationFrame(frame);
-    const dt = Math.min(clock.getDelta(), 0.1);
-    const t = clock.elapsedTime;
+    timer.update();
+    const dt = Math.min(timer.getDelta(), 0.1);
+    const t = timer.getElapsed();
 
     const angle = (reducedMotion ? 0.8 : t * 0.02) + orbit.getOffset();
     const radius = 34 + (reducedMotion ? 0 : Math.sin(t * 0.07) * 2.5);
