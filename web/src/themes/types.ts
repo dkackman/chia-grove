@@ -8,6 +8,7 @@ export interface VisualizationHandle {
   onFrame(fn: () => void): void;
   /** When true, main.ts skips the shared canvas picker; the theme wires its own input. */
   selfManagedInput?: boolean;
+  isDragging?(): boolean;
   pickables?(): THREE.Object3D[];
   metaFor?(object: THREE.Object3D, instanceId: number | undefined): SproutEvent | null;
   setHovered?(object: THREE.Object3D | null, instanceId: number | undefined): void;

@@ -67,6 +67,10 @@ export function attachPicker(canvas: HTMLCanvasElement, viz: VisualizationHandle
 
   viz.onFrame(() => {
     if (pendingX < 0) return;
+    if (viz.isDragging?.()) {
+      pendingX = -1;
+      return;
+    }
     const hit = intersect(pendingX, pendingY);
     pendingX = -1;
 
@@ -88,6 +92,7 @@ export function attachPicker(canvas: HTMLCanvasElement, viz: VisualizationHandle
   });
 
   canvas.addEventListener("click", (event) => {
+    if (viz.isDragging?.()) return;
     const hit = intersect(event.clientX, event.clientY);
     clearCardTimers();
     if (hit) {
