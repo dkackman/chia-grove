@@ -49,6 +49,9 @@ export function createMineSky(scene: THREE.Scene, reducedMotion = false): MineSk
   // sun + moon
   const sun = new THREE.DirectionalLight(0xfff4c2, 1);
   scene.add(sun);
+  // cool moonlight so the island stays legible (and bluish) at night
+  const moonLight = new THREE.DirectionalLight(0x9fb6ff, 0);
+  scene.add(moonLight);
   const sunSprite = sprite(MINE.sun, 16);
   const moonSprite = sprite(MINE.moon, 12);
   scene.add(sunSprite, moonSprite);
@@ -104,12 +107,16 @@ export function createMineSky(scene: THREE.Scene, reducedMotion = false): MineSk
       // sun rides an arc; moon opposite
       const R = 140;
       sun.position.set(Math.cos(phase * Math.PI * 2) * R, h * R, -40);
-      sun.intensity = Math.max(0.05, day) * netspace;
+      sun.intensity = Math.max(0, day) * netspace;
       sunSprite.position.copy(sun.position);
       (sunSprite.material as THREE.SpriteMaterial).opacity = Math.max(0, h);
+      // moonlight rises as the sun sets; lit from above so block tops catch it
+      const night = Math.max(0, -h);
       moonSprite.position.set(-sun.position.x, -h * R, -40);
-      (moonSprite.material as THREE.SpriteMaterial).opacity = Math.max(0, -h);
-      starMat.opacity = Math.max(0, -h) * 0.9;
+      moonLight.position.copy(moonSprite.position);
+      moonLight.intensity = night * 0.6;
+      (moonSprite.material as THREE.SpriteMaterial).opacity = night;
+      starMat.opacity = night * 0.9;
       stars.rotation.y = t * 0.003;
     },
     setNetspace(bytes) {
