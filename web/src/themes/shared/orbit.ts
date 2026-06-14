@@ -1,32 +1,21 @@
-const SETTLED = 0.0001;
-
 /**
- * Pure decay state — no DOM, fully testable.
+ * Pure offset state — no DOM, fully testable.
  * Caller converts pixels → radians and passes the result to `accumulate`.
+ * Offset persists after release; the auto-drift continues from the released angle.
  */
 export class OrbitState {
   offset = 0;
-  private _easing = false;
 
-  /** Called each pointermove frame while dragging. */
   accumulate(deltaRadians: number): void {
-    this._easing = false;
     this.offset += deltaRadians;
   }
 
-  /** Called on pointerup to start the snap-back. */
   release(): void {
-    this._easing = Math.abs(this.offset) > SETTLED;
+    // offset is already locked in; no snap-back
   }
 
-  /** Call every frame. Decays offset exponentially toward zero. */
-  update(dt: number, returnSpeed: number): void {
-    if (!this._easing) return;
-    this.offset *= Math.pow(Math.E, -returnSpeed * dt);
-    if (Math.abs(this.offset) < SETTLED) {
-      this.offset = 0;
-      this._easing = false;
-    }
+  update(_dt: number, _returnSpeed: number): void {
+    // no-op: offset persists after release
   }
 }
 
