@@ -20,15 +20,15 @@ export function startMine(canvas: HTMLCanvasElement, feed: GroveFeed) {
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 600);
 
-  scene.add(new THREE.HemisphereLight(0xcfe6ff, 0x3a3326, 0.6));
+  scene.add(new THREE.HemisphereLight(0xcfe6ff, 0x3a3326, 0.4));
   const sky = createMineSky(scene, reducedMotion);
 
   const postfx = createPostFx(renderer, scene, camera, {
     toneMapping: THREE.ACESFilmicToneMapping,
     exposure: 1.05,
-    bloomStrength: 0.18,
+    bloomStrength: 0.07,
     bloomRadius: 0.5,
-    bloomThreshold: 0.65,
+    bloomThreshold: 0.82,
   });
 
   // wired up by later tasks (island/cats/structures/vfx via index.ts)
@@ -70,9 +70,13 @@ export function startMine(canvas: HTMLCanvasElement, feed: GroveFeed) {
     const t = timer.getElapsed();
 
     const angle = (reducedMotion ? 0.8 : t * 0.015) + orbit.getOffset();
-    const radius = 46 + (reducedMotion ? 0 : Math.sin(t * 0.06) * 3);
-    camera.position.set(Math.cos(angle) * radius, 26 + Math.sin(t * 0.04) * 1.2, Math.sin(angle) * radius);
-    camera.lookAt(0, 1.5, 0);
+    const radius = 38 + (reducedMotion ? 0 : Math.sin(t * 0.06) * 3);
+    camera.position.set(
+      Math.cos(angle) * radius,
+      17 + Math.sin(t * 0.04) * 1.2,
+      Math.sin(angle) * radius
+    );
+    camera.lookAt(0, 3, 0);
 
     sky.update(dt, t);
     extraUpdate(dt, t);

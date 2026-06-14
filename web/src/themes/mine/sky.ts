@@ -5,7 +5,7 @@ import { MINE } from "./palette.js";
 export const CYCLE_SECONDS = 150;
 
 export function cyclePhase(t: number, cycle = CYCLE_SECONDS): number {
-  return ((t % cycle) + cycle) % cycle / cycle;
+  return (((t % cycle) + cycle) % cycle) / cycle;
 }
 
 /** -1 (midnight) .. +1 (noon). Phase 0 = sunrise. */
@@ -44,7 +44,7 @@ export function createMineSky(scene: THREE.Scene, reducedMotion = false): MineSk
   const fogNight = new THREE.Color(MINE.fogNight);
   const bg = new THREE.Color();
   scene.background = bg;
-  scene.fog = new THREE.FogExp2(MINE.fogDay, 0.012);
+  scene.fog = new THREE.FogExp2(MINE.fogDay, 0.0038);
 
   // sun + moon
   const sun = new THREE.DirectionalLight(0xfff4c2, 1);
@@ -59,7 +59,9 @@ export function createMineSky(scene: THREE.Scene, reducedMotion = false): MineSk
   const starMat = stars.material as THREE.PointsMaterial;
 
   function sprite(color: number, size: number): THREE.Sprite {
-    const s = new THREE.Sprite(new THREE.SpriteMaterial({ color, fog: false, transparent: true, depthWrite: false }));
+    const s = new THREE.Sprite(
+      new THREE.SpriteMaterial({ color, fog: false, transparent: true, depthWrite: false })
+    );
     s.scale.setScalar(size);
     return s;
   }
@@ -75,7 +77,17 @@ export function createMineSky(scene: THREE.Scene, reducedMotion = false): MineSk
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-    return new THREE.Points(g, new THREE.PointsMaterial({ size: 1.4, color: 0xdfe6f2, transparent: true, opacity: 0, depthWrite: false, fog: false }));
+    return new THREE.Points(
+      g,
+      new THREE.PointsMaterial({
+        size: 1.4,
+        color: 0xdfe6f2,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        fog: false,
+      })
+    );
   }
 
   let netspace = 1;

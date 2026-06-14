@@ -5,6 +5,7 @@ import { mulberry32 } from "../shared/util.js";
 import { InstancedKind, type Pose } from "../shared/instanced.js";
 import { resolveCatBlock, type CatFamily } from "./material.js";
 import { seatCell, cellLocal } from "./layout.js";
+import { woolTexture, glassTexture, emissiveCellTexture } from "./textures.js";
 
 const CAPS: Record<CatFamily, number> = { opaque: 400, transparent: 120, emissive: 80 };
 const SPECIAL_BUDGET = 192; // cap cubes placed per block (airdrops stay bounded)
@@ -16,13 +17,33 @@ export function cubeGeometry(): THREE.BufferGeometry {
 }
 
 function opaqueMaterial(): THREE.Material {
-  return new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, flatShading: true });
+  return new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    roughness: 0.85,
+    flatShading: true,
+    map: woolTexture(),
+  });
 }
 function transparentMaterial(): THREE.Material {
-  return new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.1, metalness: 0, transparent: true, opacity: 0.55, depthWrite: false, flatShading: true });
+  return new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    roughness: 0.1,
+    metalness: 0,
+    transparent: true,
+    opacity: 0.55,
+    depthWrite: false,
+    flatShading: true,
+    map: glassTexture(),
+  });
 }
 function emissiveMaterial(): THREE.Material {
-  const m = new THREE.MeshStandardMaterial({ color: 0x111111, emissive: 0xffffff, emissiveIntensity: 1.4, roughness: 0.5 });
+  const m = new THREE.MeshStandardMaterial({
+    color: 0x000000,
+    emissive: 0xffffff,
+    emissiveIntensity: 1.5,
+    emissiveMap: emissiveCellTexture(),
+    roughness: 0.5,
+  });
   // route per-instance color into the emissive term (same trick as grove mushrooms)
   m.onBeforeCompile = (shader) => {
     shader.fragmentShader = shader.fragmentShader.replace(
@@ -42,8 +63,24 @@ export class CatBlocks {
   constructor(scene: THREE.Scene) {
     this.fam = {
       opaque: new InstancedKind(scene, cubeGeometry(), opaqueMaterial(), CAPS.opaque, 0, 140, 1),
-      transparent: new InstancedKind(scene, cubeGeometry(), transparentMaterial(), CAPS.transparent, 0, 140, 1),
-      emissive: new InstancedKind(scene, cubeGeometry(), emissiveMaterial(), CAPS.emissive, 0, 140, 1),
+      transparent: new InstancedKind(
+        scene,
+        cubeGeometry(),
+        transparentMaterial(),
+        CAPS.transparent,
+        0,
+        140,
+        1
+      ),
+      emissive: new InstancedKind(
+        scene,
+        cubeGeometry(),
+        emissiveMaterial(),
+        CAPS.emissive,
+        0,
+        140,
+        1
+      ),
     };
   }
 
@@ -74,7 +111,13 @@ export class CatBlocks {
     };
     const jx = (rand() - 0.5) * 0.06;
     const jz = (rand() - 0.5) * 0.06;
-    this.fam[block.family].plant(event, this.chunk.x + local.x + jx, this.chunk.z + local.z + jz, t, pose);
+    this.fam[block.family].plant(
+      event,
+      this.chunk.x + local.x + jx,
+      this.chunk.z + local.z + jz,
+      t,
+      pose
+    );
   }
 
   update(t: number): void {

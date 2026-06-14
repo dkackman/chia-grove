@@ -4,6 +4,7 @@ import type { XZ } from "../shared/util.js";
 import { InstancedKind, type Pose } from "../shared/instanced.js";
 import { MINE } from "./palette.js";
 import { floorCell, cellLocal, type Cell } from "./layout.js";
+import { speckleTexture } from "./textures.js";
 
 const GROUND_CAP = 2000;
 
@@ -26,7 +27,12 @@ export class Island {
   private chunk: XZ = { x: 0, z: 0 };
 
   constructor(scene: THREE.Scene) {
-    const material = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, flatShading: true });
+    const material = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.95,
+      flatShading: true,
+      map: speckleTexture(),
+    });
     this.ground = new InstancedKind(scene, groundGeometry(), material, GROUND_CAP, 0, 140, 1);
   }
 
