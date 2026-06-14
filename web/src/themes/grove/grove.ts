@@ -7,6 +7,7 @@ import { blockPosition } from "./layout.js";
 import { COLORS } from "./palette.js";
 import { createSky } from "./sky.js";
 import { createPostFx } from "../shared/postfx.js";
+import { createOrbitControl } from "../shared/orbit.js";
 
 /** Spiral slots wrap so the grove never grows beyond the meadow. */
 const MAX_BLOCK_SLOTS = 300;
@@ -43,6 +44,8 @@ export function startGrove(canvas: HTMLCanvasElement, feed: GroveFeed) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
   renderer.setSize(innerWidth, innerHeight);
+
+  const orbit = createOrbitControl(canvas);
 
   const scene = new THREE.Scene();
   scene.background = nightSkyGradient();
@@ -106,7 +109,7 @@ export function startGrove(canvas: HTMLCanvasElement, feed: GroveFeed) {
     const dt = Math.min(clock.getDelta(), 0.1);
     const t = clock.elapsedTime;
 
-    const angle = reducedMotion ? 0.8 : t * 0.02;
+    const angle = (reducedMotion ? 0.8 : t * 0.02) + orbit.getOffset();
     const radius = 34 + (reducedMotion ? 0 : Math.sin(t * 0.07) * 2.5);
     camera.position.set(
       Math.cos(angle) * radius,
@@ -115,6 +118,7 @@ export function startGrove(canvas: HTMLCanvasElement, feed: GroveFeed) {
     );
     camera.lookAt(0, 2.5, 0);
 
+    orbit.update(dt);
     sky.update(dt, t);
     ground.update(dt);
     extraUpdate(dt, t);
@@ -138,6 +142,7 @@ export function startGrove(canvas: HTMLCanvasElement, feed: GroveFeed) {
       setBlockHandler: (fn: typeof onBlockExtra) => (onBlockExtra = fn),
       setReorgHandler: (fn: typeof onReorgExtra) => (onReorgExtra = fn),
       setUpdateHandler: (fn: typeof extraUpdate) => (extraUpdate = fn),
+      isDragging: () => orbit.isDragging(),
       reducedMotion,
     }
   );
