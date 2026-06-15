@@ -88,11 +88,17 @@ export const mine: Visualization = {
         paintings.metaFor(object),
       setHovered: (object, instanceId) => {
         if (hovered) {
-          cats.setHighlight(hovered.object, hovered.index, false);
+          if (!island.setHighlight(hovered.object, hovered.index, false))
+            cats.setHighlight(hovered.object, hovered.index, false);
           hovered = null;
         }
-        if (object && instanceId !== undefined && cats.setHighlight(object, instanceId, true)) {
-          hovered = { object, index: instanceId };
+        if (object && instanceId !== undefined) {
+          if (
+            island.setHighlight(object, instanceId, true) ||
+            cats.setHighlight(object, instanceId, true)
+          ) {
+            hovered = { object, index: instanceId };
+          }
         }
       },
     };

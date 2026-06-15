@@ -146,4 +146,9 @@ export class Island {
     if (object === this.dirt.mesh) return this.dirt.metaAt(instanceId ?? -1);
     return null;
   }
+  setHighlight(object: THREE.Object3D, instanceId: number, on: boolean): boolean {
+    if (object !== this.grass.mesh) return false;
+    this.grass.setHighlight(instanceId, on);
+    return true;
+  }
 }
