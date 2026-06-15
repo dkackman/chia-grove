@@ -76,3 +76,15 @@ export function seatCell(seatIndex: number): Seat {
 export function cellLocal(cell: Cell, layer: number): { x: number; z: number; y: number } {
   return { x: cell.col * SPACING, z: cell.row * SPACING, y: layer * CUBE };
 }
+
+/**
+ * The 3×3 patch of floor cells a special's ground platform covers, centred on
+ * its seat cell. Gives a special on a thin frontier chunk connected land to
+ * stand on instead of a single isolated tile out over the water.
+ */
+export function platformCells(center: Cell): Cell[] {
+  const cells: Cell[] = [];
+  for (let dc = -1; dc <= 1; dc++)
+    for (let dr = -1; dr <= 1; dr++) cells.push({ col: center.col + dc, row: center.row + dr });
+  return cells;
+}

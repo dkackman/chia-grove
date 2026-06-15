@@ -85,6 +85,8 @@ export class Villagers {
 }
 
 const PAINTING_CAP = 40;
+const FRAME_HALF = 0.65; // half the 1.3-tall frame
+const POST_H = 1.0; // easel post height above the ground surface
 
 interface Painting {
   group: THREE.Group;
@@ -109,12 +111,22 @@ export class Paintings {
       flatShading: true,
     });
     const panelGeo = new THREE.PlaneGeometry(0.9, 1.1);
+    // easel post: hangs below the frame (group origin = frame centre) so its base
+    // reaches the ground, making the painting read as planted on land, not floating
+    const postGeo = new THREE.BoxGeometry(0.12, POST_H, 0.12);
+    postGeo.translate(0, -(FRAME_HALF + POST_H / 2), 0);
+    const postMat = new THREE.MeshStandardMaterial({
+      color: 0x4a3119,
+      roughness: 0.85,
+      flatShading: true,
+    });
     this.pool = Array.from({ length: cap }, () => {
       const group = new THREE.Group();
       const frame = new THREE.Mesh(frameGeo, frameMat);
       const panel = new THREE.Mesh(panelGeo, new THREE.MeshBasicMaterial({ color: 0x9fb6c9 }));
       panel.position.z = 0.07;
-      group.add(frame, panel);
+      const post = new THREE.Mesh(postGeo, postMat);
+      group.add(frame, panel, post);
       group.visible = false;
       scene.add(group);
       return { group, panel, meta: null };
@@ -130,11 +142,10 @@ export class Paintings {
       this.byLauncher.delete(p.meta.launcherId);
     }
     const local = cellLocal({ col: seat.col, row: seat.row }, seat.layer);
-    p.group.position.set(
-      chunk.x + local.x,
-      chunkElevation(chunk) + local.y + 0.65,
-      chunk.z + local.z
-    );
+    // stand the easel on the ground surface (ground cube top = elevation + 1),
+    // independent of the seat layer so paintings never float up in mid-air
+    const groundTop = chunkElevation(chunk) + 1;
+    p.group.position.set(chunk.x + local.x, groundTop + POST_H + FRAME_HALF, chunk.z + local.z);
     p.group.visible = true;
     p.meta = event;
     if (event.launcherId) this.byLauncher.set(event.launcherId, slot);

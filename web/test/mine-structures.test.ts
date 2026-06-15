@@ -39,3 +39,20 @@ test("clearAbove frees the launchers of the paintings it removes", () => {
   expect(p.has(lid(1))).toBe(true);
   expect(p.has(lid(2))).toBe(false);
 });
+
+test("a painting stands at ground height independent of its seat layer", () => {
+  const p = new Paintings(new THREE.Scene());
+  p.plant(nft(id(1), lid(1)), chunk, { col: 0, row: 0, layer: 1 });
+  p.plant(nft(id(2), lid(2)), chunk, { col: 0, row: 0, layer: 3 });
+  // a stacked seat must not float the easel higher — both stand on the ground
+  const ys = p.pickables().map((o) => (o.parent as THREE.Object3D).position.y);
+  expect(ys[0]).toBe(ys[1]);
+});
+
+test("each painting has a support post (easel) beneath the frame", () => {
+  const p = new Paintings(new THREE.Scene());
+  p.plant(nft(id(1), lid(1)), chunk, seat);
+  const group = p.pickables()[0].parent as THREE.Group;
+  const meshes = group.children.filter((c) => (c as THREE.Mesh).isMesh);
+  expect(meshes.length).toBe(3); // frame, panel, post
+});
