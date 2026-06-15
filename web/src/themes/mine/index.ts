@@ -41,6 +41,10 @@ export const mine: Visualization = {
         return;
       }
       if (event.mint) vfx.beacon(chunk, clock.t);
+      // an NFT spent more than once inside the window (a mint is an eve + lineage
+      // spend; transfers spend it again) arrives as repeat events — hang just one
+      // painting per launcher id, the way the gallery dedupes its canvases
+      if (event.kind === "nft" && event.launcherId && paintings.has(event.launcherId)) return;
       const seat = cats.nextSeat();
       if (!seat) return;
       island.ensureGround(event, { col: seat.col, row: seat.row }, clock.t);

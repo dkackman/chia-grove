@@ -94,9 +94,14 @@ interface Painting {
 
 export class Paintings {
   private readonly pool: Painting[];
+  /** launcher id -> slot index, so a repeat lineage spend doesn't hang a duplicate */
+  private readonly byLauncher = new Map<string, number>();
   private next = 0;
 
-  constructor(scene: THREE.Scene) {
+  constructor(
+    scene: THREE.Scene,
+    private readonly cap = PAINTING_CAP
+  ) {
     const frameGeo = new THREE.BoxGeometry(1.1, 1.3, 0.12);
     const frameMat = new THREE.MeshStandardMaterial({
       color: 0x5a3d23,
@@ -104,7 +109,7 @@ export class Paintings {
       flatShading: true,
     });
     const panelGeo = new THREE.PlaneGeometry(0.9, 1.1);
-    this.pool = Array.from({ length: PAINTING_CAP }, () => {
+    this.pool = Array.from({ length: cap }, () => {
       const group = new THREE.Group();
       const frame = new THREE.Mesh(frameGeo, frameMat);
       const panel = new THREE.Mesh(panelGeo, new THREE.MeshBasicMaterial({ color: 0x9fb6c9 }));
@@ -117,8 +122,13 @@ export class Paintings {
   }
 
   plant(event: SproutEvent, chunk: XZ, seat: { col: number; row: number; layer: number }): void {
-    const p = this.pool[this.next];
-    this.next = (this.next + 1) % PAINTING_CAP;
+    const slot = this.next;
+    const p = this.pool[slot];
+    this.next = (this.next + 1) % this.cap;
+    // a recycled slot may still own a launcher mapping — drop it before reuse
+    if (p.meta?.launcherId && this.byLauncher.get(p.meta.launcherId) === slot) {
+      this.byLauncher.delete(p.meta.launcherId);
+    }
     const local = cellLocal({ col: seat.col, row: seat.row }, seat.layer);
     p.group.position.set(
       chunk.x + local.x,
@@ -127,6 +137,7 @@ export class Paintings {
     );
     p.group.visible = true;
     p.meta = event;
+    if (event.launcherId) this.byLauncher.set(event.launcherId, slot);
     // reset a recycled slot to the placeholder before the (async) art loads
     const mat = p.panel.material as THREE.MeshBasicMaterial;
     mat.map = null;
@@ -155,9 +166,17 @@ export class Paintings {
       if (p.meta) p.group.lookAt(camera.position.x, p.group.position.y, camera.position.z);
     }
   }
+  /** True if an NFT with this launcher id currently has a painting hung. */
+  has(launcherId: string): boolean {
+    return this.byLauncher.has(launcherId);
+  }
   clearAbove(forkHeight: number): void {
-    for (const p of this.pool) {
+    for (let i = 0; i < this.pool.length; i++) {
+      const p = this.pool[i];
       if (p.meta && p.meta.height >= forkHeight) {
+        if (p.meta.launcherId && this.byLauncher.get(p.meta.launcherId) === i) {
+          this.byLauncher.delete(p.meta.launcherId);
+        }
         p.meta = null;
         p.group.visible = false;
       }
