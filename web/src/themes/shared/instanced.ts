@@ -88,11 +88,16 @@ export class InstancedKind {
       boundsRadius
     );
     scene.add(this.mesh);
+    // Only draw instances that have actually been planted; grows toward `cap`
+    // in plant(). Lets a theme allocate a big cap (e.g. persistent terrain)
+    // without paying to render thousands of empty scale-0 slots every frame.
+    this.mesh.count = 0;
   }
 
   plant(meta: SproutEvent, x: number, z: number, t: number, pose: Pose): number {
     const i = this.next;
     this.next = (this.next + 1) % this.slots.length;
+    if (i + 1 > this.mesh.count) this.mesh.count = i + 1;
     const slot = this.slots[i];
     slot.meta = meta;
     slot.bornAt = t;

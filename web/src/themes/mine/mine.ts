@@ -8,7 +8,7 @@ import { chunkPosition } from "./layout.js";
 import { createMineSky } from "./sky.js";
 import { createWater } from "./water.js";
 
-const MAX_BLOCK_SLOTS = 400;
+const MAX_BLOCK_SLOTS = 120;
 
 export function startMine(canvas: HTMLCanvasElement, feed: GroveFeed) {
   const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -36,7 +36,7 @@ export function startMine(canvas: HTMLCanvasElement, feed: GroveFeed) {
   // wired up by later tasks (island/cats/structures/vfx via index.ts)
   let onSprout = (_event: SproutEvent, _chunk: XZ, _height: number) => {};
   let onAmbientExtra = (_mempoolSize: number) => {};
-  let onBlockExtra = (_chunk: XZ) => {};
+  let onBlockExtra = (_chunk: XZ, _index: number) => {};
   let onReorgExtra = (_forkHeight: number) => {};
   let extraUpdate = (_dt: number, _t: number) => {};
 
@@ -45,11 +45,13 @@ export function startMine(canvas: HTMLCanvasElement, feed: GroveFeed) {
 
   feed.onEvent((event: GroveEvent) => {
     switch (event.type) {
-      case "block":
-        currentChunk = chunkPosition(blockIndex);
-        blockIndex = (blockIndex + 1) % MAX_BLOCK_SLOTS;
-        onBlockExtra(currentChunk);
+      case "block": {
+        const index = blockIndex;
+        currentChunk = chunkPosition(index);
+        blockIndex = (index + 1) % MAX_BLOCK_SLOTS;
+        onBlockExtra(currentChunk, index);
         break;
+      }
       case "sprout":
         onSprout(event, currentChunk, event.height);
         break;

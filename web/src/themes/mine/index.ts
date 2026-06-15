@@ -30,9 +30,9 @@ export const mine: Visualization = {
     const currentChunkRef = { value: { x: 0, z: 0 } };
     let hovered: { object: THREE.Object3D; index: number } | null = null;
 
-    runtime.setBlockHandler((chunk) => {
+    runtime.setBlockHandler((chunk, index) => {
       currentChunkRef.value = chunk;
-      island.startBlock(chunk);
+      island.startBlock(chunk, index);
       cats.startBlock(chunk);
     });
     runtime.setSproutHandler((event, chunk, _height) => {

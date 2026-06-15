@@ -5,8 +5,11 @@ import { InstancedKind, type Pose } from "../shared/instanced.js";
 import { floorCell, cellLocal, chunkElevation, type Cell } from "./layout.js";
 import { grassTopTexture, dirtTexture, grassSideTexture } from "./textures.js";
 
-const GRASS_CAP = 2000;
-const DIRT_CAP = 3000;
+// Big enough that ground for the whole island footprint persists without
+// recycling — terrain accumulates and stays. InstancedKind only draws the
+// instances actually planted, so this headroom is cheap until it fills.
+const GRASS_CAP = 6000;
+const DIRT_CAP = 6000;
 
 /** Unit cube whose base sits at y=0 so it grows upward from its seat. */
 export function groundGeometry(): THREE.BufferGeometry {
@@ -32,12 +35,20 @@ function dirtMaterial(): THREE.Material {
   return new THREE.MeshStandardMaterial({ map: dirtTexture(), roughness: 0.95, flatShading: true });
 }
 
+interface ChunkGround {
+  cursor: number; // next floor tile for this chunk's XCH spends (persists across visits)
+  occupied: Map<string, number>; // cell key → height of the block that grounded it
+}
+
 export class Island {
   private readonly grass: InstancedKind;
   private readonly dirt: InstancedKind;
-  // per-current-block occupancy + floor cursor (reset on each new block)
-  private occupied = new Set<string>();
-  private floorCursor = 0;
+  // Terrain is keyed by chunk (block-slot) index and persists across the
+  // block-slot cycle, so the island builds up and stays rather than churning.
+  // Specials (CATs/NFTs/villagers) still recycle on their own caps — only the
+  // activity on top churns; the ground beneath it is permanent.
+  private readonly chunks = new Map<number, ChunkGround>();
+  private current: ChunkGround = { cursor: 0, occupied: new Map() };
   private chunk: XZ = { x: 0, z: 0 };
 
   constructor(scene: THREE.Scene) {
@@ -48,16 +59,20 @@ export class Island {
     this.dirt = new InstancedKind(scene, groundGeometry(), dirtMaterial(), DIRT_CAP, 0, 140, 1);
   }
 
-  /** Begin a new block's chunk. */
-  startBlock(chunk: XZ): void {
+  /** Begin (or revisit) a block's chunk; ground state for that slot persists. */
+  startBlock(chunk: XZ, index: number): void {
     this.chunk = chunk;
-    this.occupied = new Set();
-    this.floorCursor = 0;
+    let state = this.chunks.get(index);
+    if (!state) {
+      state = { cursor: 0, occupied: new Map() };
+      this.chunks.set(index, state);
+    }
+    this.current = state;
   }
 
-  /** XCH spend → next grass floor tile. */
+  /** XCH spend → next still-empty grass floor tile for this chunk. */
   placeGrass(event: SproutEvent, t: number): void {
-    const cell = floorCell(this.floorCursor++);
+    const cell = floorCell(this.current.cursor++);
     this.place(event, cell, this.grass, t);
   }
 
@@ -66,12 +81,13 @@ export class Island {
     this.place(event, cell, this.dirt, t);
   }
 
-  // One ground cube per cell per block; whichever kind (grass/dirt) reaches the
-  // cell first wins, so a special never double-stacks ground beneath it.
+  // One ground cube per cell per chunk for the island's lifetime; whichever kind
+  // reaches the cell first wins. Ground persists, so a special always has terrain
+  // beneath it even after the special itself recycles.
   private place(event: SproutEvent, cell: Cell, kind: InstancedKind, t: number): void {
     const key = `${cell.col},${cell.row}`;
-    if (this.occupied.has(key)) return;
-    this.occupied.add(key);
+    if (this.current.occupied.has(key)) return;
+    this.current.occupied.set(key, event.height);
     const local = cellLocal(cell, 0);
     const e = chunkElevation(this.chunk);
     const wx = this.chunk.x + local.x;
@@ -97,6 +113,12 @@ export class Island {
   clearAbove(forkHeight: number): void {
     this.grass.clearWhere((m) => m.height >= forkHeight);
     this.dirt.clearWhere((m) => m.height >= forkHeight);
+    // re-open the cleared cells so replayed blocks re-ground them
+    for (const state of this.chunks.values()) {
+      for (const [cellKey, height] of state.occupied) {
+        if (height >= forkHeight) state.occupied.delete(cellKey);
+      }
+    }
   }
 
   pickables(): THREE.Object3D[] {
