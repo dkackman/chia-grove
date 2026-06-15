@@ -10,7 +10,7 @@ export function chunkPosition(index: number): XZ {
   return { x: Math.cos(angle) * radius, z: Math.sin(angle) * radius };
 }
 
-export const MAX_ELEVATION = 3;
+export const MAX_ELEVATION = 1;
 
 /**
  * Seeded, spatially smooth terrace height (0..MAX_ELEVATION) for a chunk.
