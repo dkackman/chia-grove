@@ -31,3 +31,9 @@ test("gallery theme is registered and resolvable", () => {
   expect(resolveTheme("?theme=gallery", null).id).toBe("gallery");
   expect(resolveTheme("", "gallery").id).toBe("gallery");
 });
+
+test("mine theme is registered and resolvable", () => {
+  expect(THEMES.map((t) => t.id)).toContain("mine");
+  expect(resolveTheme("?theme=mine", null).id).toBe("mine");
+  expect(resolveTheme("", "mine").id).toBe("mine");
+});

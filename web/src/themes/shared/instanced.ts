@@ -11,6 +11,7 @@ interface Slot {
   bornAt: number;
   x: number;
   z: number;
+  y: number;
   height: number;
   width: number;
   baseColor: THREE.Color;
@@ -27,6 +28,8 @@ export interface Pose {
   tiltX: number;
   tiltZ: number;
   swayPhase: number;
+  /** vertical offset of the instance base; defaults to 0 (ground plane). */
+  y?: number;
 }
 
 export const easeOutCubic = (p: number) => 1 - (1 - p) ** 3;
@@ -37,6 +40,7 @@ function makeSlots(cap: number): Slot[] {
     bornAt: 0,
     x: 0,
     z: 0,
+    y: 0,
     height: 1,
     width: 1,
     baseColor: WHITE.clone(),
@@ -59,9 +63,11 @@ export class InstancedKind {
   constructor(
     scene: THREE.Scene,
     geometry: THREE.BufferGeometry,
-    material: THREE.Material,
+    material: THREE.Material | THREE.Material[],
     cap: number,
-    private readonly swayAmp: number
+    private readonly swayAmp: number,
+    boundsRadius = 80,
+    boundsCenterY = 2
   ) {
     this.mesh = new THREE.InstancedMesh(geometry, material, cap);
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -77,18 +83,27 @@ export class InstancedKind {
     // happens while every instance is still scale-0, leaving a radius-0
     // sphere that makes every later raycast miss. Pin a fixed sphere that
     // covers the whole meadow instead (spiral max ~44 + cluster + height).
-    this.mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 2, 0), 80);
+    this.mesh.boundingSphere = new THREE.Sphere(
+      new THREE.Vector3(0, boundsCenterY, 0),
+      boundsRadius
+    );
     scene.add(this.mesh);
+    // Only draw instances that have actually been planted; grows toward `cap`
+    // in plant(). Lets a theme allocate a big cap (e.g. persistent terrain)
+    // without paying to render thousands of empty scale-0 slots every frame.
+    this.mesh.count = 0;
   }
 
   plant(meta: SproutEvent, x: number, z: number, t: number, pose: Pose): number {
     const i = this.next;
     this.next = (this.next + 1) % this.slots.length;
+    if (i + 1 > this.mesh.count) this.mesh.count = i + 1;
     const slot = this.slots[i];
     slot.meta = meta;
     slot.bornAt = t;
     slot.x = x;
     slot.z = z;
+    slot.y = pose.y ?? 0;
     slot.height = pose.height;
     slot.width = pose.width ?? 1;
     slot.baseColor = pose.color ? pose.color.clone() : WHITE.clone();
@@ -108,6 +123,19 @@ export class InstancedKind {
       : slot.baseColor;
     this.mesh.setColorAt(index, color);
     this.mesh.instanceColor!.needsUpdate = true;
+  }
+
+  /** Release every active slot whose metadata matches — used by reorg culling. */
+  clearWhere(predicate: (meta: SproutEvent) => boolean): void {
+    for (let i = 0; i < this.slots.length; i++) {
+      const slot = this.slots[i];
+      if (slot.meta && predicate(slot.meta)) {
+        slot.meta = null;
+        this.matrix.makeScale(0, 0, 0);
+        this.mesh.setMatrixAt(i, this.matrix);
+      }
+    }
+    this.mesh.instanceMatrix.needsUpdate = true;
   }
 
   private readonly highlightColor = new THREE.Color();
@@ -136,7 +164,7 @@ export class InstancedKind {
       this.swayQuat.setFromEuler(this.euler.set(lean * 0.4, 0, lean));
       this.worldQuat.multiplyQuaternions(this.swayQuat, slot.rotation);
       this.matrix.compose(
-        this.position.set(slot.x, 0, slot.z),
+        this.position.set(slot.x, slot.y, slot.z),
         this.worldQuat,
         this.scale.set(width, eased * slot.height * gustDip, width)
       );
