@@ -42,7 +42,17 @@ All WebSocket messages conform to `WireMessage` in `shared/src/index.ts`. The un
 
 ## Scene Performance
 
-`FloraSystem` uses `THREE.InstancedMesh` with fixed slot caps. If adding a new plant kind, define a cap constant alongside the others in `flora.ts` and implement wrap-around slot assignment (oldest slot overwritten). Do not use individual `THREE.Mesh` per sprout.
+All themes use `InstancedKind` (`web/src/themes/shared/instanced.ts`) — a `THREE.InstancedMesh` wrapper with fixed slot caps and wrap-around ring assignment (oldest slot overwritten). Never use individual `THREE.Mesh` per sprout/block/coin.
+
+Key `InstancedKind` behaviours to be aware of when modifying themes:
+
+- Constructor accepts `THREE.Material | THREE.Material[]`. Array form enables per-face `BoxGeometry` materials (used by the mine theme's grass blocks).
+- `mesh.count` starts at 0 and increments on each `plant()` call. Allocate large caps (thousands) without GPU cost — only planted slots are drawn.
+- `Pose.y` (optional) sets a vertical offset per-instance (mine uses it for terrain elevation).
+- `clearWhere(predicate)` zeroes matching instances via scale-0 matrix without a full buffer clear — use it for reorg culling.
+- `boundsRadius` / `boundsCenterY` constructor params fix the bounding sphere so raycasting works before the spiral is populated.
+
+Each theme sets its own cap constants. Grove: grass 800, mushroom 140, bloom 40, wisp 80. Farm: wheat 800, gourd 300, sunflower 40, scarecrow 80. Mine: grass/dirt 6 000 each (persistent terrain), CAT blocks 192 per-block budget, paintings 40, villagers 80.
 
 ## Testing Without a Server
 

@@ -1,10 +1,14 @@
 # Chia Grove
 
-An ambient 3D visualization of live Chia mainnet activity. Every block sprouts luminous flora in a nocturnal meadow — what grows depends on what happened on chain.
+An ambient 3D visualization of live Chia mainnet activity. Switch between four themes to see what's happening on chain.
 
 Live at **[chia-grove.com](https://chia-grove.com)**
 
-## The Grove
+## Themes
+
+### Grove (default)
+
+Bioluminescent night meadow — what grows depends on what happened on chain.
 
 | On chain     | In the grove                                                  |
 | ------------ | ------------------------------------------------------------- |
@@ -16,7 +20,47 @@ Live at **[chia-grove.com](https://chia-grove.com)**
 | Netspace     | Moonlight brightness                                          |
 | New block    | Ground ripple + aurora pulse                                  |
 
-Click any plant for coin details and a [spacescan.io](https://spacescan.io) link.
+### Farm
+
+Daytime crop field. Each block plows the next row; crops sprout behind the tractor.
+
+| On chain     | In the farm                |
+| ------------ | -------------------------- |
+| XCH spend    | Wheat stalk                |
+| CAT transfer | Gourd, color from asset id |
+| NFT activity | Sunflower (click for NFT)  |
+| DID activity | Scarecrow                  |
+| Mempool      | Chicken density            |
+| Netspace     | Sun brightness             |
+| Reorg        | Crows descend              |
+
+### Gallery
+
+Interior art gallery. NFT mints appear as framed canvases; arrow keys / swipe to browse.
+
+| On chain  | In the gallery            |
+| --------- | ------------------------- |
+| NFT mint  | Framed canvas on the wall |
+| Netspace  | Spotlight warmth          |
+| New block | Light pulse               |
+| Reorg     | Pieces removed            |
+
+### Mineworld
+
+Minecraft-inspired voxel island on a phyllotaxis spiral.
+
+| On chain     | In the mine                                         |
+| ------------ | --------------------------------------------------- |
+| XCH spend    | Grass/dirt island land                              |
+| CAT transfer | Voxel block (material + color hashed from asset id) |
+| NFT activity | Framed painting (click → MintGarden)                |
+| DID activity | Villager figure                                     |
+| Mint         | Beacon beam                                         |
+| Mempool      | Rim torches                                         |
+| Netspace     | Day-night cycle brightness (150 s period)           |
+| Reorg        | Creeper burst                                       |
+
+Click any object for coin details and a [spacescan.io](https://spacescan.io) link.
 
 ## How It Works
 
@@ -24,7 +68,7 @@ One Node process polls [coinset.org](https://coinset.org) for new blocks, classi
 
 No database, no full node. Runs on the smallest droplet.
 
-New clients receive a snapshot of the last 500 events so the grove is already populated on connect.
+New clients receive a snapshot of the last 2000 events so the scene is already populated on connect.
 
 ## Development
 

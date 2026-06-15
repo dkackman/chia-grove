@@ -45,7 +45,7 @@ GroveFeed  (web/src/net/feed.ts)
 active Visualization  (web/src/themes/)
 ```
 
-New WebSocket clients receive a `Snapshot` of the last 500 events from `RingBuffer`, replayed over ~3 seconds by `GroveFeed.replay()`. After that, events stream live.
+New WebSocket clients receive a `Snapshot` of the last 2000 events from `RingBuffer`, replayed over ~3 seconds by `GroveFeed.replay()`. After that, events stream live.
 
 ### Server internals
 
@@ -56,7 +56,14 @@ New WebSocket clients receive a `Snapshot` of the last 500 events from `RingBuff
 
 ### Web/scene internals
 
-- The frontend supports multiple visualizations ("themes") behind the `Visualization` interface (`web/src/themes/types.ts`). The registry in `web/src/themes/index.ts` resolves the active theme from `?theme=` query param or `localStorage["grove.theme"]` (default: `grove`). Switching from the legend persists the choice and reloads; the WebSocket snapshot replay repopulates the new scene. Themes own their entire Three.js scene. Shared helpers (instancing, textures, CAT colors, amount scales, PRNG) live in `web/src/themes/shared/`.
+- The frontend supports multiple visualizations ("themes") behind the `Visualization` interface (`web/src/themes/types.ts`). The registry in `web/src/themes/index.ts` resolves the active theme from `?theme=` query param or `localStorage["grove.theme"]` (default: `grove`). Switching from the legend persists the choice and reloads; the WebSocket snapshot replay repopulates the new scene. Themes own their entire Three.js scene. Four themes ship: `grove`, `farm`, `gallery`, `mine`. Shared helpers (instancing, textures, CAT colors, amount scales, PRNG) live in `web/src/themes/shared/`.
+
+- **`InstancedKind`** (`web/src/themes/shared/instanced.ts`) is the shared `THREE.InstancedMesh` wrapper used by all themes. Key details:
+  - Constructor accepts `THREE.Material | THREE.Material[]` (array enables per-face BoxGeometry materials).
+  - `mesh.count` starts at 0 and grows as `plant()` is called — large caps (e.g. 6 000 for terrain) are cheap until filled.
+  - `Pose` has an optional `y?: number` for vertical offset (used by mine for terrain elevation).
+  - `clearWhere(predicate)` zeroes matching slots by scale-0 matrix — used for reorg culling without a full clear.
+  - `boundsRadius` / `boundsCenterY` constructor params pin the bounding sphere so raycasting works before the spiral fills out.
 
 - **grove** (`web/src/themes/grove/`): bioluminescent night meadow.
   - `grove.ts` owns the Three.js renderer, camera orbit, and event dispatch. It exposes setter hooks (`setSproutHandler`, `setAmbientHandler`, etc.) wired by the theme's `start()` to `FloraSystem` and `Fireflies`.
@@ -65,7 +72,18 @@ New WebSocket clients receive a `Snapshot` of the last 500 events from `RingBuff
   - `palette.ts` provides scene colors; CAT asset colors are hashed into one of 12 bioluminescent hues by `themes/shared/cat-color.ts`.
   - `sky.ts` scales moonlight with netspace and pulses on new blocks.
 
-- **farm** (`web/src/themes/farm/`): daytime crop field with serpentine rows. Each block is the next row, plowed by a tractor in alternating directions; crops sprout behind it (wheat=XCH, gourd=CAT, sunflower=NFT, scarecrow=DID). Chickens=mempool, sun brightness=netspace, crows=reorg. `CropSystem` uses `InstancedKind` (same as grove) with 3 geometry variants each; slot caps: wheat 800, gourd 300, sunflower 40, scarecrow 80. Slots wrap (oldest overwritten).
+- **farm** (`web/src/themes/farm/`): daytime crop field with serpentine rows. Each block is the next row, plowed by a tractor in alternating directions; crops sprout behind it (wheat=XCH, gourd=CAT, sunflower=NFT, scarecrow=DID). Chickens=mempool, sun brightness=netspace, crows=reorg. `CropSystem` uses `InstancedKind` with 3 geometry variants each; slot caps: wheat 800, gourd 300, sunflower 40, scarecrow 80. Slots wrap (oldest overwritten).
+
+- **gallery** (`web/src/themes/gallery/`): interior art gallery showing NFT mints as framed canvases on illuminated walls. Navigate with arrow keys (desktop) or swipe (mobile). Spotlight warmth tracks netspace; lights pulse on new blocks; reorg removes pieces. Non-NFT events are ignored.
+
+- **mine** (`web/src/themes/mine/`): Minecraft-inspired voxel island growing on a phyllotaxis spiral. XCH spends pave grass/dirt land; CATs become color-and-material voxel blocks (family + dye hashed from assetId); NFTs become framed paintings (clickable → MintGarden); DIDs become villager figures. Rim torches track mempool; 150 s day-night cycle scales with netspace; mints fire beacon beams; reorg triggers a creeper burst. Terrain is persistent (keyed by block-slot index); only activity-layer specials churn.
+  - `island.ts` — `Island` class: persistent grass/dirt instanced terrain (6-material per-face grass blocks, 6 000-slot caps, build-to-stable via `Map<number, ChunkGround>`).
+  - `cats.ts` — `CatBlocks`: 3 `InstancedKind` families (opaque wool, transparent glass, emissive glowstone), 192-per-block budget, shared `nextSeat()` across specials.
+  - `structures.ts` — `Villagers` (80-cap pool mesh, pop-in scale animation) + `Paintings` (40-cap, CORS-proxied NFT art via `gallery/media.ts`).
+  - `vfx.ts` — `Vfx`: beacon columns, rim torches, creeper-burst particle system (frame-rate-independent via real `dt`).
+  - `sky.ts` — pure functions for 150 s day-night cycle; `createMineSky()` drives sun + moon `DirectionalLight` and `FogExp2`.
+  - `textures.ts` — procedural 16×16 `NearestFilter` pixel textures (wool weave, glass pane, glowstone cells, grass top/side, dirt).
+  - `layout.ts` — `chunkPosition()` phyllotaxis spiral, 7×7 Chebyshev-ordered floor grid, `seatCell()` stack-not-sprawl seating, `chunkElevation()` deterministic terrain height (max 1 block).
 
 ### Event types (`shared/src/index.ts`)
 
@@ -83,7 +101,7 @@ New WebSocket clients receive a `Snapshot` of the last 500 events from `RingBuff
 | ------------------ | ------- |
 | `PORT`             | `8080`  |
 | `POLL_INTERVAL_MS` | `3000`  |
-| `BACKFILL_BLOCKS`  | `30`    |
+| `BACKFILL_BLOCKS`  | `150`   |
 
 ## Deployment
 
