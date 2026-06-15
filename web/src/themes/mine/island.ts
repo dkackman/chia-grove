@@ -26,9 +26,21 @@ const FLAT_POSE = (): Pose => ({ height: 1, rotY: 0, tiltX: 0, tiltZ: 0, swayPha
  * is dirt, and the four sides carry the grass-overhang texture.
  */
 function grassMaterials(): THREE.Material[] {
-  const side = new THREE.MeshStandardMaterial({ map: grassSideTexture(), roughness: 0.9, flatShading: true });
-  const top = new THREE.MeshStandardMaterial({ map: grassTopTexture(), roughness: 0.9, flatShading: true });
-  const bottom = new THREE.MeshStandardMaterial({ map: dirtTexture(), roughness: 0.9, flatShading: true });
+  const side = new THREE.MeshStandardMaterial({
+    map: grassSideTexture(),
+    roughness: 0.9,
+    flatShading: true,
+  });
+  const top = new THREE.MeshStandardMaterial({
+    map: grassTopTexture(),
+    roughness: 0.9,
+    flatShading: true,
+  });
+  const bottom = new THREE.MeshStandardMaterial({
+    map: dirtTexture(),
+    roughness: 0.9,
+    flatShading: true,
+  });
   return [side, side, top, bottom, side, side];
 }
 function dirtMaterial(): THREE.Material {

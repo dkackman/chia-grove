@@ -17,7 +17,14 @@ const TRANSPARENT_MAX = 0.88; // remainder (0.12) is emissive
 
 const OPAQUE_MATERIALS = ["wool", "concrete", "terracotta"]; // all dyed
 const TRANSPARENT_FIXED = ["glass", "ice", "blue_ice", "honey"];
-const EMISSIVE_MATERIALS = ["glowstone", "sea_lantern", "shroomlight", "froglight", "redstone_lamp", "magma"];
+const EMISSIVE_MATERIALS = [
+  "glowstone",
+  "sea_lantern",
+  "shroomlight",
+  "froglight",
+  "redstone_lamp",
+  "magma",
+];
 
 /** Independent 0..1 hash from a disjoint slice of the asset id.
  *  Applies a multiplicative scramble so that even low-entropy slices
@@ -48,7 +55,13 @@ export function resolveCatBlock(assetIdHex: string): CatBlock {
     // split transparent into dyed (stained glass) vs fixed-tint
     if (materialU < 0.5) {
       const dyeIndex = Math.min(15, Math.floor(dyeU * 16));
-      return { family: "transparent", material: "stained_glass", dyed: true, dyeIndex, color: WOOL_DYES[dyeIndex] };
+      return {
+        family: "transparent",
+        material: "stained_glass",
+        dyed: true,
+        dyeIndex,
+        color: WOOL_DYES[dyeIndex],
+      };
     }
     const material = pick(TRANSPARENT_FIXED, materialU * 2 - 1);
     return { family: "transparent", material, dyed: false, color: FIXED_COLORS[material] };

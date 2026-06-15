@@ -13,13 +13,24 @@ test("there are exactly 16 wool dyes with valid HSL", () => {
 });
 
 test("every fixed (non-dyed) material has a color", () => {
-  for (const key of ["glass", "ice", "blue_ice", "honey", "glowstone", "sea_lantern", "shroomlight", "froglight", "redstone_lamp", "magma"]) {
+  for (const key of [
+    "glass",
+    "ice",
+    "blue_ice",
+    "honey",
+    "glowstone",
+    "sea_lantern",
+    "shroomlight",
+    "froglight",
+    "redstone_lamp",
+    "magma",
+  ]) {
     expect(FIXED_COLORS[key]).toBeDefined();
   }
 });
 
 function id(seed: string) {
-  return (seed.repeat(64)).slice(0, 64);
+  return seed.repeat(64).slice(0, 64);
 }
 
 test("resolveCatBlock is deterministic per asset id", () => {
@@ -41,9 +52,11 @@ test("opaque is the most common family, emissive the rarest", () => {
 
 test("dyed materials index the 16-dye set; fixed materials are not dyed", () => {
   for (let i = 0; i < 500; i++) {
-    const hex = (i * 2654435761 >>> 0).toString(16).padStart(8, "0") + "00".repeat(28);
+    const hex = ((i * 2654435761) >>> 0).toString(16).padStart(8, "0") + "00".repeat(28);
     const b = resolveCatBlock(hex);
-    if (b.dyed) { expect(b.dyeIndex).toBeGreaterThanOrEqual(0); expect(b.dyeIndex).toBeLessThan(16); }
-    else expect(b.dyeIndex).toBeUndefined();
+    if (b.dyed) {
+      expect(b.dyeIndex).toBeGreaterThanOrEqual(0);
+      expect(b.dyeIndex).toBeLessThan(16);
+    } else expect(b.dyeIndex).toBeUndefined();
   }
 });

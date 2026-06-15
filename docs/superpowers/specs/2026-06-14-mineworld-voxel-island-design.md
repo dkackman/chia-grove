@@ -7,7 +7,7 @@
 Add a fourth `Visualization` — a Minecraft-inspired voxel world — alongside grove, farm,
 and gallery. It renders the same event stream (XCH/CAT/NFT/DID spends, blocks, mempool,
 netspace, reorgs) as a blocky island that **physically builds itself from chain activity**
-under a slow day–night sky. The signature: a Chia *block* becomes placed *blocks*, and the
+under a slow day–night sky. The signature: a Chia _block_ becomes placed _blocks_, and the
 base currency (XCH) is the very ground everything else grows on.
 
 Working name: theme id `mine`, label "Mineworld" (rename freely).
@@ -76,13 +76,13 @@ splitting, consistent with farm/gallery). Unknown ids still fall back to grove.
   cap of chunk slots wraps oldest-first, the voxel analog of the grove's wrapping spiral.
 - **XCH paves the chunk, with a floor.** A block's XCH spends lay grass/dirt cubes across the
   chunk's footprint, and more XCH grows it outward. But the footprint is always at least large
-  enough to seat the block's special spends (see *Dense blocks* below), so a block with few or
+  enough to seat the block's special spends (see _Dense blocks_ below), so a block with few or
   zero XCH still gets ground graded under its CATs. Gentle seeded height noise (low-amplitude
   value noise keyed to chunk position) gives a landscape feel rather than a flat plane.
 - **Special spends on top, stacking when dense.** CAT/NFT/DID place on the chunk surface at
   offsets from `mulberry32(coinId)` — deterministic and stable across snapshot replays (the
   grove's `sproutOffset` trick). When specials outnumber the surface tiles they stack vertically
-  rather than spilling outside the chunk (see *Dense blocks*).
+  rather than spilling outside the chunk (see _Dense blocks_).
 - **Camera.** Reuse `createOrbitControl`; the yaw offset orbits the island's center over a
   slow auto-drift. Static framing under `prefers-reduced-motion`.
 
@@ -108,17 +108,17 @@ of CATs with little or no XCH. Three rules keep that case legible and spatially 
 
 ## 2. Event → voxel vocabulary
 
-| Event | Representation | Cap |
-| --- | --- | --- |
-| `SproutEvent` **xch** | grass/dirt land cube — *the island itself* | ~2000 |
-| `SproutEvent` **cat** | deterministic material+color block (§3), routed to one of 3 instanced families | opaque 400 / transparent 120 / emissive 80 |
-| `SproutEvent` **nft** | framed painting of `imageUrl`; individual mesh (unique texture), clickable → MintGarden | 40 |
-| `SproutEvent` **did** | villager standing on its block | 80 |
-| `mint` flag | enchant glint on the block + a brief **beacon beam** skyward | — |
-| `AmbientEvent` mempool | **rim torches**: count scales with mempool size (analog of fireflies/chickens) | — |
-| `AmbientEvent` netspace | sun height/brightness + render-distance fog | — |
-| `ReorgEvent` | **creeper** detonates blocks at/above `forkHeight` into a crater, then replay rebuilds | — |
-| `amount` (mojos) / count | subtle **stack height** (1–3 cubes) via `scales.ts`; dense blocks stack into spires (see *Dense blocks*); cubes stay unit-sized | — |
+| Event                    | Representation                                                                                                                  | Cap                                        |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `SproutEvent` **xch**    | grass/dirt land cube — _the island itself_                                                                                      | ~2000                                      |
+| `SproutEvent` **cat**    | deterministic material+color block (§3), routed to one of 3 instanced families                                                  | opaque 400 / transparent 120 / emissive 80 |
+| `SproutEvent` **nft**    | framed painting of `imageUrl`; individual mesh (unique texture), clickable → MintGarden                                         | 40                                         |
+| `SproutEvent` **did**    | villager standing on its block                                                                                                  | 80                                         |
+| `mint` flag              | enchant glint on the block + a brief **beacon beam** skyward                                                                    | —                                          |
+| `AmbientEvent` mempool   | **rim torches**: count scales with mempool size (analog of fireflies/chickens)                                                  | —                                          |
+| `AmbientEvent` netspace  | sun height/brightness + render-distance fog                                                                                     | —                                          |
+| `ReorgEvent`             | **creeper** detonates blocks at/above `forkHeight` into a crater, then replay rebuilds                                          | —                                          |
+| `amount` (mojos) / count | subtle **stack height** (1–3 cubes) via `scales.ts`; dense blocks stack into spires (see _Dense blocks_); cubes stay unit-sized | —                                          |
 
 ## 3. CAT material system (deterministic)
 
@@ -171,7 +171,7 @@ in-game RGB values.
 - **Camera:** shared `createOrbitControl` orbiting the island center; slow auto-drift.
 - **Picker:** reuse the shared canvas picker (not self-managed input). `pickables()` returns
   the terrain + CAT instanced meshes, NFT meshes, and villager meshes; `metaFor(obj,
-  instanceId)` resolves the originating `SproutEvent`; `setHovered` boosts instance color.
+instanceId)` resolves the originating `SproutEvent`; `setHovered` boosts instance color.
   NFT click → the same detail card with MintGarden link + media preview as grove.
 
 ## 7. UI changes

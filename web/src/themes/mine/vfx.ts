@@ -38,7 +38,15 @@ export class Vfx {
     this.beacons = Array.from({ length: BEACON_CAP }, () => {
       const mesh = new THREE.Mesh(
         beamGeo,
-        new THREE.MeshBasicMaterial({ color: MINE.beacon, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false })
+        new THREE.MeshBasicMaterial({
+          color: MINE.beacon,
+          transparent: true,
+          opacity: 0,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+          side: THREE.DoubleSide,
+          fog: false,
+        })
       );
       mesh.visible = false;
       scene.add(mesh);
@@ -48,7 +56,15 @@ export class Vfx {
     // torches
     const torchGeo = torchGeometry();
     const torchMat = new THREE.MeshStandardMaterial({ color: 0x5a3d23, roughness: 0.9 });
-    const flameMat = () => new THREE.SpriteMaterial({ color: MINE.torch, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, fog: false });
+    const flameMat = () =>
+      new THREE.SpriteMaterial({
+        color: MINE.torch,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        fog: false,
+      });
     this.torches = [];
     this.flames = [];
     for (let i = 0; i < TORCH_CAP; i++) {
@@ -78,7 +94,16 @@ export class Vfx {
     }
     const bg = new THREE.BufferGeometry();
     bg.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-    this.burst = new THREE.Points(bg, new THREE.PointsMaterial({ color: 0x5bbb5b, size: 0.5, transparent: true, opacity: 0, depthWrite: false }));
+    this.burst = new THREE.Points(
+      bg,
+      new THREE.PointsMaterial({
+        color: 0x5bbb5b,
+        size: 0.5,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+      })
+    );
     this.burst.visible = false;
     scene.add(this.burst);
   }
@@ -113,7 +138,10 @@ export class Vfx {
       const age = t - b.bornAt;
       const op = Math.max(0, 0.7 - age * 0.25);
       (b.mesh.material as THREE.MeshBasicMaterial).opacity = op;
-      if (op <= 0) { b.active = false; b.mesh.visible = false; }
+      if (op <= 0) {
+        b.active = false;
+        b.mesh.visible = false;
+      }
     }
     const night = 1 - this.sky.daylight;
     for (let i = 0; i < TORCH_CAP; i++) {
@@ -135,7 +163,10 @@ export class Vfx {
       }
       p.needsUpdate = true;
       (this.burst.material as THREE.PointsMaterial).opacity = Math.max(0, 1 - age / 0.8);
-      if (age > 0.8) { this.burst.visible = false; this.burstStart = -1; }
+      if (age > 0.8) {
+        this.burst.visible = false;
+        this.burstStart = -1;
+      }
     }
   }
 }

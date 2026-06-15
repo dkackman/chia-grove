@@ -9,9 +9,11 @@ export function hexToHsl(hex: number): HSL {
   const r = ((hex >> 16) & 0xff) / 255;
   const g = ((hex >> 8) & 0xff) / 255;
   const b = (hex & 0xff) / 255;
-  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const max = Math.max(r, g, b),
+    min = Math.min(r, g, b);
   const l = (max + min) / 2;
-  let h = 0, s = 0;
+  let h = 0,
+    s = 0;
   const d = max - min;
   if (d !== 0) {
     s = d / (1 - Math.abs(2 * l - 1));
@@ -26,8 +28,8 @@ export function hexToHsl(hex: number): HSL {
 
 // The 16 authentic in-game wool/dye RGBs.
 const WOOL_HEX = [
-  0xe9ecec, 0xf07613, 0xbd44b3, 0x3aafd9, 0xf8c627, 0x70b919, 0xed8dac, 0x3e4447,
-  0x8e8e86, 0x158991, 0x792aac, 0x35399d, 0x724728, 0x546d1b, 0xa12722, 0x141519,
+  0xe9ecec, 0xf07613, 0xbd44b3, 0x3aafd9, 0xf8c627, 0x70b919, 0xed8dac, 0x3e4447, 0x8e8e86,
+  0x158991, 0x792aac, 0x35399d, 0x724728, 0x546d1b, 0xa12722, 0x141519,
 ] as const;
 
 export const WOOL_DYES: readonly HSL[] = WOOL_HEX.map(hexToHsl);

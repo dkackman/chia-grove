@@ -120,7 +120,11 @@ export class Paintings {
     const p = this.pool[this.next];
     this.next = (this.next + 1) % PAINTING_CAP;
     const local = cellLocal({ col: seat.col, row: seat.row }, seat.layer);
-    p.group.position.set(chunk.x + local.x, chunkElevation(chunk) + local.y + 0.65, chunk.z + local.z);
+    p.group.position.set(
+      chunk.x + local.x,
+      chunkElevation(chunk) + local.y + 0.65,
+      chunk.z + local.z
+    );
     p.group.visible = true;
     p.meta = event;
     // reset a recycled slot to the placeholder before the (async) art loads

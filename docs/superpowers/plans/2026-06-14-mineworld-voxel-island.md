@@ -47,6 +47,7 @@ Reused unchanged: `shared/orbit.ts`, `shared/postfx.ts`, `shared/scales.ts`, `sh
 ## Task 1: Extend InstancedKind for voxels (per-instance y, bounds, clearWhere)
 
 **Files:**
+
 - Modify: `web/src/themes/shared/instanced.ts`
 - Test: `web/test/instanced.test.ts`
 
@@ -64,12 +65,20 @@ function meta(height: number): SproutEvent {
 }
 function makeKind(cap = 4) {
   const scene = new THREE.Scene();
-  return new InstancedKind(scene, new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial(), cap, 0);
+  return new InstancedKind(
+    scene,
+    new THREE.BoxGeometry(1, 1, 1),
+    new THREE.MeshStandardMaterial(),
+    cap,
+    0
+  );
 }
 function decompose(kind: ReturnType<typeof makeKind>, i: number) {
   const m = new THREE.Matrix4();
   kind.mesh.getMatrixAt(i, m);
-  const pos = new THREE.Vector3(), scl = new THREE.Vector3(), q = new THREE.Quaternion();
+  const pos = new THREE.Vector3(),
+    scl = new THREE.Vector3(),
+    q = new THREE.Quaternion();
   m.decompose(pos, q, scl);
   return { pos, scl };
 }
@@ -112,8 +121,8 @@ Expected: FAIL — `pose.y` ignored (pos.y is 0, not 5); `clearWhere` is not a f
 Add `y` to the `Slot` interface (after `z: number;`):
 
 ```ts
-  z: number;
-  y: number;
+z: number;
+y: number;
 ```
 
 Add `y` to the `Pose` interface (after `width?: number;`):
@@ -147,19 +156,19 @@ with:
 and replace the pinned bounding-sphere line:
 
 ```ts
-    this.mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 2, 0), 80);
+this.mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 2, 0), 80);
 ```
 
 with:
 
 ```ts
-    this.mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, boundsCenterY, 0), boundsRadius);
+this.mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, boundsCenterY, 0), boundsRadius);
 ```
 
 In `plant`, after `slot.z = z;` add:
 
 ```ts
-    slot.y = pose.y ?? 0;
+slot.y = pose.y ?? 0;
 ```
 
 In `update`, change the position line:
@@ -208,6 +217,7 @@ git commit -m "feat(themes): per-instance y, configurable bounds, clearWhere on 
 ## Task 2: Mine palette (16 wool dyes + material/scene colors)
 
 **Files:**
+
 - Create: `web/src/themes/mine/palette.ts`
 - Test: `web/test/mine-material.test.ts` (palette assertions; resolver added in Task 3)
 
@@ -229,7 +239,18 @@ test("there are exactly 16 wool dyes with valid HSL", () => {
 });
 
 test("every fixed (non-dyed) material has a color", () => {
-  for (const key of ["glass", "ice", "blue_ice", "honey", "glowstone", "sea_lantern", "shroomlight", "froglight", "redstone_lamp", "magma"]) {
+  for (const key of [
+    "glass",
+    "ice",
+    "blue_ice",
+    "honey",
+    "glowstone",
+    "sea_lantern",
+    "shroomlight",
+    "froglight",
+    "redstone_lamp",
+    "magma",
+  ]) {
     expect(FIXED_COLORS[key]).toBeDefined();
   }
 });
@@ -255,9 +276,11 @@ export function hexToHsl(hex: number): HSL {
   const r = ((hex >> 16) & 0xff) / 255;
   const g = ((hex >> 8) & 0xff) / 255;
   const b = (hex & 0xff) / 255;
-  const max = Math.max(r, g, b), min = Math.min(r, g, b);
+  const max = Math.max(r, g, b),
+    min = Math.min(r, g, b);
   const l = (max + min) / 2;
-  let h = 0, s = 0;
+  let h = 0,
+    s = 0;
   const d = max - min;
   if (d !== 0) {
     s = d / (1 - Math.abs(2 * l - 1));
@@ -272,8 +295,8 @@ export function hexToHsl(hex: number): HSL {
 
 // The 16 authentic in-game wool/dye RGBs.
 const WOOL_HEX = [
-  0xe9ecec, 0xf07613, 0xbd44b3, 0x3aafd9, 0xf8c627, 0x70b919, 0xed8dac, 0x3e4447,
-  0x8e8e86, 0x158991, 0x792aac, 0x35399d, 0x724728, 0x546d1b, 0xa12722, 0x141519,
+  0xe9ecec, 0xf07613, 0xbd44b3, 0x3aafd9, 0xf8c627, 0x70b919, 0xed8dac, 0x3e4447, 0x8e8e86,
+  0x158991, 0x792aac, 0x35399d, 0x724728, 0x546d1b, 0xa12722, 0x141519,
 ] as const;
 
 export const WOOL_DYES: readonly HSL[] = WOOL_HEX.map(hexToHsl);
@@ -324,6 +347,7 @@ git commit -m "feat(mine): wool dye + material + scene palette"
 ## Task 3: CAT material resolver (`material.ts`)
 
 **Files:**
+
 - Create: `web/src/themes/mine/material.ts`
 - Test: `web/test/mine-material.test.ts` (extend)
 
@@ -335,7 +359,7 @@ Append to `web/test/mine-material.test.ts`:
 import { resolveCatBlock } from "../src/themes/mine/material.js";
 
 function id(seed: string) {
-  return (seed.repeat(64)).slice(0, 64);
+  return seed.repeat(64).slice(0, 64);
 }
 
 test("resolveCatBlock is deterministic per asset id", () => {
@@ -357,9 +381,9 @@ test("opaque is the most common family, emissive the rarest", () => {
 
 test("dyed materials index the 16-dye set; fixed materials are not dyed", () => {
   for (let i = 0; i < 500; i++) {
-    const hex = (i * 2654435761 >>> 0).toString(16).padStart(8, "0") + "00".repeat(28);
+    const hex = ((i * 2654435761) >>> 0).toString(16).padStart(8, "0") + "00".repeat(28);
     const b = resolveCatBlock(hex);
-    if (b.dyed) expect(b.dyeIndex).toBeGreaterThanOrEqual(0), expect(b.dyeIndex).toBeLessThan(16);
+    if (b.dyed) (expect(b.dyeIndex).toBeGreaterThanOrEqual(0), expect(b.dyeIndex).toBeLessThan(16));
     else expect(b.dyeIndex).toBeUndefined();
   }
 });
@@ -394,7 +418,14 @@ const TRANSPARENT_MAX = 0.88; // remainder (0.12) is emissive
 const OPAQUE_MATERIALS = ["wool", "concrete", "terracotta"]; // all dyed
 const TRANSPARENT_DYED = ["stained_glass"];
 const TRANSPARENT_FIXED = ["glass", "ice", "blue_ice", "honey"];
-const EMISSIVE_MATERIALS = ["glowstone", "sea_lantern", "shroomlight", "froglight", "redstone_lamp", "magma"];
+const EMISSIVE_MATERIALS = [
+  "glowstone",
+  "sea_lantern",
+  "shroomlight",
+  "froglight",
+  "redstone_lamp",
+  "magma",
+];
 
 /** Two independent 0..1 hashes from disjoint slices of the asset id. */
 function hashUnit(hex: string, start: number): number {
@@ -420,7 +451,13 @@ export function resolveCatBlock(assetIdHex: string): CatBlock {
     // split transparent into dyed (stained glass) vs fixed-tint
     if (materialU < 0.5) {
       const dyeIndex = Math.min(15, Math.floor(dyeU * 16));
-      return { family: "transparent", material: "stained_glass", dyed: true, dyeIndex, color: WOOL_DYES[dyeIndex] };
+      return {
+        family: "transparent",
+        material: "stained_glass",
+        dyed: true,
+        dyeIndex,
+        color: WOOL_DYES[dyeIndex],
+      };
     }
     const material = pick(TRANSPARENT_FIXED, materialU * 2 - 1);
     return { family: "transparent", material, dyed: false, color: FIXED_COLORS[material] };
@@ -449,6 +486,7 @@ git commit -m "feat(mine): deterministic CAT material+color resolver"
 The key constraint: sprouts arrive one at a time, so positions must be **stable as the count grows** (cube N always lands in the same spot regardless of how many follow). Floor cells fill a fixed-size spiral (center-first); specials reuse the same cell order but stack onto layers ≥ 1.
 
 **Files:**
+
 - Create: `web/src/themes/mine/layout.ts`
 - Test: `web/test/mine-layout.test.ts`
 
@@ -457,7 +495,14 @@ The key constraint: sprouts arrive one at a time, so positions must be **stable 
 ```ts
 // web/test/mine-layout.test.ts
 import { expect, test } from "vitest";
-import { chunkPosition, FLOOR_TILES, floorCell, seatCell, cellLocal, cellKey } from "../src/themes/mine/layout.js";
+import {
+  chunkPosition,
+  FLOOR_TILES,
+  floorCell,
+  seatCell,
+  cellLocal,
+  cellKey,
+} from "../src/themes/mine/layout.js";
 
 test("chunks spiral outward monotonically", () => {
   const r = (i: number) => Math.hypot(chunkPosition(i).x, chunkPosition(i).z);
@@ -591,6 +636,7 @@ git commit -m "feat(mine): chunk spiral + count-stable incremental seating"
 Add the testable cycle math first; the scene objects/lights are wired in Task 7.
 
 **Files:**
+
 - Create: `web/src/themes/mine/sky.ts`
 - Test: `web/test/mine-sky.test.ts`
 
@@ -641,7 +687,7 @@ import { MINE } from "./palette.js";
 export const CYCLE_SECONDS = 150;
 
 export function cyclePhase(t: number, cycle = CYCLE_SECONDS): number {
-  return ((t % cycle) + cycle) % cycle / cycle;
+  return (((t % cycle) + cycle) % cycle) / cycle;
 }
 
 /** -1 (midnight) .. +1 (noon). Phase 0 = sunrise. */
@@ -695,7 +741,9 @@ export function createMineSky(scene: THREE.Scene, reducedMotion = false): MineSk
   const starMat = stars.material as THREE.PointsMaterial;
 
   function sprite(color: number, size: number): THREE.Sprite {
-    const s = new THREE.Sprite(new THREE.SpriteMaterial({ color, fog: false, transparent: true, depthWrite: false }));
+    const s = new THREE.Sprite(
+      new THREE.SpriteMaterial({ color, fog: false, transparent: true, depthWrite: false })
+    );
     s.scale.setScalar(size);
     return s;
   }
@@ -711,7 +759,17 @@ export function createMineSky(scene: THREE.Scene, reducedMotion = false): MineSk
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-    return new THREE.Points(g, new THREE.PointsMaterial({ size: 1.4, color: 0xdfe6f2, transparent: true, opacity: 0, depthWrite: false, fog: false }));
+    return new THREE.Points(
+      g,
+      new THREE.PointsMaterial({
+        size: 1.4,
+        color: 0xdfe6f2,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        fog: false,
+      })
+    );
   }
 
   let netspace = 1;
@@ -766,6 +824,7 @@ git commit -m "feat(mine): day-night cycle math + sky scene objects"
 Makes `mine` selectable with a working camera + sky (no blocks yet). Models `mine.ts` on `grove.ts` and `index.ts` on `grove/index.ts`.
 
 **Files:**
+
 - Create: `web/src/themes/mine/mine.ts`, `web/src/themes/mine/index.ts`
 - Modify: `web/src/themes/index.ts`, `web/src/style.css`
 - Test: `web/test/themes.test.ts` (extend)
@@ -865,7 +924,11 @@ export function startMine(canvas: HTMLCanvasElement, feed: GroveFeed) {
 
     const angle = (reducedMotion ? 0.8 : t * 0.015) + orbit.getOffset();
     const radius = 46 + (reducedMotion ? 0 : Math.sin(t * 0.06) * 3);
-    camera.position.set(Math.cos(angle) * radius, 26 + Math.sin(t * 0.04) * 1.2, Math.sin(angle) * radius);
+    camera.position.set(
+      Math.cos(angle) * radius,
+      26 + Math.sin(t * 0.04) * 1.2,
+      Math.sin(angle) * radius
+    );
     camera.lookAt(0, 1.5, 0);
 
     sky.update(dt, t);
@@ -1009,6 +1072,7 @@ git commit -m "feat(mine): register theme + runtime scaffolding (empty day-night
 ## Task 7: Island ground system (`island.ts`) — XCH paves land
 
 **Files:**
+
 - Create: `web/src/themes/mine/island.ts`
 - Modify: `web/src/themes/mine/index.ts`
 - Test: `web/test/mine-geometry.test.ts`
@@ -1065,7 +1129,11 @@ export class Island {
   private chunk: XZ = { x: 0, z: 0 };
 
   constructor(scene: THREE.Scene) {
-    const material = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.95, flatShading: true });
+    const material = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 0.95,
+      flatShading: true,
+    });
     this.ground = new InstancedKind(scene, groundGeometry(), material, GROUND_CAP, 0, 140, 1);
   }
 
@@ -1168,6 +1236,7 @@ git commit -m "feat(mine): XCH ground system paves the island"
 ## Task 8: CAT block families (`cats.ts`)
 
 **Files:**
+
 - Create: `web/src/themes/mine/cats.ts`
 - Modify: `web/src/themes/mine/index.ts`
 - Test: `web/test/mine-geometry.test.ts` (extend)
@@ -1213,10 +1282,23 @@ function opaqueMaterial(): THREE.Material {
   return new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85, flatShading: true });
 }
 function transparentMaterial(): THREE.Material {
-  return new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.1, metalness: 0, transparent: true, opacity: 0.55, depthWrite: false, flatShading: true });
+  return new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    roughness: 0.1,
+    metalness: 0,
+    transparent: true,
+    opacity: 0.55,
+    depthWrite: false,
+    flatShading: true,
+  });
 }
 function emissiveMaterial(): THREE.Material {
-  const m = new THREE.MeshStandardMaterial({ color: 0x111111, emissive: 0xffffff, emissiveIntensity: 1.4, roughness: 0.5 });
+  const m = new THREE.MeshStandardMaterial({
+    color: 0x111111,
+    emissive: 0xffffff,
+    emissiveIntensity: 1.4,
+    roughness: 0.5,
+  });
   // route per-instance color into the emissive term (same trick as grove mushrooms)
   m.onBeforeCompile = (shader) => {
     shader.fragmentShader = shader.fragmentShader.replace(
@@ -1238,8 +1320,24 @@ export class CatBlocks {
   constructor(scene: THREE.Scene) {
     this.fam = {
       opaque: new InstancedKind(scene, cubeGeometry(), opaqueMaterial(), CAPS.opaque, 0, 140, 1),
-      transparent: new InstancedKind(scene, cubeGeometry(), transparentMaterial(), CAPS.transparent, 0, 140, 1),
-      emissive: new InstancedKind(scene, cubeGeometry(), emissiveMaterial(), CAPS.emissive, 0, 140, 1),
+      transparent: new InstancedKind(
+        scene,
+        cubeGeometry(),
+        transparentMaterial(),
+        CAPS.transparent,
+        0,
+        140,
+        1
+      ),
+      emissive: new InstancedKind(
+        scene,
+        cubeGeometry(),
+        emissiveMaterial(),
+        CAPS.emissive,
+        0,
+        140,
+        1
+      ),
     };
   }
 
@@ -1272,7 +1370,13 @@ export class CatBlocks {
     };
     const jx = (rand() - 0.5) * 0.06;
     const jz = (rand() - 0.5) * 0.06;
-    this.fam[block.family].plant(event, this.chunk.x + local.x + jx, this.chunk.z + local.z + jz, t, pose);
+    this.fam[block.family].plant(
+      event,
+      this.chunk.x + local.x + jx,
+      this.chunk.z + local.z + jz,
+      t,
+      pose
+    );
   }
 
   update(t: number): void {
@@ -1302,19 +1406,19 @@ export class CatBlocks {
 Import `import { CatBlocks } from "./cats.js";`, instantiate `const cats = new CatBlocks(runtime.scene);`, add `cats.startBlock(chunk)` in the block handler, and extend the sprout handler:
 
 ```ts
-    runtime.setSproutHandler((event, _chunk, _height) => {
-      if (event.kind === "xch") {
-        island.placeGrass(event, clock.t);
-        return;
-      }
-      if (event.kind === "cat") {
-        const seat = cats.nextSeat();
-        if (!seat) return;
-        island.ensureGround(event, { col: seat.col, row: seat.row }, clock.t);
-        cats.plant(event, seat, clock.t);
-      }
-      // NFT/DID added next
-    });
+runtime.setSproutHandler((event, _chunk, _height) => {
+  if (event.kind === "xch") {
+    island.placeGrass(event, clock.t);
+    return;
+  }
+  if (event.kind === "cat") {
+    const seat = cats.nextSeat();
+    if (!seat) return;
+    island.ensureGround(event, { col: seat.col, row: seat.row }, clock.t);
+    cats.plant(event, seat, clock.t);
+  }
+  // NFT/DID added next
+});
 ```
 
 Add `cats.update(t)` to the update handler, `cats.clearAbove(forkHeight)` to the reorg handler, and include cats in `pickables`/`metaFor`. Update the returned handle:
@@ -1331,12 +1435,15 @@ Add `cats.update(t)` to the update handler, `cats.clearAbove(forkHeight)` to the
 > For correct hover clearing, track the last highlighted (object, instanceId) in a closure variable and clear it before setting a new one — mirror grove's `setHovered`. Concretely:
 
 ```ts
-    let hovered: { object: THREE.Object3D; index: number } | null = null;
-    // inside setHovered:
-    if (hovered) { cats.setHighlight(hovered.object, hovered.index, false); hovered = null; }
-    if (object && instanceId !== undefined && cats.setHighlight(object, instanceId, true)) {
-      hovered = { object, index: instanceId };
-    }
+let hovered: { object: THREE.Object3D; index: number } | null = null;
+// inside setHovered:
+if (hovered) {
+  cats.setHighlight(hovered.object, hovered.index, false);
+  hovered = null;
+}
+if (object && instanceId !== undefined && cats.setHighlight(object, instanceId, true)) {
+  hovered = { object, index: instanceId };
+}
 ```
 
 (Add `import * as THREE from "three";` to `index.ts` for the closure type.)
@@ -1356,6 +1463,7 @@ git commit -m "feat(mine): CAT block families (opaque/transparent/emissive) with
 ## Task 9: Structures — DID villagers (`structures.ts`)
 
 **Files:**
+
 - Create: `web/src/themes/mine/structures.ts`
 - Modify: `web/src/themes/mine/index.ts`
 - Test: `web/test/mine-geometry.test.ts` (extend)
@@ -1413,7 +1521,11 @@ export class Villagers {
   constructor(scene: THREE.Scene) {
     scene.add(this.group);
     const geometry = villagerGeometry();
-    const material = new THREE.MeshStandardMaterial({ color: 0x7a6a52, roughness: 0.9, flatShading: true });
+    const material = new THREE.MeshStandardMaterial({
+      color: 0x7a6a52,
+      roughness: 0.9,
+      flatShading: true,
+    });
     this.pool = Array.from({ length: VILLAGER_CAP }, () => {
       const mesh = new THREE.Mesh(geometry, material);
       mesh.visible = false;
@@ -1422,7 +1534,12 @@ export class Villagers {
     });
   }
 
-  plant(event: SproutEvent, chunk: XZ, seat: { col: number; row: number; layer: number }, t: number): void {
+  plant(
+    event: SproutEvent,
+    chunk: XZ,
+    seat: { col: number; row: number; layer: number },
+    t: number
+  ): void {
     const v = this.pool[this.next];
     this.next = (this.next + 1) % VILLAGER_CAP;
     const local = cellLocal({ col: seat.col, row: seat.row }, seat.layer);
@@ -1461,12 +1578,12 @@ export class Villagers {
 Import `Villagers`, instantiate, add to the DID branch of the sprout handler (reusing the seat machinery from cats so DIDs also seat + ground):
 
 ```ts
-      if (event.kind === "did") {
-        const seat = cats.nextSeat();
-        if (!seat) return;
-        island.ensureGround(event, { col: seat.col, row: seat.row }, clock.t);
-        villagers.plant(event, chunk, seat, clock.t);
-      }
+if (event.kind === "did") {
+  const seat = cats.nextSeat();
+  if (!seat) return;
+  island.ensureGround(event, { col: seat.col, row: seat.row }, clock.t);
+  villagers.plant(event, chunk, seat, clock.t);
+}
 ```
 
 Note: the sprout handler's second parameter is the chunk — rename `_chunk` to `chunk` in the handler signature. Add `villagers.update(t)` to the update handler, `villagers.clearAbove(forkHeight)` to reorg, and include villager pickables/metaFor in the handle.
@@ -1486,6 +1603,7 @@ git commit -m "feat(mine): DID villagers"
 ## Task 10: NFT framed paintings (`structures.ts`)
 
 **Files:**
+
 - Modify: `web/src/themes/mine/structures.ts`, `web/src/themes/mine/index.ts`
 - Reference: `web/src/themes/gallery/media.ts` (existing NFT texture-loading + proxy pattern — follow it for the URL and `THREE.TextureLoader` usage)
 
@@ -1507,7 +1625,11 @@ export class Paintings {
 
   constructor(scene: THREE.Scene) {
     const frameGeo = new THREE.BoxGeometry(1.1, 1.3, 0.12);
-    const frameMat = new THREE.MeshStandardMaterial({ color: 0x5a3d23, roughness: 0.8, flatShading: true });
+    const frameMat = new THREE.MeshStandardMaterial({
+      color: 0x5a3d23,
+      roughness: 0.8,
+      flatShading: true,
+    });
     const panelGeo = new THREE.PlaneGeometry(0.9, 1.1);
     this.pool = Array.from({ length: PAINTING_CAP }, () => {
       const group = new THREE.Group();
@@ -1553,7 +1675,10 @@ export class Paintings {
   }
   clearAbove(forkHeight: number): void {
     for (const p of this.pool) {
-      if (p.meta && p.meta.height >= forkHeight) { p.meta = null; p.group.visible = false; }
+      if (p.meta && p.meta.height >= forkHeight) {
+        p.meta = null;
+        p.group.visible = false;
+      }
     }
   }
   pickables(): THREE.Object3D[] {
@@ -1570,12 +1695,12 @@ export class Paintings {
 Instantiate `Paintings`, add the NFT branch:
 
 ```ts
-      if (event.kind === "nft") {
-        const seat = cats.nextSeat();
-        if (!seat) return;
-        island.ensureGround(event, { col: seat.col, row: seat.row }, clock.t);
-        paintings.plant(event, chunk, seat);
-      }
+if (event.kind === "nft") {
+  const seat = cats.nextSeat();
+  if (!seat) return;
+  island.ensureGround(event, { col: seat.col, row: seat.row }, clock.t);
+  paintings.plant(event, chunk, seat);
+}
 ```
 
 Add `paintings.update(runtime.camera)` to the update handler, `paintings.clearAbove(forkHeight)` to reorg, and include painting pickables/metaFor in the handle (so the detail card's MintGarden link works via the shared picker — `metaFor` returns the `SproutEvent` with `nftId`/`imageUrl`).
@@ -1595,6 +1720,7 @@ git commit -m "feat(mine): NFT framed paintings with MintGarden detail card"
 ## Task 11: VFX — mint beacon beams + mempool rim torches (`vfx.ts`)
 
 **Files:**
+
 - Create: `web/src/themes/mine/vfx.ts`
 - Modify: `web/src/themes/mine/index.ts`
 - Test: `web/test/mine-geometry.test.ts` (extend with torch geometry)
@@ -1653,7 +1779,15 @@ export class Vfx {
     this.beacons = Array.from({ length: BEACON_CAP }, () => {
       const mesh = new THREE.Mesh(
         beamGeo,
-        new THREE.MeshBasicMaterial({ color: MINE.beacon, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false })
+        new THREE.MeshBasicMaterial({
+          color: MINE.beacon,
+          transparent: true,
+          opacity: 0,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+          side: THREE.DoubleSide,
+          fog: false,
+        })
       );
       mesh.visible = false;
       scene.add(mesh);
@@ -1662,7 +1796,15 @@ export class Vfx {
 
     const torchGeo = torchGeometry();
     const torchMat = new THREE.MeshStandardMaterial({ color: 0x5a3d23, roughness: 0.9 });
-    const flameMat = () => new THREE.SpriteMaterial({ color: MINE.torch, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, fog: false });
+    const flameMat = () =>
+      new THREE.SpriteMaterial({
+        color: MINE.torch,
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        fog: false,
+      });
     this.torches = [];
     this.flames = [];
     for (let i = 0; i < TORCH_CAP; i++) {
@@ -1702,7 +1844,10 @@ export class Vfx {
       const age = t - b.bornAt;
       const op = Math.max(0, 0.7 - age * 0.25);
       (b.mesh.material as THREE.MeshBasicMaterial).opacity = op;
-      if (op <= 0) { b.active = false; b.mesh.visible = false; }
+      if (op <= 0) {
+        b.active = false;
+        b.mesh.visible = false;
+      }
     }
     const night = 1 - this.sky.daylight;
     for (let i = 0; i < TORCH_CAP; i++) {
@@ -1736,6 +1881,7 @@ git commit -m "feat(mine): mint beacon beams + mempool rim torches"
 The cull methods (`clearAbove`) already exist on Island, CatBlocks, Villagers, Paintings. This task adds the creeper explosion particle burst and confirms all systems cull together.
 
 **Files:**
+
 - Modify: `web/src/themes/mine/vfx.ts`, `web/src/themes/mine/index.ts`
 
 - [ ] **Step 1: Add a particle burst to `vfx.ts`**
@@ -1751,20 +1897,29 @@ Add a small additive `THREE.Points` burst (a pooled cloud of green creeper-ish p
 In the constructor, after the torches:
 
 ```ts
-    const N = 80;
-    const pos = new Float32Array(N * 3);
-    this.burstVel = new Float32Array(N * 3);
-    for (let i = 0; i < N; i++) {
-      const dir = new THREE.Vector3().randomDirection();
-      this.burstVel[i * 3] = dir.x * 6;
-      this.burstVel[i * 3 + 1] = Math.abs(dir.y) * 6 + 2;
-      this.burstVel[i * 3 + 2] = dir.z * 6;
-    }
-    const bg = new THREE.BufferGeometry();
-    bg.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-    this.burst = new THREE.Points(bg, new THREE.PointsMaterial({ color: 0x5bbb5b, size: 0.5, transparent: true, opacity: 0, depthWrite: false }));
-    this.burst.visible = false;
-    scene.add(this.burst);
+const N = 80;
+const pos = new Float32Array(N * 3);
+this.burstVel = new Float32Array(N * 3);
+for (let i = 0; i < N; i++) {
+  const dir = new THREE.Vector3().randomDirection();
+  this.burstVel[i * 3] = dir.x * 6;
+  this.burstVel[i * 3 + 1] = Math.abs(dir.y) * 6 + 2;
+  this.burstVel[i * 3 + 2] = dir.z * 6;
+}
+const bg = new THREE.BufferGeometry();
+bg.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+this.burst = new THREE.Points(
+  bg,
+  new THREE.PointsMaterial({
+    color: 0x5bbb5b,
+    size: 0.5,
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+  })
+);
+this.burst.visible = false;
+scene.add(this.burst);
 ```
 
 Add the method:
@@ -1782,16 +1937,24 @@ Add the method:
 In `update(t)`, advance the burst:
 
 ```ts
-    if (this.burstStart >= 0) {
-      const age = t - this.burstStart;
-      const p = this.burst.geometry.getAttribute("position") as THREE.BufferAttribute;
-      for (let i = 0; i < p.count; i++) {
-        p.setXYZ(i, p.getX(i) + this.burstVel[i * 3] * 0.016, Math.max(0, p.getY(i) + (this.burstVel[i * 3 + 1] - age * 9) * 0.016), p.getZ(i) + this.burstVel[i * 3 + 2] * 0.016);
-      }
-      p.needsUpdate = true;
-      (this.burst.material as THREE.PointsMaterial).opacity = Math.max(0, 1 - age / 0.8);
-      if (age > 0.8) { this.burst.visible = false; this.burstStart = -1; }
-    }
+if (this.burstStart >= 0) {
+  const age = t - this.burstStart;
+  const p = this.burst.geometry.getAttribute("position") as THREE.BufferAttribute;
+  for (let i = 0; i < p.count; i++) {
+    p.setXYZ(
+      i,
+      p.getX(i) + this.burstVel[i * 3] * 0.016,
+      Math.max(0, p.getY(i) + (this.burstVel[i * 3 + 1] - age * 9) * 0.016),
+      p.getZ(i) + this.burstVel[i * 3 + 2] * 0.016
+    );
+  }
+  p.needsUpdate = true;
+  (this.burst.material as THREE.PointsMaterial).opacity = Math.max(0, 1 - age / 0.8);
+  if (age > 0.8) {
+    this.burst.visible = false;
+    this.burstStart = -1;
+  }
+}
 ```
 
 - [ ] **Step 2: Wire reorg in `index.ts`**
@@ -1799,13 +1962,13 @@ In `update(t)`, advance the burst:
 Update the reorg handler to cull everything and fire the burst at the most-recent chunk:
 
 ```ts
-    runtime.setReorgHandler((forkHeight) => {
-      island.clearAbove(forkHeight);
-      cats.clearAbove(forkHeight);
-      villagers.clearAbove(forkHeight);
-      paintings.clearAbove(forkHeight);
-      vfx.creeper(currentChunkRef.value, clock.t);
-    });
+runtime.setReorgHandler((forkHeight) => {
+  island.clearAbove(forkHeight);
+  cats.clearAbove(forkHeight);
+  villagers.clearAbove(forkHeight);
+  paintings.clearAbove(forkHeight);
+  vfx.creeper(currentChunkRef.value, clock.t);
+});
 ```
 
 `currentChunkRef` is a `{ value: XZ }` updated in the block handler (`runtime.setBlockHandler((chunk) => { currentChunkRef.value = chunk; island.startBlock(chunk); cats.startBlock(chunk); })`). Initialize `const currentChunkRef = { value: { x: 0, z: 0 } as XZ };`.
@@ -1849,6 +2012,7 @@ Expected: succeeds; `web/dist/` produced.
 - [ ] **Step 5: Manual acceptance against the spec**
 
 `npm run dev:web`, open `http://localhost:5173/?theme=mine&demo=1` and confirm:
+
 - island spreads outward as blocks arrive; XCH paves grass, specials get ground under them;
 - CATs vary by material/color; transparent + emissive families appear; airdrops stack into a spire;
 - NFTs are framed paintings (art or placeholder) and open the detail card with MintGarden link;
@@ -1867,6 +2031,6 @@ git commit -m "chore(mine): integration fixes — full suite, typecheck, lint, b
 
 ## Self-review notes (addressed)
 
-- **Spec coverage:** world shape/island growth (Tasks 6–7), XCH-as-land + airdrop ground floor (Task 7 `ensureGround`), CAT material families + determinism (Tasks 3, 8), dense-block stacking + budget (Tasks 4, 8 `SPECIAL_BUDGET`), NFT paintings + MintGarden (Task 10), DID villagers (Task 9), mint beacons / mempool torches / netspace / day-night (Tasks 5, 6, 11), reorg cull + creeper (Tasks 1, 12), picker reuse (Tasks 7–10), registration + legend (Task 6), tests (every pure module). 
+- **Spec coverage:** world shape/island growth (Tasks 6–7), XCH-as-land + airdrop ground floor (Task 7 `ensureGround`), CAT material families + determinism (Tasks 3, 8), dense-block stacking + budget (Tasks 4, 8 `SPECIAL_BUDGET`), NFT paintings + MintGarden (Task 10), DID villagers (Task 9), mint beacons / mempool torches / netspace / day-night (Tasks 5, 6, 11), reorg cull + creeper (Tasks 1, 12), picker reuse (Tasks 7–10), registration + legend (Task 6), tests (every pure module).
 - **Type consistency:** the sprout handler signature `(event, chunk, height)` is introduced in Task 6 and used consistently; `seatCell`/`floorCell`/`cellLocal` signatures match across `layout.ts`, `island.ts`, `cats.ts`, `structures.ts`; `clearWhere` (Task 1) backs every `clearAbove`.
 - **Known approximations (acceptable, noted in spec §4):** instanced transparent CATs use `depthWrite:false` without per-instance depth sorting; the per-block special budget caps spire height for extreme airdrops.

@@ -8,12 +8,20 @@ function meta(height: number): SproutEvent {
 }
 function makeKind(cap = 4) {
   const scene = new THREE.Scene();
-  return new InstancedKind(scene, new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial(), cap, 0);
+  return new InstancedKind(
+    scene,
+    new THREE.BoxGeometry(1, 1, 1),
+    new THREE.MeshStandardMaterial(),
+    cap,
+    0
+  );
 }
 function decompose(kind: ReturnType<typeof makeKind>, i: number) {
   const m = new THREE.Matrix4();
   kind.mesh.getMatrixAt(i, m);
-  const pos = new THREE.Vector3(), scl = new THREE.Vector3(), q = new THREE.Quaternion();
+  const pos = new THREE.Vector3(),
+    scl = new THREE.Vector3(),
+    q = new THREE.Quaternion();
   m.decompose(pos, q, scl);
   return { pos, scl };
 }
@@ -49,7 +57,15 @@ test("clearWhere removes matching instances and frees their metadata", () => {
 
 test("custom bounds set the instanced mesh bounding sphere", () => {
   const scene = new THREE.Scene();
-  const kind = new InstancedKind(scene, new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial(), 4, 0, 140, 1);
+  const kind = new InstancedKind(
+    scene,
+    new THREE.BoxGeometry(1, 1, 1),
+    new THREE.MeshStandardMaterial(),
+    4,
+    0,
+    140,
+    1
+  );
   expect(kind.mesh.boundingSphere!.radius).toBe(140);
   expect(kind.mesh.boundingSphere!.center.y).toBe(1);
 });
