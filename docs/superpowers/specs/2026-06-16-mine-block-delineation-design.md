@@ -58,7 +58,7 @@ consistently, with no threading.
 While investigating a hover bug (hovering grass beside a CAT popped the CAT's
 card), the root cause turned out to be the grass **apron**: the 3×3 platform
 laid under each CAT/NFT/DID (`ensureGround` → `platformCells`) planted those
-grass tiles with the *special's* event as their picking metadata
+grass tiles with the _special's_ event as their picking metadata
 (`InstancedKind` stores `slot.meta`), so the surrounding grass faithfully but
 wrongly reported the special.
 
