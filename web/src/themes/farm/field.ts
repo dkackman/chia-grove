@@ -107,7 +107,8 @@ function addBarn(scene: THREE.Scene, x: number, z: number): THREE.Object3D {
 
   // red gable mass: equilateral prism along x, squashed for a softer pitch
   const gable = new THREE.CylinderGeometry(rg, rg, W, 3, 1);
-  gable.rotateZ(Math.PI / 2);
+  gable.rotateZ(Math.PI / 2); // lay the prism's length along x
+  gable.rotateX(-Math.PI / 2); // swing the apex up (it starts pointing +z)
   gable.scale(1, sy, 1);
   gable.translate(0, prismCenterY, 0);
   red.push(gable);
