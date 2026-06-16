@@ -7,8 +7,8 @@ import { resolveCatBlock, type CatFamily } from "./material.js";
 import { seatCell, cellLocal, chunkElevation } from "./layout.js";
 import { woolTexture, glassTexture, emissiveCellTexture } from "./textures.js";
 
-const CAPS: Record<CatFamily, number> = { opaque: 400, transparent: 120, emissive: 80 };
-const SPECIAL_BUDGET = 192; // cap cubes placed per block (airdrops stay bounded)
+const CAPS: Record<CatFamily, number> = { opaque: 2000, transparent: 600, emissive: 400 };
+const SPECIAL_BUDGET = 600; // cap cubes placed per block (airdrops stay bounded)
 
 export function cubeGeometry(): THREE.BufferGeometry {
   const g = new THREE.BoxGeometry(0.92, 0.92, 0.92);

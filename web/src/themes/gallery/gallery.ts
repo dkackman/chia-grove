@@ -2,6 +2,7 @@ import * as THREE from "three";
 import type { GroveFeed } from "../../net/feed.js";
 import type { VisualizationHandle } from "../types.js";
 import { createPostFx } from "../shared/postfx.js";
+import { createFrameLimiter } from "../shared/frame-limiter.js";
 import { glowTexture } from "../shared/textures.js";
 import { GALLERY } from "./palette.js";
 import { WALL } from "./layout.js";
@@ -219,8 +220,10 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
 
   const frameCallbacks: Array<() => void> = [];
   const timer = new THREE.Timer();
+  const limiter = createFrameLimiter();
   function frame(): void {
     requestAnimationFrame(frame);
+    if (!limiter.shouldRender(performance.now())) return;
     timer.update();
     const dt = Math.min(timer.getDelta(), 0.1);
     const t = timer.getElapsed();

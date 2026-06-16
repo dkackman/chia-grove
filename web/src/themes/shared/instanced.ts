@@ -53,6 +53,13 @@ export class InstancedKind {
   readonly mesh: THREE.InstancedMesh;
   readonly slots: Slot[];
   private next = 0;
+  // Dirty-tracking so a settled, non-swaying mesh (terrain, CAT cubes) stops
+  // re-uploading its instance matrices every frame. `matrixDirty` covers
+  // structural changes (plant/clear); `settleAt` is the time the last grow
+  // animation finishes; `lastGust` catches the gust→rest transition.
+  private matrixDirty = true;
+  private settleAt = 0;
+  private lastGust = 1;
   private readonly matrix = new THREE.Matrix4();
   private readonly position = new THREE.Vector3();
   private readonly scale = new THREE.Vector3();
@@ -98,6 +105,8 @@ export class InstancedKind {
     const i = this.next;
     this.next = (this.next + 1) % this.slots.length;
     if (i + 1 > this.mesh.count) this.mesh.count = i + 1;
+    this.matrixDirty = true;
+    this.settleAt = Math.max(this.settleAt, t + GROW_SECONDS);
     const slot = this.slots[i];
     slot.meta = meta;
     slot.bornAt = t;
@@ -135,12 +144,21 @@ export class InstancedKind {
         this.mesh.setMatrixAt(i, this.matrix);
       }
     }
+    this.matrixDirty = true;
     this.mesh.instanceMatrix.needsUpdate = true;
   }
 
   private readonly highlightColor = new THREE.Color();
 
   update(t: number, gustDip: number): void {
+    // Skip the recompute + GPU upload when nothing can have moved: a
+    // non-swaying mesh whose grow animations have all settled, with no gust
+    // dipping it and no structural change since the last write. Swaying meshes
+    // (grass) animate continuously and always fall through.
+    const swaying = this.swayAmp !== 0;
+    const growing = t < this.settleAt;
+    const gusting = gustDip !== 1 || this.lastGust !== 1;
+    if (!swaying && !growing && !gusting && !this.matrixDirty) return;
     for (let i = 0; i < this.slots.length; i++) {
       const slot = this.slots[i];
       if (!slot.meta) continue;
@@ -171,6 +189,8 @@ export class InstancedKind {
       this.mesh.setMatrixAt(i, this.matrix);
     }
     this.mesh.instanceMatrix.needsUpdate = true;
+    this.matrixDirty = false;
+    this.lastGust = gustDip;
   }
 
   metaAt(index: number): SproutEvent | null {

@@ -8,7 +8,22 @@ import {
   seatCell,
   cellLocal,
   cellKey,
+  spiralRadius,
 } from "../src/themes/mine/layout.js";
+
+test("spiralRadius grows with block count and reaches the outer chunk edge", () => {
+  // a single centered chunk reaches half its 7-wide footprint
+  expect(spiralRadius(1)).toBeCloseTo(3.5, 5);
+  // monotonic: more blocks → larger island
+  expect(spiralRadius(200)).toBeGreaterThan(spiralRadius(120));
+  expect(spiralRadius(120)).toBeGreaterThan(spiralRadius(40));
+  // the outermost chunk center (index 119) plus its footprint half-width
+  expect(spiralRadius(120)).toBeCloseTo(3.0 * Math.sqrt(119) + 3.5, 4);
+});
+
+test("spiralRadius is finite and non-negative at the empty edge case", () => {
+  expect(spiralRadius(0)).toBeCloseTo(3.5, 5);
+});
 
 test("chunk elevation is deterministic, integer, within range, and varied", () => {
   const p = { x: 12.3, z: -7.1 };

@@ -8,8 +8,10 @@ import { grassTopTexture, dirtTexture, grassSideTexture } from "./textures.js";
 // Big enough that ground for the whole island footprint persists without
 // recycling — terrain accumulates and stays. InstancedKind only draws the
 // instances actually planted, so this headroom is cheap until it fills.
-const GRASS_CAP = 6000;
-const DIRT_CAP = 6000;
+// Must stay >= MAX_BLOCK_SLOTS × FLOOR_TILES (200 × 49 = 9800) so persistent
+// terrain never recycles mid-island.
+const GRASS_CAP = 10000;
+const DIRT_CAP = 10000;
 
 /** Unit cube whose base sits at y=0 so it grows upward from its seat. */
 export function groundGeometry(): THREE.BufferGeometry {

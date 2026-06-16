@@ -1,6 +1,7 @@
 import * as THREE from "three";
 import type { Visualization } from "../types.js";
 import { glowTexture } from "../shared/textures.js";
+import { createFrameLimiter } from "../shared/frame-limiter.js";
 import { Motes } from "../shared/motes.js";
 import { createPostFx } from "../shared/postfx.js";
 import { createOrbitControl } from "../shared/orbit.js";
@@ -111,8 +112,10 @@ export const farm: Visualization = {
     feed.onStatus((status) => sky.setSignalLost(status === "stale"));
 
     const timer = new THREE.Timer();
+    const limiter = createFrameLimiter();
     function frame(): void {
       requestAnimationFrame(frame);
+      if (!limiter.shouldRender(performance.now())) return;
       timer.update();
       const dt = Math.min(timer.getDelta(), 0.1);
       const t = timer.getElapsed();

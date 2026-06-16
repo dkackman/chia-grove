@@ -2,6 +2,7 @@ import * as THREE from "three";
 import type { GroveEvent, SproutEvent } from "@grove/shared";
 import type { GroveFeed } from "../../net/feed.js";
 import { type XZ } from "../shared/util.js";
+import { createFrameLimiter } from "../shared/frame-limiter.js";
 import { createGround } from "./ground.js";
 import { blockPosition } from "./layout.js";
 import { COLORS } from "./palette.js";
@@ -104,8 +105,10 @@ export function startGrove(canvas: HTMLCanvasElement, feed: GroveFeed) {
   feed.onStatus((status) => sky.setSignalLost(status === "stale"));
 
   const timer = new THREE.Timer();
+  const limiter = createFrameLimiter();
   function frame(): void {
     requestAnimationFrame(frame);
+    if (!limiter.shouldRender(performance.now())) return;
     timer.update();
     const dt = Math.min(timer.getDelta(), 0.1);
     const t = timer.getElapsed();

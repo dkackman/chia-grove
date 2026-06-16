@@ -25,9 +25,9 @@ const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS ?? 3000);
 // so a deep backfill is what keeps the gallery from starting empty
 const BACKFILL_BLOCKS = Number(process.env.BACKFILL_BLOCKS ?? 150);
 
-// the ring buffer is sized to hold the whole backfill (~13 events/block × 150)
-// so the connect snapshot can replay all of it; older events fall off the back
-const hub = new Hub(new RingBuffer<GroveEvent>(2000));
+// the ring buffer is sized to absorb airdrop blocks (400+ sprouts each) while
+// still covering the full backfill window; older events fall off the back
+const hub = new Hub(new RingBuffer<GroveEvent>(10000));
 const cats = new CatRegistry();
 await cats.start();
 

@@ -2,13 +2,14 @@ import * as THREE from "three";
 import type { GroveEvent, SproutEvent } from "@grove/shared";
 import type { GroveFeed } from "../../net/feed.js";
 import type { XZ } from "../shared/util.js";
+import { createFrameLimiter } from "../shared/frame-limiter.js";
 import { createOrbitControl } from "../shared/orbit.js";
 import { createPostFx } from "../shared/postfx.js";
-import { chunkPosition } from "./layout.js";
+import { chunkPosition, spiralRadius } from "./layout.js";
 import { createMineSky } from "./sky.js";
 import { createWater } from "./water.js";
 
-const MAX_BLOCK_SLOTS = 120;
+const MAX_BLOCK_SLOTS = 200;
 
 export function startMine(canvas: HTMLCanvasElement, feed: GroveFeed) {
   const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -41,6 +42,7 @@ export function startMine(canvas: HTMLCanvasElement, feed: GroveFeed) {
   let extraUpdate = (_dt: number, _t: number) => {};
 
   let blockIndex = 0;
+  let filledBlocks = 0; // how far the spiral has populated — drives camera framing
   let currentChunk = chunkPosition(0);
 
   feed.onEvent((event: GroveEvent) => {
@@ -49,6 +51,7 @@ export function startMine(canvas: HTMLCanvasElement, feed: GroveFeed) {
         const index = blockIndex;
         currentChunk = chunkPosition(index);
         blockIndex = (index + 1) % MAX_BLOCK_SLOTS;
+        filledBlocks = Math.min(filledBlocks + 1, MAX_BLOCK_SLOTS);
         onBlockExtra(currentChunk, index);
         break;
       }
@@ -67,17 +70,34 @@ export function startMine(canvas: HTMLCanvasElement, feed: GroveFeed) {
   feed.onStatus((status) => sky.setSignalLost(status === "stale"));
 
   const timer = new THREE.Timer();
+  const limiter = createFrameLimiter();
+  // Camera distance tracks the island's *current* extent so a sparse island
+  // isn't stranded in the center of the view and a full one still fits frame.
+  // Factors reproduce the original 120-block framing (radius 38 / height 17 at
+  // spiral edge ~36.2); the spiral grows as sqrt(blocks) so the camera trails it.
+  // MIN_CAM_DIST floors it so the first few blocks aren't framed from underwater.
+  const MIN_CAM_DIST = 14;
+  let camDist = MIN_CAM_DIST;
   function frame(): void {
     requestAnimationFrame(frame);
+    if (!limiter.shouldRender(performance.now())) return;
     timer.update();
     const dt = Math.min(timer.getDelta(), 0.1);
     const t = timer.getElapsed();
 
+    // Reduced-motion: frame the full island statically (no per-block dolly, in
+    // keeping with the fixed angle below). Otherwise ease toward the current
+    // fill so a sparse island isn't stranded in the center of the view.
+    const target = reducedMotion
+      ? spiralRadius(MAX_BLOCK_SLOTS)
+      : Math.max(MIN_CAM_DIST, spiralRadius(filledBlocks));
+    camDist += (target - camDist) * (reducedMotion ? 1 : Math.min(1, dt * 0.8));
+
     const angle = (reducedMotion ? 0.8 : t * 0.015) + orbit.getOffset();
-    const radius = 38 + (reducedMotion ? 0 : Math.sin(t * 0.06) * 3);
+    const radius = camDist * 1.05 + (reducedMotion ? 0 : Math.sin(t * 0.06) * 3);
     camera.position.set(
       Math.cos(angle) * radius,
-      17 + Math.sin(t * 0.04) * 1.2,
+      camDist * 0.47 + (reducedMotion ? 0 : Math.sin(t * 0.04) * 1.2),
       Math.sin(angle) * radius
     );
     camera.lookAt(0, 3, 0);

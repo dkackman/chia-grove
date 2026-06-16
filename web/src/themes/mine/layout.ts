@@ -10,6 +10,17 @@ export function chunkPosition(index: number): XZ {
   return { x: Math.cos(angle) * radius, z: Math.sin(angle) * radius };
 }
 
+/**
+ * Radius from the origin to the outer edge of an island of `blockCount` chunks.
+ * The outermost chunk sits at the spiral's far end (index blockCount-1); add its
+ * footprint half-width so the result encloses the land. Used to frame the camera
+ * to the *current* fill so a sparse island isn't stranded in the center of view.
+ */
+export function spiralRadius(blockCount: number): number {
+  const outerCenter = blockCount > 1 ? SPREAD * Math.sqrt(blockCount - 1) : 0;
+  return outerCenter + FLOOR_SIDE / 2; // +3.5: tiles reach ±3.5 from chunk center
+}
+
 export const MAX_ELEVATION = 1;
 
 /**
