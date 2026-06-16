@@ -8,18 +8,21 @@ import {
   seatCell,
   cellLocal,
   cellKey,
-  platformCells,
 } from "../src/themes/mine/layout.js";
 
-test("chunk elevation is deterministic, integer, and within range", () => {
+test("chunk elevation is deterministic, integer, within range, and varied", () => {
   const p = { x: 12.3, z: -7.1 };
   expect(chunkElevation(p)).toBe(chunkElevation(p));
+  const seen = new Set<number>();
   for (let i = 0; i < 250; i++) {
     const e = chunkElevation(chunkPosition(i));
     expect(Number.isInteger(e)).toBe(true);
     expect(e).toBeGreaterThanOrEqual(0);
     expect(e).toBeLessThanOrEqual(MAX_ELEVATION);
+    seen.add(e);
   }
+  // blocks step against each other — the island is not one flat level
+  expect(seen.size).toBeGreaterThan(1);
 });
 
 test("chunks spiral outward monotonically", () => {
@@ -54,16 +57,4 @@ test("cellLocal spaces cubes by one unit and lifts by layer", () => {
   const b = cellLocal({ col: 1, row: 0 }, 1);
   expect(Math.abs(b.x - a.x)).toBeCloseTo(1);
   expect(a.y).toBeCloseTo(1);
-});
-
-test("platformCells covers a 3x3 patch centred on the seat so a special isn't a lone speck", () => {
-  const cells = platformCells({ col: 2, row: -1 });
-  expect(cells).toHaveLength(9);
-  // centred: spans col 1..3, row -2..0, including the seat itself
-  expect(cells).toContainEqual({ col: 2, row: -1 });
-  expect(cells).toContainEqual({ col: 1, row: -2 });
-  expect(cells).toContainEqual({ col: 3, row: 0 });
-  const cols = cells.map((c) => c.col);
-  expect(Math.min(...cols)).toBe(1);
-  expect(Math.max(...cols)).toBe(3);
 });

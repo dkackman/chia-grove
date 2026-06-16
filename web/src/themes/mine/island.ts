@@ -2,7 +2,7 @@ import * as THREE from "three";
 import type { SproutEvent } from "@grove/shared";
 import type { XZ } from "../shared/util.js";
 import { InstancedKind, type Pose } from "../shared/instanced.js";
-import { floorCell, cellLocal, chunkElevation, platformCells, type Cell } from "./layout.js";
+import { floorCell, cellLocal, chunkElevation, type Cell } from "./layout.js";
 import { grassTopTexture, dirtTexture, grassSideTexture } from "./textures.js";
 
 // Big enough that ground for the whole island footprint persists without
@@ -89,13 +89,14 @@ export class Island {
   }
 
   /**
-   * Lay a small grass platform under and around a special's cell so a special
-   * landing on a thin frontier chunk stands on connected land instead of a lone
-   * speck out over the water. Overlapping platforms share tiles (place() is
-   * idempotent per cell), so neighbours merge into one contiguous patch.
+   * Ground a special's own seat cell so it rests on land instead of floating
+   * over water. Specials seat center-first on adjacent cells, so a cluster's
+   * seat tiles already merge into one contiguous patch — no wider apron needed.
+   * (A halo would also mislead hover: these tiles carry the special's event as
+   * metadata, so surrounding grass would wrongly report the special.)
    */
   ensureGround(event: SproutEvent, cell: Cell, t: number): void {
-    for (const c of platformCells(cell)) this.place(event, c, this.grass, t);
+    this.place(event, cell, this.grass, t);
   }
 
   // One ground cube per cell per chunk for the island's lifetime; whichever kind

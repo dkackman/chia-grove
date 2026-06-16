@@ -1,4 +1,4 @@
-import type { XZ } from "../shared/util.js";
+import { mulberry32, type XZ } from "../shared/util.js";
 
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 const SPREAD = 3.0; // chunks overlap slightly into one contiguous landmass
@@ -13,15 +13,18 @@ export function chunkPosition(index: number): XZ {
 export const MAX_ELEVATION = 1;
 
 /**
- * Seeded, spatially smooth terrace height (0..MAX_ELEVATION) for a chunk.
- * Driven by the chunk's world position so neighboring chunks land at similar
- * heights — the island reads as rolling terraces, not random spikes.
+ * Per-block terrace height (0..MAX_ELEVATION), hashed from the chunk's center so
+ * adjacent blocks step against each other. The step — an exposed dirt side and
+ * its shadow — is what delineates where one block ends and the next begins.
+ * Deliberately *not* spatially smooth: a smooth field leaves most block
+ * boundaries flat and indistinguishable.
  */
 export function chunkElevation(pos: XZ): number {
-  const n =
-    Math.sin(pos.x * 0.13) + Math.cos(pos.z * 0.11) + 0.6 * Math.sin((pos.x + pos.z) * 0.07);
-  const unit = (n + 2.6) / 5.2; // → ~0..1
-  return Math.max(0, Math.min(MAX_ELEVATION, Math.round(unit * MAX_ELEVATION)));
+  // quantize the center, then hash to a stable per-chunk height
+  const xi = Math.round(pos.x * 16);
+  const zi = Math.round(pos.z * 16);
+  const seed = ((xi * 73856093) ^ (zi * 19349663)) >>> 0;
+  return Math.floor(mulberry32(seed)() * (MAX_ELEVATION + 1));
 }
 
 export interface Cell {
@@ -75,16 +78,4 @@ export function seatCell(seatIndex: number): Seat {
 /** Cell + layer → local offset (relative to the chunk center). */
 export function cellLocal(cell: Cell, layer: number): { x: number; z: number; y: number } {
   return { x: cell.col * SPACING, z: cell.row * SPACING, y: layer * CUBE };
-}
-
-/**
- * The 3×3 patch of floor cells a special's ground platform covers, centred on
- * its seat cell. Gives a special on a thin frontier chunk connected land to
- * stand on instead of a single isolated tile out over the water.
- */
-export function platformCells(center: Cell): Cell[] {
-  const cells: Cell[] = [];
-  for (let dc = -1; dc <= 1; dc++)
-    for (let dr = -1; dr <= 1; dr++) cells.push({ col: center.col + dc, row: center.row + dr });
-  return cells;
 }
