@@ -6,5 +6,5 @@ import type { SproutEvent } from "@grove/shared";
  * frame instead of hanging again), so the mint flag is no longer the filter.
  */
 export function shouldHang(event: SproutEvent): boolean {
-  return event.kind === "nft" && !!event.imageUrl;
+  return event.kind === "nft" && !!event.mediaKind;
 }
