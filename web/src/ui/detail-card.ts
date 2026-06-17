@@ -1,6 +1,6 @@
 import type { SproutEvent } from "@grove/shared";
 import { mojosToXch, mojosToCAT, shortHex } from "./format.js";
-import { mediaKind } from "./media.js";
+import { mediaSrc, type MediaKind } from "./media.js";
 
 const KIND_LABELS: Record<SproutEvent["kind"], string> = {
   xch: "XCH spend",
@@ -16,11 +16,10 @@ function el(tag: string, cls?: string, text?: string): HTMLElement {
   return e;
 }
 
-function nftMediaEl(url: string): HTMLElement {
-  const kind = mediaKind(url);
+function nftMediaEl(src: string, kind: MediaKind): HTMLElement {
   if (kind === "video") {
     const v = document.createElement("video");
-    v.src = url;
+    v.src = src;
     v.controls = true;
     v.muted = true;
     v.loop = true;
@@ -28,12 +27,12 @@ function nftMediaEl(url: string): HTMLElement {
   }
   if (kind === "audio") {
     const a = document.createElement("audio");
-    a.src = url;
+    a.src = src;
     a.controls = true;
     return a;
   }
   const img = document.createElement("img");
-  img.src = url;
+  img.src = src;
   img.alt = "NFT";
   img.loading = "lazy";
   return img;
@@ -63,8 +62,9 @@ export function showCard(event: SproutEvent): void {
     img.loading = "lazy";
     img.className = "cat-icon";
     card.appendChild(img);
-  } else if (event.imageUrl) {
-    card.appendChild(nftMediaEl(event.imageUrl));
+  } else {
+    const src = mediaSrc(event);
+    if (src) card.appendChild(nftMediaEl(src, event.mediaKind ?? "image"));
   }
 
   const amountLabel =

@@ -13,6 +13,7 @@ import { SpendDust } from "./dust.js";
 import { netspaceLight } from "./ambience.js";
 import { shouldHang } from "./select.js";
 import { loadArtTexture } from "./media.js";
+import { mediaSrc } from "../../ui/media.js";
 import { framePiece } from "./camera.js";
 import { FlingTracker } from "./swipe.js";
 
@@ -103,12 +104,16 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
         if (pieces.hasLauncher(launcher)) {
           // already hung → register activity on the existing frame, no duplicate
           if (pieces.ping(event)) refreshPlacardIf(launcher);
-        } else if (shouldHang(event) && event.imageUrl && !pending.has(launcher)) {
+        } else if (shouldHang(event) && !pending.has(launcher)) {
           // first sighting with art → load and hang. image → texture, video →
           // looping VideoTexture, audio → skipped; CORS/404/decode errors discard.
+          const src = mediaSrc(event);
+          if (!src) break;
           pending.add(launcher);
+          // mediaKind is set whenever art exists (gate/demo guarantee it); "image" is just the type-level default
           loadArtTexture(
-            event.imageUrl,
+            src,
+            event.mediaKind ?? "image",
             (texture) => {
               pending.delete(launcher);
               pieces.add(event, texture);

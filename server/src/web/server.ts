@@ -6,8 +6,9 @@ import websocket from "@fastify/websocket";
 import fastifyStatic from "@fastify/static";
 import type { Hub, WireSocket } from "./hub.js";
 import { registerImageProxy } from "./img-proxy.js";
+import type { MediaIndex } from "./media-index.js";
 
-export async function buildServer(hub: Hub): Promise<FastifyInstance> {
+export async function buildServer(hub: Hub, media: MediaIndex): Promise<FastifyInstance> {
   // trust the local Caddy reverse proxy (see deploy/Caddyfile) so request.ip
   // reflects the real client via X-Forwarded-For — the image proxy rate-limits
   // per IP, which would otherwise see only the proxy's loopback address.
@@ -15,7 +16,7 @@ export async function buildServer(hub: Hub): Promise<FastifyInstance> {
   await app.register(websocket);
 
   app.get("/healthz", async () => ({ ok: true }));
-  registerImageProxy(app);
+  registerImageProxy(app, media);
 
   app.register(async (instance) => {
     instance.get("/ws", { websocket: true }, (socket) => {

@@ -66,7 +66,8 @@ function sprout(height: number): SproutEvent {
     const i = Math.floor(Math.random() * DEMO_LAUNCHERS.length);
     event.launcherId = DEMO_LAUNCHERS[i];
     event.nftId = DEMO_NFT_IDS[i % DEMO_NFT_IDS.length];
-    event.imageUrl = demoNftImage(event.launcherId); // same launcher → same art
+    event.dataUri = demoNftImage(event.launcherId); // same launcher → same art
+    event.mediaKind = "image";
     if (Math.random() < 0.25) event.mint = true;
   }
   return event;

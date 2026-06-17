@@ -1,5 +1,10 @@
 import { expect, test } from "vitest";
 import { isPrivateAddress, safeContentType, validateProxyTarget } from "../src/web/img-proxy.js";
+import { buildServer } from "../src/web/server.js";
+import { Hub } from "../src/web/hub.js";
+import { RingBuffer } from "../src/web/ring-buffer.js";
+import { MediaIndex } from "../src/web/media-index.js";
+import type { GroveEvent } from "@grove/shared";
 
 test("accepts public http(s) urls", () => {
   expect(validateProxyTarget("https://example.com/a.jpg")?.href).toBe("https://example.com/a.jpg");
@@ -87,4 +92,30 @@ test("safeContentType serves only media types, neutralizing html and svg", () =>
   expect(safeContentType("text/html")).toBe("application/octet-stream");
   expect(safeContentType("image/svg+xml")).toBe("application/octet-stream"); // scriptable
   expect(safeContentType(undefined)).toBe("application/octet-stream");
+});
+
+// Resolution-path behavioral tests — use inject so no real network calls are made.
+// The rejection branches (404/400) return before any upstream fetch.
+
+test("GET /img with no nft param → 404", async () => {
+  const app = await buildServer(new Hub(new RingBuffer<GroveEvent>(10)), new MediaIndex(10));
+  const res = await app.inject({ method: "GET", url: "/img" });
+  expect(res.statusCode).toBe(404);
+  await app.close();
+});
+
+test("GET /img?nft=deadbeef with no matching entry → 404", async () => {
+  const app = await buildServer(new Hub(new RingBuffer<GroveEvent>(10)), new MediaIndex(10));
+  const res = await app.inject({ method: "GET", url: "/img?nft=deadbeef" });
+  expect(res.statusCode).toBe(404);
+  await app.close();
+});
+
+test("GET /img?nft=abc with a disallowed (loopback) URL → 400", async () => {
+  const media = new MediaIndex(10);
+  media.set("abc", { url: "http://127.0.0.1/x.png", kind: "image" });
+  const app = await buildServer(new Hub(new RingBuffer<GroveEvent>(10)), media);
+  const res = await app.inject({ method: "GET", url: "/img?nft=abc" });
+  expect(res.statusCode).toBe(400);
+  await app.close();
 });

@@ -5,6 +5,7 @@ import { lookup as dnsLookup, type LookupAddress } from "node:dns";
 import { isIP, type LookupFunction } from "node:net";
 import type { IncomingMessage } from "node:http";
 import type { FastifyInstance } from "fastify";
+import type { MediaIndex } from "./media-index.js";
 
 const MAX_REDIRECTS = 4;
 const REQUEST_TIMEOUT_MS = 12_000;
@@ -158,14 +159,17 @@ function byteCap(max: number): Transform {
 }
 
 /**
- * GET /img?url=… — fetch NFT media server-side and stream it back with permissive
- * CORS so the WebGL gallery can texture media from hosts that don't send CORS
- * headers. Hardened against SSRF (protocol allowlist; private-range blocking with
- * connect-time DNS validation that also closes rebinding; manual redirect
- * re-validation) and against open-proxy HTML/script injection (media-only
- * content-type + nosniff + sandbox CSP).
+ * GET /img?nft=… — resolve the NFT launcher id through the server-side MediaIndex
+ * to the on-chain art URL the server decoded, then fetch it server-side and stream
+ * it back with permissive CORS so the WebGL gallery can texture media from hosts
+ * that don't send CORS headers. /img never accepts an arbitrary client-supplied
+ * URL; every target comes from the server's own chain decoding. launcherId is
+ * stable across spends, so the response URL caches well. Hardened against SSRF
+ * (protocol allowlist; private-range blocking with connect-time DNS validation that
+ * also closes rebinding; manual redirect re-validation) and against open-proxy
+ * HTML/script injection (media-only content-type + nosniff + sandbox CSP).
  */
-export function registerImageProxy(app: FastifyInstance): void {
+export function registerImageProxy(app: FastifyInstance, media: MediaIndex): void {
   const hits = new Map<string, number[]>(); // ip → recent request timestamps
   let inflight = 0;
 
@@ -193,9 +197,11 @@ export function registerImageProxy(app: FastifyInstance): void {
     if (rateLimited(request.ip)) return reply.code(429).send("rate limited");
     if (inflight >= MAX_INFLIGHT) return reply.code(503).send("proxy busy");
 
-    const raw = (request.query as { url?: string }).url;
-    const target = raw ? validateProxyTarget(raw) : null;
-    if (!target) return reply.code(400).send("bad or disallowed url");
+    const launcherId = (request.query as { nft?: string }).nft;
+    const entry = launcherId ? media.get(launcherId) : undefined;
+    if (!entry) return reply.code(404).send("unknown nft");
+    const target = validateProxyTarget(entry.url);
+    if (!target) return reply.code(400).send("disallowed nft url");
 
     inflight++;
     let released = false;

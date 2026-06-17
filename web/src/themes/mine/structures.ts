@@ -4,6 +4,7 @@ import type { SproutEvent } from "@grove/shared";
 import type { XZ } from "../shared/util.js";
 import { cellLocal, chunkElevation } from "./layout.js";
 import { loadArtTexture } from "../gallery/media.js";
+import { mediaSrc } from "../../ui/media.js";
 
 const VILLAGER_CAP = 80;
 
@@ -154,9 +155,12 @@ export class Paintings {
     mat.map = null;
     mat.color.set(0x9fb6c9);
     mat.needsUpdate = true;
-    if (event.imageUrl) {
+    const src = mediaSrc(event);
+    if (src) {
+      // mediaKind is set whenever art exists (gate/demo guarantee it); "image" is just the type-level default
       loadArtTexture(
-        event.imageUrl,
+        src,
+        event.mediaKind ?? "image",
         (tex) => {
           // guard against a slot recycled before this load resolved
           if (p.meta !== event) return;

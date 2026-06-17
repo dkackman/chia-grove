@@ -10,7 +10,6 @@ const mint = (coinId: string, height = 1): SproutEvent => ({
   coinId,
   amount: "1000000000000",
   mint: true,
-  imageUrl: "https://example.test/" + coinId + ".png",
 });
 
 const id = (n: number) => n.toString(16).padStart(8, "0") + "00".repeat(28);
@@ -22,7 +21,6 @@ const nft = (coinId: string, launcherId: string, height = 1): SproutEvent => ({
   coinId,
   amount: "1",
   launcherId,
-  imageUrl: "https://example.test/" + coinId + ".png",
 });
 
 test("each add hangs a pickable piece carrying its event meta", () => {

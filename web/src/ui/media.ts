@@ -1,12 +1,15 @@
-export type MediaKind = "image" | "video" | "audio";
+import type { SproutEvent } from "@grove/shared";
+export { mediaKind, type MediaKind } from "@grove/shared";
 
-const VIDEO_EXT = new Set([".mp4", ".webm", ".ogv", ".mov"]);
-const AUDIO_EXT = new Set([".mp3", ".wav", ".ogg", ".oga", ".flac", ".aac"]);
-
-/** Classify an NFT media URL by file extension (query/fragment ignored). */
-export function mediaKind(url: string): MediaKind {
-  const ext = url.match(/\.[a-z0-9]+(?=[?#]|$)/i)?.[0]?.toLowerCase() ?? "";
-  if (VIDEO_EXT.has(ext)) return "video";
-  if (AUDIO_EXT.has(ext)) return "audio";
-  return "image";
+/**
+ * Resolve the loadable src for a sprout's art, or null if it has none.
+ * Demo/offline events inline a data: URI; live events are addressed by NFT
+ * launcher id through the same-origin image proxy (no open URL ever crosses the
+ * wire). Keying on launcherId — stable across every spend of the NFT — keeps the
+ * /img?nft= URL cacheable, unlike the per-spend coinId.
+ */
+export function mediaSrc(event: SproutEvent): string | null {
+  if (event.dataUri) return event.dataUri; // data: (demo)
+  if (event.mediaKind && event.launcherId) return `/img?nft=${event.launcherId}`;
+  return null;
 }

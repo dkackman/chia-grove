@@ -1,6 +1,8 @@
 import { Address, Clvm, Constants, type CoinSpend } from "chia-wallet-sdk";
 import type { GroveEvent, SproutEvent } from "@grove/shared";
+import { mediaKind, type MediaKind } from "@grove/shared";
 import type { CatRegistry } from "./cats.js";
+import type { MediaIndex } from "../web/media-index.js";
 
 const hex = (b: Uint8Array) => Buffer.from(b).toString("hex");
 const LAUNCHER_HASH = hex(Constants.singletonLauncherHash());
@@ -13,7 +15,11 @@ export interface BlockInput {
   spends: CoinSpend[];
 }
 
-export function classifyBlock(block: BlockInput, cats?: CatRegistry): GroveEvent[] {
+export function classifyBlock(
+  block: BlockInput,
+  cats?: CatRegistry,
+  media?: MediaIndex
+): GroveEvent[] {
   const launcherCoinIds = new Set(
     block.spends
       .filter((s) => hex(s.coin.puzzleHash) === LAUNCHER_HASH)
@@ -33,7 +39,7 @@ export function classifyBlock(block: BlockInput, cats?: CatRegistry): GroveEvent
 
   for (const spend of block.spends) {
     if (hex(spend.coin.puzzleHash) === LAUNCHER_HASH) continue;
-    events.push(classifySpend(spend, block.height, launcherCoinIds, cats));
+    events.push(classifySpend(spend, block.height, launcherCoinIds, cats, media));
   }
   return events;
 }
@@ -42,7 +48,8 @@ function classifySpend(
   spend: CoinSpend,
   height: number,
   launcherCoinIds: Set<string>,
-  cats?: CatRegistry
+  cats?: CatRegistry,
+  media?: MediaIndex
 ): SproutEvent {
   const clvm = new Clvm();
   const base: SproutEvent = {
@@ -64,13 +71,21 @@ function classifySpend(
       const imageUrl = meta?.dataUris.find(
         (u) => u.startsWith("https://") || u.startsWith("http://")
       );
+      const launcherId = hex(nft.nft.info.launcherId);
+      let kind: MediaKind | undefined;
+      if (imageUrl) {
+        kind = mediaKind(imageUrl);
+        // key by launcherId (stable across every spend of this NFT) so the
+        // /img?nft= URL is cacheable; the URL itself stays server-side
+        media?.set(launcherId, { url: imageUrl, kind });
+      }
       return {
         ...base,
         kind: "nft",
         mint,
-        launcherId: hex(nft.nft.info.launcherId),
+        launcherId,
         nftId: new Address(nft.nft.info.launcherId, "nft").encode(),
-        ...(imageUrl ? { imageUrl } : {}),
+        ...(kind ? { mediaKind: kind } : {}),
       };
     }
 
