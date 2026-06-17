@@ -159,11 +159,12 @@ function byteCap(max: number): Transform {
 }
 
 /**
- * GET /img?coin=… — resolve the coin id through the server-side MediaIndex to the
- * on-chain art URL the server decoded, then fetch it server-side and stream it back
- * with permissive CORS so the WebGL gallery can texture media from hosts that don't
- * send CORS headers. /img never accepts an arbitrary client-supplied URL; every
- * target comes from the server's own chain decoding. Hardened against SSRF
+ * GET /img?nft=… — resolve the NFT launcher id through the server-side MediaIndex
+ * to the on-chain art URL the server decoded, then fetch it server-side and stream
+ * it back with permissive CORS so the WebGL gallery can texture media from hosts
+ * that don't send CORS headers. /img never accepts an arbitrary client-supplied
+ * URL; every target comes from the server's own chain decoding. launcherId is
+ * stable across spends, so the response URL caches well. Hardened against SSRF
  * (protocol allowlist; private-range blocking with connect-time DNS validation that
  * also closes rebinding; manual redirect re-validation) and against open-proxy
  * HTML/script injection (media-only content-type + nosniff + sandbox CSP).
@@ -196,11 +197,11 @@ export function registerImageProxy(app: FastifyInstance, media: MediaIndex): voi
     if (rateLimited(request.ip)) return reply.code(429).send("rate limited");
     if (inflight >= MAX_INFLIGHT) return reply.code(503).send("proxy busy");
 
-    const coinId = (request.query as { coin?: string }).coin;
-    const entry = coinId ? media.get(coinId) : undefined;
-    if (!entry) return reply.code(404).send("unknown coin");
+    const launcherId = (request.query as { nft?: string }).nft;
+    const entry = launcherId ? media.get(launcherId) : undefined;
+    if (!entry) return reply.code(404).send("unknown nft");
     const target = validateProxyTarget(entry.url);
-    if (!target) return reply.code(400).send("disallowed coin url");
+    if (!target) return reply.code(400).send("disallowed nft url");
 
     inflight++;
     let released = false;

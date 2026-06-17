@@ -6,10 +6,12 @@ export interface MediaEntry {
 }
 
 /**
- * Bounded coinId → media-URL map. Lets the image proxy resolve a coin id to the
- * on-chain art URL the server itself decoded, so /img never accepts an arbitrary
- * client-supplied URL. Cap should be >= the event ring buffer so anything a
- * client can replay stays resolvable; oldest entries evict first.
+ * Bounded NFT launcherId → media-URL map. Lets the image proxy resolve an NFT
+ * launcher id to the on-chain art URL the server itself decoded, so /img never
+ * accepts an arbitrary client-supplied URL. Keyed by launcherId (stable across
+ * every spend of an NFT) so entries coalesce and the proxy URL stays cacheable.
+ * Cap should be >= the event ring buffer so anything a client can replay stays
+ * resolvable; oldest entries evict first.
  */
 export class MediaIndex {
   private readonly map = new Map<string, MediaEntry>();

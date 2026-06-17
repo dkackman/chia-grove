@@ -97,25 +97,25 @@ test("safeContentType serves only media types, neutralizing html and svg", () =>
 // Resolution-path behavioral tests — use inject so no real network calls are made.
 // The rejection branches (404/400) return before any upstream fetch.
 
-test("GET /img with no coin param → 404", async () => {
+test("GET /img with no nft param → 404", async () => {
   const app = await buildServer(new Hub(new RingBuffer<GroveEvent>(10)), new MediaIndex(10));
   const res = await app.inject({ method: "GET", url: "/img" });
   expect(res.statusCode).toBe(404);
   await app.close();
 });
 
-test("GET /img?coin=deadbeef with no matching entry → 404", async () => {
+test("GET /img?nft=deadbeef with no matching entry → 404", async () => {
   const app = await buildServer(new Hub(new RingBuffer<GroveEvent>(10)), new MediaIndex(10));
-  const res = await app.inject({ method: "GET", url: "/img?coin=deadbeef" });
+  const res = await app.inject({ method: "GET", url: "/img?nft=deadbeef" });
   expect(res.statusCode).toBe(404);
   await app.close();
 });
 
-test("GET /img?coin=abc with a disallowed (loopback) URL → 400", async () => {
+test("GET /img?nft=abc with a disallowed (loopback) URL → 400", async () => {
   const media = new MediaIndex(10);
   media.set("abc", { url: "http://127.0.0.1/x.png", kind: "image" });
   const app = await buildServer(new Hub(new RingBuffer<GroveEvent>(10)), media);
-  const res = await app.inject({ method: "GET", url: "/img?coin=abc" });
+  const res = await app.inject({ method: "GET", url: "/img?nft=abc" });
   expect(res.statusCode).toBe(400);
   await app.close();
 });

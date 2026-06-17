@@ -52,7 +52,7 @@ New WebSocket clients receive a `Snapshot` of the last 2000 events from `RingBuf
 - `CoinsetPoller` polls `coinset.org` on `POLL_INTERVAL_MS` (default 3 s). It calls `coinsetView` which wraps `chia-wallet-sdk`'s `RpcClient`.
 - `classifyBlock` uses `chia-wallet-sdk`'s `Clvm` + `puzzle.parseNft/parseCat/parseDid` to classify every `CoinSpend` into a `SproutEvent`. Launcher-hash spends are skipped (they become the `mint` flag on child spends).
 - `CatRegistry` fetches the full CAT list from `api.dexie.space` on start and refreshes hourly. It enriches CAT sprout events with `catName`, `catTicker`, and `catIconUrl`.
-- NFT art is never sent to the client as a URL. `classifyBlock` records each NFT's on-chain art URL in a bounded `MediaIndex` (`server/src/web/media-index.ts`, keyed by coinId); the `SproutEvent` carries only a `mediaKind` hint. The `/img` proxy resolves `?coin=<coinId>` through `MediaIndex` (404 unknown, 400 disallowed) so it can never fetch an arbitrary client-supplied URL.
+- NFT art is never sent to the client as a URL. `classifyBlock` records each NFT's on-chain art URL in a bounded `MediaIndex` (`server/src/web/media-index.ts`, keyed by NFT `launcherId`); the `SproutEvent` carries only a `mediaKind` hint. The `/img` proxy resolves `?nft=<launcherId>` through `MediaIndex` (404 unknown, 400 disallowed) so it can never fetch an arbitrary client-supplied URL. launcherId keys are stable across spends, so the proxy URL caches well.
 - `Hub` handles backpressure: sockets above 1 MB buffered are terminated; ambient events are dropped for sockets above 64 KB.
 
 ### Web/scene internals
@@ -80,7 +80,7 @@ New WebSocket clients receive a `Snapshot` of the last 2000 events from `RingBuf
 - **mine** (`web/src/themes/mine/`): Minecraft-inspired voxel island growing on a phyllotaxis spiral. XCH spends pave grass/dirt land; CATs become color-and-material voxel blocks (family + dye hashed from assetId); NFTs become framed paintings (clickable → MintGarden); DIDs become villager figures. Rim torches track mempool; 150 s day-night cycle scales with netspace; mints fire beacon beams; reorg triggers a creeper burst. Terrain is persistent (keyed by block-slot index); only activity-layer specials churn.
   - `island.ts` — `Island` class: persistent grass/dirt instanced terrain (6-material per-face grass blocks, 6 000-slot caps, build-to-stable via `Map<number, ChunkGround>`).
   - `cats.ts` — `CatBlocks`: 3 `InstancedKind` families (opaque wool, transparent glass, emissive glowstone), 192-per-block budget, shared `nextSeat()` across specials.
-  - `structures.ts` — `Villagers` (80-cap pool mesh, pop-in scale animation) + `Paintings` (40-cap, coin-id–proxied NFT art via `gallery/media.ts` + `ui/media.ts` (`mediaSrc`)).
+  - `structures.ts` — `Villagers` (80-cap pool mesh, pop-in scale animation) + `Paintings` (40-cap, launcher-id–proxied NFT art via `gallery/media.ts` + `ui/media.ts` (`mediaSrc`)).
   - `vfx.ts` — `Vfx`: beacon columns, rim torches, creeper-burst particle system (frame-rate-independent via real `dt`).
   - `sky.ts` — pure functions for 150 s day-night cycle; `createMineSky()` drives sun + moon `DirectionalLight` and `FogExp2`.
   - `textures.ts` — procedural 16×16 `NearestFilter` pixel textures (wool weave, glass pane, glowstone cells, grass top/side, dirt).

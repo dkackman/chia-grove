@@ -67,16 +67,19 @@ function classifySpend(
       const imageUrl = meta?.dataUris.find(
         (u) => u.startsWith("https://") || u.startsWith("http://")
       );
+      const launcherId = hex(nft.nft.info.launcherId);
       let kind: MediaKind | undefined;
       if (imageUrl) {
         kind = mediaKind(imageUrl);
-        media?.set(base.coinId, { url: imageUrl, kind }); // URL stays server-side
+        // key by launcherId (stable across every spend of this NFT) so the
+        // /img?nft= URL is cacheable; the URL itself stays server-side
+        media?.set(launcherId, { url: imageUrl, kind });
       }
       return {
         ...base,
         kind: "nft",
         mint,
-        launcherId: hex(nft.nft.info.launcherId),
+        launcherId,
         nftId: new Address(nft.nft.info.launcherId, "nft").encode(),
         ...(kind ? { mediaKind: kind } : {}),
       };

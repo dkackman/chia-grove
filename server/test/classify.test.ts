@@ -267,5 +267,7 @@ test("nft with http art url writes to MediaIndex and emits mediaKind", () => {
   );
   expect(nftWithArt).toBeDefined();
   expect(nftWithArt!.mediaKind).toBe("image");
-  expect(media.get(nftWithArt!.coinId)).toEqual({ url: artUrl, kind: "image" });
+  // resolvable by launcherId (stable across spends), not the per-spend coinId
+  expect(media.get(nftWithArt!.launcherId!)).toEqual({ url: artUrl, kind: "image" });
+  expect(nftWithArt!.launcherId).toBe(hex(nft.info.launcherId));
 });
