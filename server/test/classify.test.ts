@@ -190,7 +190,7 @@ test("nft mint flow yields nft sprout with mint flag and did sprout; launcher sp
   const transfers = nftSprouts.filter((s) => !s.mint);
   expect(transfers).toHaveLength(1);
   expect(transfers[0].launcherId).toBe(hex(nft.info.launcherId));
-  for (const s of nftSprouts) expect(s.imageUrl).toBeUndefined(); // nil metadata
+  for (const s of nftSprouts) expect(s.mediaKind).toBeUndefined(); // nil metadata
   for (const s of nftSprouts) {
     expect(s.nftId).toMatch(/^nft1[ac-hj-np-z02-9]{58}$/); // bech32m, 62 chars total
   }
