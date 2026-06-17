@@ -1,5 +1,18 @@
 export type SproutKind = "xch" | "cat" | "nft" | "did";
 
+export type MediaKind = "image" | "video" | "audio";
+
+const VIDEO_EXT = new Set([".mp4", ".webm", ".ogv", ".mov"]);
+const AUDIO_EXT = new Set([".mp3", ".wav", ".ogg", ".oga", ".flac", ".aac"]);
+
+/** Classify a media URL by file extension (query/fragment ignored). */
+export function mediaKind(url: string): MediaKind {
+  const ext = url.match(/\.[a-z0-9]+(?=[?#]|$)/i)?.[0]?.toLowerCase() ?? "";
+  if (VIDEO_EXT.has(ext)) return "video";
+  if (AUDIO_EXT.has(ext)) return "audio";
+  return "image";
+}
+
 export interface BlockEvent {
   type: "block";
   height: number;
@@ -22,7 +35,8 @@ export interface SproutEvent {
   catIconUrl?: string; // CAT only, from Dexie registry
   launcherId?: string; // NFT only, hex
   nftId?: string; // NFT only, bech32m launcher ID e.g. "nft1..."
-  imageUrl?: string; // NFT only, first http(s) data URI
+  imageUrl?: string; // NFT only, inline data: URI (demo/offline); live art is fetched via /img?coin=coinId
+  mediaKind?: MediaKind; // NFT only, set when proxiable art exists (URL held server-side, keyed by coinId)
 }
 
 export interface AmbientEvent {
