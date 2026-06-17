@@ -15,7 +15,11 @@ export interface BlockInput {
   spends: CoinSpend[];
 }
 
-export function classifyBlock(block: BlockInput, cats?: CatRegistry, media?: MediaIndex): GroveEvent[] {
+export function classifyBlock(
+  block: BlockInput,
+  cats?: CatRegistry,
+  media?: MediaIndex
+): GroveEvent[] {
   const launcherCoinIds = new Set(
     block.spends
       .filter((s) => hex(s.coin.puzzleHash) === LAUNCHER_HASH)

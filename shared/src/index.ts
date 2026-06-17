@@ -35,8 +35,8 @@ export interface SproutEvent {
   catIconUrl?: string; // CAT only, from Dexie registry
   launcherId?: string; // NFT only, hex
   nftId?: string; // NFT only, bech32m launcher ID e.g. "nft1..."
-  imageUrl?: string; // NFT only, inline data: URI (demo/offline); live art is fetched via /img?coin=coinId
-  mediaKind?: MediaKind; // NFT only, set when proxiable art exists (URL held server-side, keyed by coinId)
+  dataUri?: string; // NFT only, inline data: URI for demo/offline art; live art is fetched via /img?nft=launcherId
+  mediaKind?: MediaKind; // NFT only, set when proxiable art exists (URL held server-side, keyed by launcherId)
 }
 
 export interface AmbientEvent {

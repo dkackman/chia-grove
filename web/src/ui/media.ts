@@ -9,7 +9,7 @@ export { mediaKind, type MediaKind } from "@grove/shared";
  * /img?nft= URL cacheable, unlike the per-spend coinId.
  */
 export function mediaSrc(event: SproutEvent): string | null {
-  if (event.imageUrl) return event.imageUrl; // data: (demo)
+  if (event.dataUri) return event.dataUri; // data: (demo)
   if (event.mediaKind && event.launcherId) return `/img?nft=${event.launcherId}`;
   return null;
 }

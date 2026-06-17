@@ -17,7 +17,7 @@ test("addresses live art by launcher id through the proxy", () => {
 
 test("passes inline data URIs through unchanged (demo)", () => {
   const data = "data:image/svg+xml,%3Csvg%3E%3C/svg%3E";
-  expect(mediaSrc({ ...base, imageUrl: data, mediaKind: "image" })).toBe(data);
+  expect(mediaSrc({ ...base, dataUri: data, mediaKind: "image" })).toBe(data);
 });
 
 test("returns null when there is no art", () => {

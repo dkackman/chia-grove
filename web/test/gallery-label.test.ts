@@ -9,7 +9,6 @@ const base: SproutEvent = {
   coinId: "ab".repeat(32),
   amount: "1500000000000",
   mint: true,
-  imageUrl: "https://example.test/a.png",
   launcherId: "cd".repeat(32),
   nftId: "nft1abcdef",
 };

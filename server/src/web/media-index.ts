@@ -18,16 +18,16 @@ export class MediaIndex {
 
   constructor(private readonly capacity: number) {}
 
-  set(coinId: string, entry: MediaEntry): void {
-    this.map.delete(coinId); // re-insert moves key to newest
-    this.map.set(coinId, entry);
+  set(launcherId: string, entry: MediaEntry): void {
+    this.map.delete(launcherId); // re-insert moves key to newest
+    this.map.set(launcherId, entry);
     if (this.map.size > this.capacity) {
       const oldest = this.map.keys().next().value;
       if (oldest !== undefined) this.map.delete(oldest);
     }
   }
 
-  get(coinId: string): MediaEntry | undefined {
-    return this.map.get(coinId);
+  get(launcherId: string): MediaEntry | undefined {
+    return this.map.get(launcherId);
   }
 }
