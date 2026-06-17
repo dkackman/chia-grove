@@ -157,6 +157,7 @@ export class Paintings {
     mat.needsUpdate = true;
     const src = mediaSrc(event);
     if (src) {
+      // mediaKind is set whenever art exists (gate/demo guarantee it); "image" is just the type-level default
       loadArtTexture(
         src,
         event.mediaKind ?? "image",

@@ -110,6 +110,7 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
           const src = mediaSrc(event);
           if (!src) break;
           pending.add(launcher);
+          // mediaKind is set whenever art exists (gate/demo guarantee it); "image" is just the type-level default
           loadArtTexture(
             src,
             event.mediaKind ?? "image",

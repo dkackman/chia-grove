@@ -17,7 +17,6 @@ export function loadArtTexture(
   onReady: (texture: THREE.Texture) => void,
   onFail: () => void = () => {}
 ): void {
-
   if (kind === "audio") {
     onFail();
     return;
