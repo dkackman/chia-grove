@@ -198,8 +198,9 @@ export function registerImageProxy(app: FastifyInstance, media: MediaIndex): voi
 
     const coinId = (request.query as { coin?: string }).coin;
     const entry = coinId ? media.get(coinId) : undefined;
-    const target = entry ? validateProxyTarget(entry.url) : null;
-    if (!target) return reply.code(400).send("unknown or disallowed coin");
+    if (!entry) return reply.code(404).send("unknown coin");
+    const target = validateProxyTarget(entry.url);
+    if (!target) return reply.code(400).send("disallowed coin url");
 
     inflight++;
     let released = false;
