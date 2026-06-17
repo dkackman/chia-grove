@@ -35,6 +35,15 @@ test("rejects unparseable input", () => {
   expect(validateProxyTarget("not a url")).toBeNull();
 });
 
+test("allows only default web ports, rejecting other ports", () => {
+  expect(validateProxyTarget("https://example.com/a.jpg")).not.toBeNull(); // default
+  expect(validateProxyTarget("http://example.com:80/a.jpg")).not.toBeNull();
+  expect(validateProxyTarget("https://example.com:443/a.jpg")).not.toBeNull();
+  expect(validateProxyTarget("http://example.com:22/a.jpg")).toBeNull(); // ssh
+  expect(validateProxyTarget("http://example.com:8080/a.jpg")).toBeNull();
+  expect(validateProxyTarget("http://example.com:6379/a.jpg")).toBeNull(); // redis
+});
+
 test("isPrivateAddress flags loopback/private/link-local/CGNAT/mapped (v4 + v6)", () => {
   for (const ip of [
     "0.0.0.0",

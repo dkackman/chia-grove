@@ -1,5 +1,6 @@
 import http from "node:http";
 import https from "node:https";
+import { Transform } from "node:stream";
 import { lookup as dnsLookup, type LookupAddress } from "node:dns";
 import { isIP, type LookupFunction } from "node:net";
 import type { IncomingMessage } from "node:http";
@@ -7,6 +8,14 @@ import type { FastifyInstance } from "fastify";
 
 const MAX_REDIRECTS = 4;
 const REQUEST_TIMEOUT_MS = 12_000;
+// Cap the response body so a huge (or endless) upstream can't exhaust bandwidth
+// or memory. NFT video is the largest legit media; 64 MB is generous for it.
+const MAX_BODY_BYTES = 64 * 1024 * 1024;
+// Open-proxy abuse guards: a per-IP sliding window plus a global ceiling on
+// concurrent upstream fetches (each holds a socket for up to REQUEST_TIMEOUT_MS).
+const RATE_WINDOW_MS = 60_000;
+const RATE_MAX_PER_IP = 120;
+const MAX_INFLIGHT = 32;
 
 // hostnames refused outright; IP-literal and DNS-resolved addresses are checked
 // against private ranges separately (isPrivateAddress / safeLookup)
@@ -21,6 +30,9 @@ export function validateProxyTarget(raw: string): URL | null {
     return null;
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+  // only the default web ports — stops the proxy being used to probe arbitrary
+  // services/ports on public hosts (an SSRF-relay port scanner)
+  if (url.port !== "" && url.port !== "80" && url.port !== "443") return null;
   if (BLOCKED_HOSTNAME.some((re) => re.test(url.hostname))) return null;
   // reject literal private IPs up front; hostnames are validated at connect time
   const host = url.hostname.replace(/^\[|\]$/g, "");
@@ -133,6 +145,18 @@ async function fetchFollowingSafeRedirects(
 
 const PASS_THROUGH = ["content-length", "content-range", "accept-ranges"] as const;
 
+/** A pass-through that aborts (errors) once more than `max` bytes have flowed. */
+function byteCap(max: number): Transform {
+  let seen = 0;
+  return new Transform({
+    transform(chunk: Buffer, _enc, cb) {
+      seen += chunk.length;
+      if (seen > max) cb(new Error("upstream body exceeded size cap"));
+      else cb(null, chunk);
+    },
+  });
+}
+
 /**
  * GET /img?url=… — fetch NFT media server-side and stream it back with permissive
  * CORS so the WebGL gallery can texture media from hosts that don't send CORS
@@ -142,22 +166,73 @@ const PASS_THROUGH = ["content-length", "content-range", "accept-ranges"] as con
  * content-type + nosniff + sandbox CSP).
  */
 export function registerImageProxy(app: FastifyInstance): void {
+  const hits = new Map<string, number[]>(); // ip → recent request timestamps
+  let inflight = 0;
+
+  function rateLimited(ip: string): boolean {
+    const now = Date.now();
+    const recent = (hits.get(ip) ?? []).filter((t) => now - t < RATE_WINDOW_MS);
+    hits.set(ip, recent);
+    if (recent.length >= RATE_MAX_PER_IP) return true;
+    recent.push(now);
+    return false;
+  }
+
+  // periodically drop stale buckets so the map can't grow without bound
+  const sweep = setInterval(() => {
+    const now = Date.now();
+    for (const [ip, times] of hits) {
+      const recent = times.filter((t) => now - t < RATE_WINDOW_MS);
+      if (recent.length === 0) hits.delete(ip);
+      else hits.set(ip, recent);
+    }
+  }, RATE_WINDOW_MS);
+  sweep.unref();
+
   app.get("/img", async (request, reply) => {
+    if (rateLimited(request.ip)) return reply.code(429).send("rate limited");
+    if (inflight >= MAX_INFLIGHT) return reply.code(503).send("proxy busy");
+
     const raw = (request.query as { url?: string }).url;
     const target = raw ? validateProxyTarget(raw) : null;
     if (!target) return reply.code(400).send("bad or disallowed url");
+
+    inflight++;
+    let released = false;
+    const release = (): void => {
+      if (!released) {
+        released = true;
+        inflight--;
+      }
+    };
 
     let upstream: IncomingMessage | null;
     try {
       upstream = await fetchFollowingSafeRedirects(target, request.headers.range);
     } catch {
+      release();
       return reply.code(504).send("upstream fetch failed");
     }
-    if (!upstream) return reply.code(502).send("upstream unavailable");
+    if (!upstream) {
+      release();
+      return reply.code(502).send("upstream unavailable");
+    }
 
-    reply.code(upstream.statusCode ?? 502);
+    // reject obviously-oversized bodies before streaming a single byte
+    const declared = Number(upstream.headers["content-length"]);
+    if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
+      upstream.destroy();
+      release();
+      return reply.code(502).send("upstream too large");
+    }
+
+    const status = upstream.statusCode ?? 502;
+    reply.code(status);
     reply.header("access-control-allow-origin", "*");
-    reply.header("cache-control", "public, max-age=86400");
+    // only cache successful media — don't pin upstream errors for a day
+    if (status === 200 || status === 206) {
+      reply.header("cache-control", "public, max-age=86400");
+    }
     reply.header("content-type", safeContentType(upstream.headers["content-type"]));
     reply.header("x-content-type-options", "nosniff");
     reply.header("content-security-policy", "sandbox; default-src 'none'");
@@ -165,6 +240,14 @@ export function registerImageProxy(app: FastifyInstance): void {
       const value = upstream.headers[name];
       if (typeof value === "string") reply.header(name, value);
     }
-    return reply.send(upstream);
+
+    // enforce the cap mid-stream too — content-length can lie or be absent.
+    // tearing down either end propagates to the other and frees the inflight slot.
+    const capped = byteCap(MAX_BODY_BYTES);
+    capped.on("error", () => upstream.destroy());
+    upstream.on("error", () => capped.destroy());
+    capped.on("close", release);
+    upstream.pipe(capped);
+    return reply.send(capped);
   });
 }

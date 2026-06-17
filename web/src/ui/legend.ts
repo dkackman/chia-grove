@@ -16,7 +16,7 @@ export function initLegend(active: Visualization): void {
   picker.id = "legend-scene";
   picker.append("scene");
   const select = document.createElement("select");
-  select.name = "sceneSelector";
+  select.id = "scene-selector";
   for (const theme of THEMES) {
     const option = document.createElement("option");
     option.value = theme.id;
