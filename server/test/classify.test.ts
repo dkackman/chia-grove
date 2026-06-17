@@ -6,6 +6,7 @@ import {
   Clvm,
   Coin,
   Constants,
+  NftMetadata,
   NftMint,
   Simulator,
   standardPuzzleHash,
@@ -14,6 +15,7 @@ import {
 } from "chia-wallet-sdk";
 import { classifyBlock, type BlockInput } from "../src/classify/classify.js";
 import type { SproutEvent } from "@grove/shared";
+import { MediaIndex } from "../src/web/media-index.js";
 
 const hex = (b: Uint8Array) => Buffer.from(b).toString("hex");
 
@@ -199,4 +201,71 @@ test("nft mint flow yields nft sprout with mint flag and did sprout; launcher sp
   expect(result.filter((s) => s.kind === "xch").length).toBeGreaterThan(0);
   // no sprout is a launcher spend
   expect(result).toHaveLength(spends.length - launcherSpendCount);
+});
+
+test("nft with http art url writes to MediaIndex and emits mediaKind", () => {
+  const sim = new Simulator();
+  const clvm = new Clvm();
+  const alice = sim.bls(2n);
+
+  const { did, parentConditions: didParentConditions } = createDid(
+    clvm,
+    alice.coin.coinId(),
+    alice.pk
+  );
+  clvm.spendStandardCoin(
+    alice.coin,
+    alice.pk,
+    clvm.delegatedSpend(didParentConditions.concat([clvm.createCoin(alice.puzzleHash, 0n)]))
+  );
+
+  const artUrl = "https://example.com/art.png";
+  const metadata = new NftMetadata(1n, 1n, [artUrl], null, [], null, []);
+  const metadataProgram = clvm.nftMetadata(metadata);
+
+  const mintCoin = new Coin(alice.coin.coinId(), alice.puzzleHash, 0n);
+  const {
+    nfts: [nft],
+    parentConditions: mintParentConditions,
+  } = clvm.mintNfts(mintCoin.coinId(), [
+    new NftMint(
+      metadataProgram,
+      Constants.nftMetadataUpdaterDefaultHash(),
+      alice.puzzleHash,
+      alice.puzzleHash,
+      300,
+      null
+    ),
+  ]);
+  clvm.spendStandardCoin(mintCoin, alice.pk, clvm.delegatedSpend(mintParentConditions));
+  clvm.spendNft(
+    nft,
+    clvm.standardSpend(
+      alice.pk,
+      clvm.delegatedSpend([
+        clvm.createCoin(alice.puzzleHash, 1n, clvm.alloc([alice.puzzleHash])),
+        clvm.transferNft(did.info.launcherId, [], did.info.innerPuzzleHash()),
+      ])
+    )
+  );
+  clvm.spendDid(
+    did,
+    clvm.standardSpend(
+      alice.pk,
+      clvm.delegatedSpend([
+        clvm.createCoin(alice.puzzleHash, 1n, clvm.alloc([alice.puzzleHash])),
+        clvm.createPuzzleAnnouncement(nft.info.launcherId),
+      ])
+    )
+  );
+
+  const media = new MediaIndex(100);
+  const events = classifyBlock(block(clvm.coinSpends()), undefined, media);
+
+  const nftWithArt = events.find(
+    (e): e is SproutEvent => e.type === "sprout" && e.kind === "nft" && e.mediaKind !== undefined
+  );
+  expect(nftWithArt).toBeDefined();
+  expect(nftWithArt!.mediaKind).toBe("image");
+  expect(media.get(nftWithArt!.coinId)).toEqual({ url: artUrl, kind: "image" });
 });
