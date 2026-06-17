@@ -7,6 +7,7 @@ import { coinsetView } from "./ingest/coinset-view.js";
 import { Hub } from "./web/hub.js";
 import { RingBuffer } from "./web/ring-buffer.js";
 import { buildServer } from "./web/server.js";
+import { MediaIndex } from "./web/media-index.js";
 
 process.on("unhandledRejection", (reason) => {
   console.error("unhandled rejection:", reason);
@@ -28,6 +29,7 @@ const BACKFILL_BLOCKS = Number(process.env.BACKFILL_BLOCKS ?? 150);
 // the ring buffer is sized to absorb airdrop blocks (400+ sprouts each) while
 // still covering the full backfill window; older events fall off the back
 const hub = new Hub(new RingBuffer<GroveEvent>(10000));
+const media = new MediaIndex(10000); // >= ring buffer so replayable art stays resolvable
 const cats = new CatRegistry();
 await cats.start();
 
@@ -35,7 +37,7 @@ const poller = new CoinsetPoller(
   coinsetView(RpcClient.mainnet()),
   {
     onBlock(block) {
-      hub.publish(classifyBlock(block, cats));
+      hub.publish(classifyBlock(block, cats, media));
       console.log(`block ${block.height} (${block.spends.length} spends)`);
     },
     onAmbient(state) {
@@ -58,7 +60,7 @@ const poller = new CoinsetPoller(
   { pollIntervalMs: POLL_INTERVAL_MS, backfillBlocks: BACKFILL_BLOCKS }
 );
 
-const app = await buildServer(hub);
+const app = await buildServer(hub, media);
 await app.listen({ port: PORT, host: "0.0.0.0" });
 poller.start();
 console.log(`chia-grove server on :${PORT}`);
