@@ -203,6 +203,95 @@ test("nft mint flow yields nft sprout with mint flag and did sprout; launcher sp
   expect(result).toHaveLength(spends.length - launcherSpendCount);
 });
 
+test("classifies a heterogeneous block (cat + nft + did + xch) correctly", () => {
+  // Guards classifyBlock's parse allocator against cross-spend contamination
+  // when every kind is parsed in one block: a CAT built independently is
+  // concatenated with a full NFT-mint flow (which also yields DID + XCH), so a
+  // single classifyBlock pass parses all four kinds back to back.
+  const sim = new Simulator();
+
+  const catClvm = new Clvm();
+  const catOwner = sim.bls(1n);
+  const tail = catClvm.nil();
+  const assetId = tail.treeHash();
+  const catInfo = new CatInfo(assetId, null, catOwner.puzzleHash);
+  catClvm.spendStandardCoin(
+    catOwner.coin,
+    catOwner.pk,
+    catClvm.delegatedSpend([catClvm.createCoin(catInfo.puzzleHash(), 1n)])
+  );
+  const eve = new Cat(new Coin(catOwner.coin.coinId(), catInfo.puzzleHash(), 1n), null, catInfo);
+  catClvm.spendCats([
+    new CatSpend(
+      eve,
+      catClvm.standardSpend(
+        catOwner.pk,
+        catClvm.delegatedSpend([
+          catClvm.createCoin(catOwner.puzzleHash, 1n, catClvm.alloc([catOwner.puzzleHash])),
+          catClvm.runCatTail(tail, catClvm.nil()),
+        ])
+      )
+    ),
+  ]);
+
+  const nftClvm = new Clvm();
+  const alice = sim.bls(2n);
+  const { did, parentConditions: didParentConditions } = createDid(
+    nftClvm,
+    alice.coin.coinId(),
+    alice.pk
+  );
+  nftClvm.spendStandardCoin(
+    alice.coin,
+    alice.pk,
+    nftClvm.delegatedSpend(didParentConditions.concat([nftClvm.createCoin(alice.puzzleHash, 0n)]))
+  );
+  const mintCoin = new Coin(alice.coin.coinId(), alice.puzzleHash, 0n);
+  const {
+    nfts: [nft],
+    parentConditions: mintParentConditions,
+  } = nftClvm.mintNfts(mintCoin.coinId(), [
+    new NftMint(
+      nftClvm.nil(),
+      Constants.nftMetadataUpdaterDefaultHash(),
+      alice.puzzleHash,
+      alice.puzzleHash,
+      300,
+      null
+    ),
+  ]);
+  nftClvm.spendStandardCoin(mintCoin, alice.pk, nftClvm.delegatedSpend(mintParentConditions));
+  nftClvm.spendNft(
+    nft,
+    nftClvm.standardSpend(
+      alice.pk,
+      nftClvm.delegatedSpend([
+        nftClvm.createCoin(alice.puzzleHash, 1n, nftClvm.alloc([alice.puzzleHash])),
+        nftClvm.transferNft(did.info.launcherId, [], did.info.innerPuzzleHash()),
+      ])
+    )
+  );
+  nftClvm.spendDid(
+    did,
+    nftClvm.standardSpend(
+      alice.pk,
+      nftClvm.delegatedSpend([
+        nftClvm.createCoin(alice.puzzleHash, 1n, nftClvm.alloc([alice.puzzleHash])),
+        nftClvm.createPuzzleAnnouncement(nft.info.launcherId),
+      ])
+    )
+  );
+
+  const result = sprouts(catClvm.coinSpends().concat(nftClvm.coinSpends()));
+
+  const cats = result.filter((s) => s.kind === "cat");
+  expect(cats).toHaveLength(1);
+  expect(cats[0].assetId).toBe(hex(assetId)); // deterministic id survives co-parsing
+  expect(result.filter((s) => s.kind === "nft").length).toBeGreaterThanOrEqual(1);
+  expect(result.filter((s) => s.kind === "did").length).toBeGreaterThan(0);
+  expect(result.filter((s) => s.kind === "xch").length).toBeGreaterThan(0);
+});
+
 test("nft with http art url writes to MediaIndex and emits mediaKind", () => {
   const sim = new Simulator();
   const clvm = new Clvm();

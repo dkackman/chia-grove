@@ -37,21 +37,27 @@ export function classifyBlock(
     },
   ];
 
+  // One Clvm allocator for the whole block instead of one per spend. parse*
+  // operates on the specific Program returned by deserializeWithBackrefs, so
+  // results don't depend on other spends' nodes sharing the arena; the arena
+  // is freed when this function returns. (verified by the heterogeneous-block
+  // test in classify.test.ts)
+  const clvm = new Clvm();
   for (const spend of block.spends) {
     if (hex(spend.coin.puzzleHash) === LAUNCHER_HASH) continue;
-    events.push(classifySpend(spend, block.height, launcherCoinIds, cats, media));
+    events.push(classifySpend(clvm, spend, block.height, launcherCoinIds, cats, media));
   }
   return events;
 }
 
 function classifySpend(
+  clvm: Clvm,
   spend: CoinSpend,
   height: number,
   launcherCoinIds: Set<string>,
   cats?: CatRegistry,
   media?: MediaIndex
 ): SproutEvent {
-  const clvm = new Clvm();
   const base: SproutEvent = {
     type: "sprout",
     kind: "xch",
