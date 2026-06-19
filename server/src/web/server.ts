@@ -7,6 +7,7 @@ import fastifyStatic from "@fastify/static";
 import type { Hub, WireSocket } from "./hub.js";
 import { registerImageProxy } from "./img-proxy.js";
 import type { MediaIndex } from "./media-index.js";
+import { readVersion } from "../version.js";
 
 export async function buildServer(hub: Hub, media: MediaIndex): Promise<FastifyInstance> {
   // trust the local Caddy reverse proxy (see deploy/Caddyfile) so request.ip
@@ -15,7 +16,12 @@ export async function buildServer(hub: Hub, media: MediaIndex): Promise<FastifyI
   const app = fastify({ logger: false, trustProxy: "127.0.0.1, ::1" });
   await app.register(websocket);
 
-  app.get("/healthz", async () => ({ ok: true }));
+  const version = readVersion();
+  app.get("/healthz", async () => ({
+    ok: true,
+    appVersion: version.appVersion,
+    gitSha: version.gitSha,
+  }));
   registerImageProxy(app, media);
 
   app.register(async (instance) => {

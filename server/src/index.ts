@@ -8,6 +8,7 @@ import { Hub } from "./web/hub.js";
 import { RingBuffer } from "./web/ring-buffer.js";
 import { buildServer } from "./web/server.js";
 import { MediaIndex } from "./web/media-index.js";
+import { readVersion } from "./version.js";
 
 process.on("unhandledRejection", (reason) => {
   console.error("unhandled rejection:", reason);
@@ -63,7 +64,7 @@ const poller = new CoinsetPoller(
 const app = await buildServer(hub, media);
 await app.listen({ port: PORT, host: "0.0.0.0" });
 poller.start();
-console.log(`chia-grove server on :${PORT}`);
+console.log(`chia-grove ${readVersion().appVersion} server on :${PORT}`);
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, async () => {
