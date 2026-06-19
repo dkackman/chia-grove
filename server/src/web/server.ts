@@ -15,7 +15,19 @@ export async function buildServer(hub: Hub, media: MediaIndex): Promise<FastifyI
   // reflects the real client via X-Forwarded-For — the image proxy rate-limits
   // per IP, which would otherwise see only the proxy's loopback address.
   const app = fastify({ logger: false, trustProxy: "127.0.0.1, ::1" });
-  await app.register(websocket);
+  await app.register(websocket, {
+    options: {
+      // Compress the (batched) JSON wire traffic. Negotiated at the handshake;
+      // browsers support it natively, so no client change. no-context-takeover
+      // bounds per-connection zlib memory; threshold skips tiny frames
+      // (hello/ambient) where framing + a deflate context aren't worth it.
+      perMessageDeflate: {
+        threshold: 1024,
+        serverNoContextTakeover: true,
+        clientNoContextTakeover: true,
+      },
+    },
+  });
 
   const version = readVersion();
   app.get("/healthz", async () => ({
