@@ -73,4 +73,12 @@ export interface Snapshot {
   events: GroveEvent[];
 }
 
+// One framed message carrying a publish call's events (a block plus its
+// sprouts, or a standalone ambient/reorg). Sent in place of per-event messages
+// to cut WebSocket framing overhead; the client drains it across frames.
+export interface Batch {
+  type: "batch";
+  events: GroveEvent[];
+}
+
 export type WireMessage = GroveEvent | Snapshot | Hello;
