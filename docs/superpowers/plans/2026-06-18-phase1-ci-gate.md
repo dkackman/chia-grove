@@ -18,6 +18,7 @@
 ## Verification model (read first)
 
 A declarative CI workflow has no red-green unit test. Its verification is three-part:
+
 1. **YAML validity** — the file parses (local check below).
 2. **Gate commands pass locally** — the same four scripts the workflow runs are already green on this branch; if they pass locally they pass in CI.
 3. **Live run** — the authoritative check: push the branch, open a PR, and confirm the `CI / build` check goes green. This step requires pushing to GitHub and is performed by the executor/user.
@@ -27,23 +28,28 @@ A declarative CI workflow has no red-green unit test. Its verification is three-
 ### Task 1: CI workflow file
 
 **Files:**
+
 - Create: `.github/workflows/ci.yml`
 
 **Interfaces:**
+
 - Consumes: existing root npm scripts `lint`, `typecheck`, `test`, `build`; root `package-lock.json`.
 - Produces: a GitHub Actions workflow named `CI` with a single job `build`. The branch-protection status-check name will surface as `CI / build` (used by Task 2).
 
 - [ ] **Step 1: Confirm the four gate commands are green locally (baseline)**
 
 Run:
+
 ```bash
 npm ci && npm run lint && npm run typecheck && npm test && npm run build
 ```
+
 Expected: all succeed. Notably `npm test` ends with `Tests  162 passed (162)` and `npm run build` exits 0 (it prints a non-fatal "Some chunks are larger than 500 kB" warning — that is expected and does **not** fail the build).
 
 - [ ] **Step 2: Create the workflow file**
 
 Create `.github/workflows/ci.yml` with exactly this content:
+
 ```yaml
 name: CI
 
@@ -77,9 +83,11 @@ jobs:
 - [ ] **Step 3: Validate the YAML parses**
 
 Run (Ruby ships with macOS; its stdlib `psych` parses YAML):
+
 ```bash
 ruby -ryaml -e "YAML.load_file('.github/workflows/ci.yml'); puts 'valid yaml'"
 ```
+
 Expected: prints `valid yaml` with exit 0. (If `actionlint` happens to be installed, `actionlint .github/workflows/ci.yml` is a stronger check and should report no issues.)
 
 - [ ] **Step 4: Commit**
@@ -96,6 +104,7 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ```bash
 git push -u origin feat/cicd-versioning-foundation
 ```
+
 Then open a PR for the branch (`gh pr create --fill` or via the GitHub UI) and confirm the **CI / build** check runs and goes green. This is the real proof the gate works; it cannot be verified locally. If the run fails, read the failing step's log, fix, and re-push (the workflow re-runs on every push to the PR).
 
 ---
@@ -103,15 +112,18 @@ Then open a PR for the branch (`gh pr create --fill` or via the GitHub UI) and c
 ### Task 2: Document the CI gate and branch-protection setup
 
 **Files:**
+
 - Create: `deploy/README.md`
 
 **Interfaces:**
+
 - Consumes: the `CI / build` status-check name produced by Task 1.
 - Produces: deploy documentation that Phases 2–3 will extend (release workflow, secrets, Caddy apply step).
 
 - [ ] **Step 1: Create the deploy README with the CI section**
 
 Create `deploy/README.md` with exactly this content:
+
 ```markdown
 # Deployment & CI
 
@@ -129,7 +141,7 @@ A red gate means the change is not mergeable.
 
 ### Enforcing the gate (one-time, manual — requires repo admin)
 
-The workflow runs automatically, but it is only *enforced* once branch
+The workflow runs automatically, but it is only _enforced_ once branch
 protection requires it:
 
 1. GitHub → repository **Settings** → **Branches** → **Add branch ruleset**
@@ -146,9 +158,11 @@ After this, PRs cannot merge into `main` until `CI / build` is green.
 - [ ] **Step 2: Verify the README renders without broken markdown**
 
 Run:
+
 ```bash
 npx --yes prettier --check deploy/README.md
 ```
+
 Expected: `deploy/README.md` reported as already formatted (exit 0). If prettier reports it would reformat, run `npx --yes prettier --write deploy/README.md` and re-check.
 
 - [ ] **Step 3: Commit**
@@ -165,6 +179,7 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ## Self-Review
 
 **Spec coverage (Phase 1 section of the foundation spec):**
+
 - "Triggers: pull_request + push to main" → Task 1 Step 2 (`on:` block). ✓
 - "Job: ubuntu-latest, setup-node@v4 node 24, npm cache, npm ci → lint → typecheck → test → build" → Task 1 Step 2. ✓
 - "Branch protection: require this check before merging, documented (cannot be set from code)" → Task 2. ✓
