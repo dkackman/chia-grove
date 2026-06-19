@@ -47,15 +47,26 @@ const ambientEvent: AmbientEvent = {
 };
 
 function makeHub() {
-  return new Hub(new RingBuffer<GroveEvent>(500));
+  return new Hub(new RingBuffer<GroveEvent>(500), "test-version");
 }
+
+test("first message on connect is the hello handshake", () => {
+  const hub = makeHub();
+  const socket = new FakeSocket();
+  hub.add(socket);
+  expect(socket.parsed()[0]).toEqual({
+    type: "hello",
+    protocolVersion: 1,
+    appVersion: "test-version",
+  });
+});
 
 test("new client receives snapshot of buffered events plus latest ambient", () => {
   const hub = makeHub();
   hub.publish([blockEvent(1), ambientEvent, blockEvent(2)]);
   const socket = new FakeSocket();
   hub.add(socket);
-  expect(socket.parsed()[0]).toEqual({
+  expect(socket.parsed()[1]).toEqual({
     type: "snapshot",
     events: [blockEvent(1), blockEvent(2), ambientEvent],
   });
@@ -68,8 +79,8 @@ test("publish fans out to connected clients", () => {
   hub.add(a);
   hub.add(b);
   hub.publish([blockEvent(1)]);
-  expect(a.parsed()[1]).toEqual(blockEvent(1));
-  expect(b.parsed()[1]).toEqual(blockEvent(1));
+  expect(a.parsed()[2]).toEqual(blockEvent(1));
+  expect(b.parsed()[2]).toEqual(blockEvent(1));
 });
 
 test("slow client skips ambient but still gets blocks", () => {
@@ -79,7 +90,7 @@ test("slow client skips ambient but still gets blocks", () => {
   slow.bufferedAmount = 100 * 1024; // over soft limit
   hub.publish([ambientEvent, blockEvent(1)]);
   const types = slow.parsed().map((m) => (m as GroveEvent).type);
-  expect(types).toEqual(["snapshot", "block"]);
+  expect(types).toEqual(["hello", "snapshot", "block"]);
 });
 
 test("hopelessly behind client is disconnected", () => {
@@ -99,7 +110,7 @@ test("removed client receives nothing", () => {
   hub.add(socket);
   hub.remove(socket);
   hub.publish([blockEvent(1)]);
-  expect(socket.sent).toHaveLength(1); // just the snapshot
+  expect(socket.sent).toHaveLength(2); // just the hello + snapshot
 });
 
 test("add ignores sockets that are not open", () => {
