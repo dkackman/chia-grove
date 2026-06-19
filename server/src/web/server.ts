@@ -8,6 +8,7 @@ import type { Hub, WireSocket } from "./hub.js";
 import { registerImageProxy } from "./img-proxy.js";
 import type { MediaIndex } from "./media-index.js";
 import { readVersion } from "../version.js";
+import { PROTOCOL_VERSION } from "@grove/shared";
 
 export async function buildServer(hub: Hub, media: MediaIndex): Promise<FastifyInstance> {
   // trust the local Caddy reverse proxy (see deploy/Caddyfile) so request.ip
@@ -21,6 +22,7 @@ export async function buildServer(hub: Hub, media: MediaIndex): Promise<FastifyI
     ok: true,
     appVersion: version.appVersion,
     gitSha: version.gitSha,
+    protocolVersion: PROTOCOL_VERSION,
   }));
   registerImageProxy(app, media);
 
