@@ -21,11 +21,13 @@ protection requires it:
    (or "Add rule" on the classic UI).
 2. Target branch: `main`.
 3. Enable **Require status checks to pass before merging**.
-4. Add the required check: **CI / build**. (The check name only appears in
-   this list after the workflow has run at least once, so open a PR first.)
+4. Add the required check: **build**. This is the workflow's _job_ name — the
+   matchable status-check context for GitHub Actions is the job name, not the
+   `CI / build` display string. (The check only appears in this list after the
+   workflow has run at least once, so open a PR first.)
 5. Save.
 
-After this, PRs cannot merge into `main` until `CI / build` is green.
+After this, PRs cannot merge into `main` until the `build` check is green.
 
 ## Automated release (tag-triggered deploy)
 
