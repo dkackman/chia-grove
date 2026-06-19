@@ -17,6 +17,7 @@
 ## Prerequisite
 
 Ships **after** event batching (#6 / `v0.3.0`) is merged and deployed, as `v0.3.1`. The change is independent of the batching code, so branch off `main` once #6 is merged:
+
 ```bash
 git checkout main && git pull && git checkout -b feat/ws-compression
 ```
@@ -38,6 +39,7 @@ A config-only change to the `ws` layer can't be meaningfully red-green unit-test
 ### Task 1: Enable tuned `permessage-deflate`
 
 **Files:**
+
 - Modify: `server/src/web/server.ts`
 
 **Interfaces:** none (server config only).
@@ -50,24 +52,27 @@ Expected: `await app.register(websocket);` (no options today).
 - [ ] **Step 2: Pass tuned compression options**
 
 In `server/src/web/server.ts`, replace:
+
 ```ts
-  await app.register(websocket);
+await app.register(websocket);
 ```
+
 with:
+
 ```ts
-  await app.register(websocket, {
-    options: {
-      // Compress the (batched) JSON wire traffic. Negotiated at the handshake;
-      // browsers support it natively, so no client change. no-context-takeover
-      // bounds per-connection zlib memory; threshold skips tiny frames
-      // (hello/ambient) where framing + a deflate context aren't worth it.
-      perMessageDeflate: {
-        threshold: 1024,
-        serverNoContextTakeover: true,
-        clientNoContextTakeover: true,
-      },
+await app.register(websocket, {
+  options: {
+    // Compress the (batched) JSON wire traffic. Negotiated at the handshake;
+    // browsers support it natively, so no client change. no-context-takeover
+    // bounds per-connection zlib memory; threshold skips tiny frames
+    // (hello/ambient) where framing + a deflate context aren't worth it.
+    perMessageDeflate: {
+      threshold: 1024,
+      serverNoContextTakeover: true,
+      clientNoContextTakeover: true,
     },
-  });
+  },
+});
 ```
 
 - [ ] **Step 3: Confirm no regression**
@@ -96,9 +101,11 @@ Expected: all green.
 - [ ] **Step 2: Local handshake smoke check (optional, pre-push)**
 
 With a local dev server running (`npm run dev:server`), confirm a real client negotiates compression (`ws` is available transitively via `@fastify/websocket`):
+
 ```bash
 node -e "const {WebSocket}=require('ws'); const w=new WebSocket('ws://127.0.0.1:8080/ws',{perMessageDeflate:true}); w.on('open',()=>{console.log('extensions:',w.extensions||'(none)'); w.close();}); w.on('error',e=>{console.error(e.message);process.exit(1);});"
 ```
+
 Expected: prints `extensions: permessage-deflate` (a non-empty extensions string). If it prints `(none)`, the option didn't take effect.
 
 - [ ] **Step 3: Push and open the PR**
@@ -107,14 +114,17 @@ Expected: prints `extensions: permessage-deflate` (a non-empty extensions string
 git push -u origin feat/ws-compression
 gh pr create --base main --fill
 ```
+
 Confirm the `build` check is green. PR note: server-only, no protocol change; deploy as `v0.3.1` after `v0.3.0`.
 
 - [ ] **Step 4: Post-deploy verification (operator)**
 
 After `v0.3.1` deploys:
+
 ```bash
 node -e "const {WebSocket}=require('ws'); const w=new WebSocket('wss://chia-grove.com/ws',{perMessageDeflate:true}); w.on('open',()=>{console.log('extensions:',w.extensions); w.close();});"
 ```
+
 Expected: `extensions: permessage-deflate`. Then watch the droplet's memory/CPU under live load for a bit (`journalctl -u chia-grove`, `systemctl status chia-grove`); if memory climbs unacceptably, revert is the single-line change from Task 1.
 
 ---

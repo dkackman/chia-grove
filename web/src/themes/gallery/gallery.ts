@@ -16,8 +16,16 @@ import { loadArtTexture } from "./media.js";
 import { mediaSrc } from "../../ui/media.js";
 import { framePiece } from "./camera.js";
 import { FlingTracker } from "./swipe.js";
+import { LoadPool } from "../shared/load-pool.js";
 
 const FOV = 45;
+
+// Cap concurrent /img fetches. A snapshot replay pours hundreds of NFT mints
+// through the wall in ~3 s; loading every one bursts past the proxy's per-IP
+// rate limit (429s). A small cap paces the fetches, and the generation guard
+// below drops loads for NFTs that newer arrivals would wrap straight off the
+// wall — collapsing the flood to the pieces that actually stay hung.
+const ART_LOAD_CONCURRENCY = 6;
 const REST_Y = 4.2; // vertical center of the 3-row grid
 const REST_Z = 12; // pulled back so ~10–15 pieces are in frame at once
 const VIEW_AHEAD = 5; // keep the newest column right-of-center while auto-following
@@ -79,9 +87,12 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
   const worldPerPixel = (): number =>
     (2 * (REST_Z - WALL.z) * Math.tan((FOV * Math.PI) / 180 / 2) * camera.aspect) / innerWidth;
 
-  // launchers whose art is mid-load — guards the async window so a burst of
-  // events for the same brand-new NFT doesn't hang duplicate frames
+  // launchers whose art is queued or mid-load — guards the async window so a
+  // burst of events for the same brand-new NFT doesn't hang duplicate frames
   const pending = new Set<string>();
+  // paces and coalesces art fetches so a snapshot flood can't 429 the proxy
+  const artLoads = new LoadPool(ART_LOAD_CONCURRENCY);
+  let nftSeq = 0; // monotonic order of NFTs queued for hanging
 
   function refreshPlacardIf(launcher: string): void {
     if (focusedObject && pieces.metaFor(focusedObject)?.launcherId === launcher) {
@@ -111,15 +122,29 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
           if (!src) break;
           pending.add(launcher);
           // mediaKind is set whenever art exists (gate/demo guarantee it); "image" is just the type-level default
-          loadArtTexture(
-            src,
-            event.mediaKind ?? "image",
-            (texture) => {
-              pending.delete(launcher);
-              pieces.add(event, texture);
+          const kind = event.mediaKind ?? "image";
+          const mySeq = nftSeq++;
+          artLoads.submit({
+            // if this many newer NFTs have queued behind it, this one would be
+            // wrapped straight off the wall — skip the fetch (and free its guard)
+            stillWanted: () => nftSeq - mySeq < pieces.capacity,
+            onDrop: () => pending.delete(launcher),
+            start: (done) => {
+              loadArtTexture(
+                src,
+                kind,
+                (texture) => {
+                  done(); // release the pool slot regardless of dedup outcome
+                  pending.delete(launcher);
+                  pieces.add(event, texture);
+                },
+                () => {
+                  done();
+                  pending.delete(launcher);
+                }
+              );
             },
-            () => pending.delete(launcher)
-          );
+          });
         }
         break;
       }

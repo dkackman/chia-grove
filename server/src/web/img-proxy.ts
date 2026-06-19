@@ -14,8 +14,13 @@ const REQUEST_TIMEOUT_MS = 12_000;
 const MAX_BODY_BYTES = 64 * 1024 * 1024;
 // Open-proxy abuse guards: a per-IP sliding window plus a global ceiling on
 // concurrent upstream fetches (each holds a socket for up to REQUEST_TIMEOUT_MS).
+// The per-IP window is a coarse abuse cap, not the bandwidth control — MAX_INFLIGHT
+// bounds instantaneous load and MAX_BODY_BYTES bounds each response. Clients now
+// coalesce art loads (see themes' LoadPool), so a single legitimate viewer's
+// startup burst stays well under this; the headroom covers theme reloads and
+// several viewers sharing one NAT/CGNAT address.
 const RATE_WINDOW_MS = 60_000;
-const RATE_MAX_PER_IP = 120;
+const RATE_MAX_PER_IP = 600;
 const MAX_INFLIGHT = 32;
 
 // hostnames refused outright; IP-literal and DNS-resolved addresses are checked
