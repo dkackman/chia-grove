@@ -73,4 +73,4 @@ export interface Snapshot {
   events: GroveEvent[];
 }
 
-export type WireMessage = GroveEvent | Snapshot;
+export type WireMessage = GroveEvent | Snapshot | Hello;

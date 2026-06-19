@@ -1,10 +1,13 @@
 import type { GroveEvent, WireMessage } from "@grove/shared";
+import { PROTOCOL_VERSION } from "@grove/shared";
+import { protocolAction } from "./protocol-guard.js";
 import { startDemo } from "./demo.js";
 
 export type FeedStatus = "connecting" | "live" | "stale" | "demo";
 
 const STALE_AFTER_MS = 2 * 60 * 1000;
 const SNAPSHOT_REPLAY_MS = 3000;
+const RELOAD_KEY = "grove.proto-reloaded";
 
 export class GroveFeed {
   private listeners: Array<(event: GroveEvent) => void> = [];
@@ -39,7 +42,8 @@ export class GroveFeed {
 
     ws.onmessage = (message) => {
       const parsed = JSON.parse(message.data as string) as WireMessage;
-      if (parsed.type === "snapshot") this.replay(parsed.events);
+      if (parsed.type === "hello") this.handleHello(parsed.protocolVersion);
+      else if (parsed.type === "snapshot") this.replay(parsed.events);
       else this.dispatch(parsed);
       this.setStatus("live");
       this.resetStaleTimer();
@@ -62,6 +66,22 @@ export class GroveFeed {
 
   private dispatch(event: GroveEvent): void {
     for (const listener of this.listeners) listener(event);
+  }
+
+  /** Reload once if the server's protocol differs from this bundle's. */
+  private handleHello(serverProtocol: number): void {
+    const already = sessionStorage.getItem(RELOAD_KEY) === "1";
+    switch (protocolAction(serverProtocol, PROTOCOL_VERSION, already)) {
+      case "reload":
+        sessionStorage.setItem(RELOAD_KEY, "1");
+        location.reload();
+        break;
+      case "clear":
+        sessionStorage.removeItem(RELOAD_KEY);
+        break;
+      case "none":
+        break;
+    }
   }
 
   private setStatus(status: FeedStatus): void {
