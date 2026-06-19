@@ -1,13 +1,16 @@
 import type { GroveEvent, WireMessage } from "@grove/shared";
 import { PROTOCOL_VERSION } from "@grove/shared";
 import { protocolAction } from "./protocol-guard.js";
+import { DrainQueue, rafScheduler } from "./drain-queue.js";
 import { startDemo } from "./demo.js";
 
 export type FeedStatus = "connecting" | "live" | "stale" | "demo";
 
 const STALE_AFTER_MS = 2 * 60 * 1000;
-const SNAPSHOT_REPLAY_MS = 3000;
 const RELOAD_KEY = "grove.proto-reloaded";
+// Events released per animation frame: ~60 keeps a 10k-event snapshot filling
+// in over ~3 s at 60 fps while smoothing big live blocks across a few frames.
+const DRAIN_BUDGET = 60;
 
 export class GroveFeed {
   private listeners: Array<(event: GroveEvent) => void> = [];
@@ -15,6 +18,11 @@ export class GroveFeed {
   private staleTimer: number | undefined;
   private retryMs = 1000;
   private started = false;
+  private readonly queue = new DrainQueue<GroveEvent>(
+    (event) => this.dispatch(event),
+    DRAIN_BUDGET,
+    rafScheduler
+  );
 
   onEvent(listener: (event: GroveEvent) => void): void {
     this.listeners.push(listener);
@@ -43,8 +51,7 @@ export class GroveFeed {
     ws.onmessage = (message) => {
       const parsed = JSON.parse(message.data as string) as WireMessage;
       if (parsed.type === "hello") this.handleHello(parsed.protocolVersion);
-      else if (parsed.type === "snapshot") this.replay(parsed.events);
-      else this.dispatch(parsed);
+      else this.queue.enqueue(parsed.events); // snapshot or batch
       this.setStatus("live");
       this.resetStaleTimer();
       this.retryMs = 1000;
@@ -56,12 +63,6 @@ export class GroveFeed {
       setTimeout(() => this.connect(), this.retryMs + Math.random() * 1000);
       this.retryMs = Math.min(this.retryMs * 2, 30_000);
     };
-  }
-
-  /** Spread snapshot events over a few seconds so the grove grows in. */
-  private replay(events: GroveEvent[]): void {
-    const step = SNAPSHOT_REPLAY_MS / Math.max(events.length, 1);
-    events.forEach((event, i) => setTimeout(() => this.dispatch(event), i * step));
   }
 
   private dispatch(event: GroveEvent): void {

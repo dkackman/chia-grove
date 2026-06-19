@@ -81,4 +81,4 @@ export interface Batch {
   events: GroveEvent[];
 }
 
-export type WireMessage = GroveEvent | Snapshot | Hello;
+export type WireMessage = Snapshot | Hello | Batch;
