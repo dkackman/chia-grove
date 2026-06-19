@@ -39,7 +39,17 @@ export async function buildServer(hub: Hub, media: MediaIndex): Promise<FastifyI
 
   const dist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../web/dist");
   if (existsSync(dist)) {
-    await app.register(fastifyStatic, { root: dist });
+    await app.register(fastifyStatic, {
+      root: dist,
+      // Vite content-hashes JS/CSS (safe to cache), but the HTML entry must not
+      // be cached or a reload could re-serve a stale document referencing old
+      // bundles — which would defeat the protocol-version reload guard.
+      setHeaders(res, filePath) {
+        if (filePath.endsWith(".html")) {
+          res.setHeader("Cache-Control", "no-cache");
+        }
+      },
+    });
   }
 
   return app;
