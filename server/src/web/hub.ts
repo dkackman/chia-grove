@@ -1,4 +1,5 @@
-import type { AmbientEvent, GroveEvent } from "@grove/shared";
+import type { AmbientEvent, GroveEvent, Hello } from "@grove/shared";
+import { PROTOCOL_VERSION } from "@grove/shared";
 import type { RingBuffer } from "./ring-buffer.js";
 
 const SOFT_LIMIT = 64 * 1024;
@@ -18,10 +19,19 @@ export class Hub {
   private clients = new Set<WireSocket>();
   private lastAmbient: AmbientEvent | null = null;
 
-  constructor(private readonly buffer: RingBuffer<GroveEvent>) {}
+  constructor(
+    private readonly buffer: RingBuffer<GroveEvent>,
+    private readonly appVersion: string
+  ) {}
 
   add(socket: WireSocket): void {
     if (socket.readyState !== OPEN) return;
+    const hello: Hello = {
+      type: "hello",
+      protocolVersion: PROTOCOL_VERSION,
+      appVersion: this.appVersion,
+    };
+    socket.send(JSON.stringify(hello));
     const events: GroveEvent[] = this.buffer.snapshot();
     if (this.lastAmbient) events.push(this.lastAmbient);
     socket.send(JSON.stringify({ type: "snapshot", events }));

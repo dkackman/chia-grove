@@ -8,6 +8,7 @@ import type { Hub, WireSocket } from "./hub.js";
 import { registerImageProxy } from "./img-proxy.js";
 import type { MediaIndex } from "./media-index.js";
 import { readVersion } from "../version.js";
+import { PROTOCOL_VERSION } from "@grove/shared";
 
 export async function buildServer(hub: Hub, media: MediaIndex): Promise<FastifyInstance> {
   // trust the local Caddy reverse proxy (see deploy/Caddyfile) so request.ip
@@ -21,6 +22,7 @@ export async function buildServer(hub: Hub, media: MediaIndex): Promise<FastifyI
     ok: true,
     appVersion: version.appVersion,
     gitSha: version.gitSha,
+    protocolVersion: PROTOCOL_VERSION,
   }));
   registerImageProxy(app, media);
 
@@ -37,7 +39,17 @@ export async function buildServer(hub: Hub, media: MediaIndex): Promise<FastifyI
 
   const dist = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../web/dist");
   if (existsSync(dist)) {
-    await app.register(fastifyStatic, { root: dist });
+    await app.register(fastifyStatic, {
+      root: dist,
+      // Vite content-hashes JS/CSS (safe to cache), but the HTML entry must not
+      // be cached or a reload could re-serve a stale document referencing old
+      // bundles — which would defeat the protocol-version reload guard.
+      setHeaders(res, filePath) {
+        if (filePath.endsWith(".html")) {
+          res.setHeader("Cache-Control", "no-cache");
+        }
+      },
+    });
   }
 
   return app;
