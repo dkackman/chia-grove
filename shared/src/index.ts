@@ -2,6 +2,11 @@ export type SproutKind = "xch" | "cat" | "nft" | "did";
 
 export type MediaKind = "image" | "video" | "audio";
 
+// Bumped only when the WebSocket wire format changes (independent of app
+// semver). The server announces it in the frozen `Hello` handshake; the client
+// reloads when its baked-in value differs. See docs/superpowers/specs.
+export const PROTOCOL_VERSION = 1;
+
 const VIDEO_EXT = new Set([".mp4", ".webm", ".ogv", ".mov"]);
 const AUDIO_EXT = new Set([".mp3", ".wav", ".ogg", ".oga", ".flac", ".aac"]);
 
@@ -51,6 +56,14 @@ export interface AmbientEvent {
 export interface ReorgEvent {
   type: "reorg";
   forkHeight: number;
+}
+
+// Frozen handshake — sent first on every connection. Its shape MUST NOT change
+// so that an old client can always parse it and detect a protocol mismatch.
+export interface Hello {
+  type: "hello";
+  protocolVersion: number;
+  appVersion: string;
 }
 
 export type GroveEvent = BlockEvent | SproutEvent | AmbientEvent | ReorgEvent;
