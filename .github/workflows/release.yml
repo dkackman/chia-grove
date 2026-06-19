@@ -1,0 +1,55 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Validate tag is v<semver>
+        run: |
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Tag $GITHUB_REF_NAME is not v<major>.<minor>.<patch>"
+            exit 1
+          fi
+
+      - run: npm ci
+
+      - run: npm run lint
+
+      - run: npm run typecheck
+
+      - run: npm test
+
+      - name: Set up SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 644 ~/.ssh/known_hosts
+
+      - name: Deploy
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        run: deploy/deploy.sh "$DEPLOY_HOST" "$GITHUB_REF_NAME"
+
+      - name: Verify deployed version
+        run: |
+          sleep 10
+          got="$(curl -fsS https://chia-grove.com/healthz \
+            | node -e 'process.stdin.on("data", d => console.log(JSON.parse(d).appVersion))')"
+          echo "healthz reports: $got (expected $GITHUB_REF_NAME)"
+          [ "$got" = "$GITHUB_REF_NAME" ]
