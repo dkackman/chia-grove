@@ -31,9 +31,11 @@ Phase 3 depends on Phase 2's `server/src/version.ts` (the `hello` `appVersion`).
 ### Task 1: `PROTOCOL_VERSION` + frozen `Hello` type in shared
 
 **Files:**
+
 - Modify: `shared/src/index.ts`
 
 **Interfaces:**
+
 - Produces: `export const PROTOCOL_VERSION = 1;` and `export interface Hello { type: "hello"; protocolVersion: number; appVersion: string }`, added to `WireMessage`. Consumed by Tasks 2 (Hub), 3 (`/healthz`), 4 (client).
 
 This task is a type/constant definition (no behavior), so it has no standalone test; Tasks 2–4 exercise it. Adding it first lets the later tasks import it.
@@ -41,6 +43,7 @@ This task is a type/constant definition (no behavior), so it has no standalone t
 - [ ] **Step 1: Add the constant and type**
 
 In `shared/src/index.ts`, after the `MediaKind` declarations near the top, add:
+
 ```ts
 // Bumped only when the WebSocket wire format changes (independent of app
 // semver). The server announces it in the frozen `Hello` handshake; the client
@@ -49,6 +52,7 @@ export const PROTOCOL_VERSION = 1;
 ```
 
 Then add the `Hello` interface next to the other message interfaces (e.g. after `ReorgEvent`):
+
 ```ts
 // Frozen handshake — sent first on every connection. Its shape MUST NOT change
 // so that an old client can always parse it and detect a protocol mismatch.
@@ -60,6 +64,7 @@ export interface Hello {
 ```
 
 Finally extend `WireMessage`:
+
 ```ts
 export type WireMessage = GroveEvent | Snapshot | Hello;
 ```
@@ -83,11 +88,13 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ### Task 2: Server sends `hello` first on connect
 
 **Files:**
+
 - Modify: `server/src/web/hub.ts`
 - Modify: `server/test/hub.test.ts`
 - Modify: `server/src/index.ts` (Hub construction)
 
 **Interfaces:**
+
 - Consumes: `PROTOCOL_VERSION`, `Hello` (Task 1); `readVersion` (Phase 2).
 - Produces: `new Hub(buffer, appVersion: string)`; `add()` sends `hello` then the snapshot.
 
@@ -96,6 +103,7 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 In `server/test/hub.test.ts`:
 
 Change `makeHub` to pass an app version:
+
 ```ts
 function makeHub() {
   return new Hub(new RingBuffer<GroveEvent>(500), "test-version");
@@ -103,6 +111,7 @@ function makeHub() {
 ```
 
 Add a new test after `makeHub`:
+
 ```ts
 test("first message on connect is the hello handshake", () => {
   const hub = makeHub();
@@ -117,6 +126,7 @@ test("first message on connect is the hello handshake", () => {
 ```
 
 Update the index-shifted assertions (hello is now `[0]`, snapshot `[1]`):
+
 - In "new client receives snapshot...": change `socket.parsed()[0]` to `socket.parsed()[1]`.
 - In "publish fans out...": change `a.parsed()[1]` to `a.parsed()[2]` and `b.parsed()[1]` to `b.parsed()[2]`.
 - In "slow client skips ambient...": change expected `["snapshot", "block"]` to `["hello", "snapshot", "block"]`.
@@ -130,18 +140,23 @@ Expected: FAIL — `Hub` constructor takes one arg / no `hello` is sent.
 - [ ] **Step 3: Implement `hello` in the Hub**
 
 In `server/src/web/hub.ts`, update the import line:
+
 ```ts
 import type { AmbientEvent, GroveEvent, Hello } from "@grove/shared";
 import { PROTOCOL_VERSION } from "@grove/shared";
 ```
+
 Add the `appVersion` constructor param:
+
 ```ts
   constructor(
     private readonly buffer: RingBuffer<GroveEvent>,
     private readonly appVersion: string
   ) {}
 ```
+
 In `add()`, send `hello` before the snapshot:
+
 ```ts
   add(socket: WireSocket): void {
     if (socket.readyState !== OPEN) return;
@@ -161,13 +176,17 @@ In `add()`, send `hello` before the snapshot:
 - [ ] **Step 4: Update Hub construction in index.ts**
 
 In `server/src/index.ts`, change:
+
 ```ts
 const hub = new Hub(new RingBuffer<GroveEvent>(10000));
 ```
+
 to:
+
 ```ts
 const hub = new Hub(new RingBuffer<GroveEvent>(10000), readVersion().appVersion);
 ```
+
 (`readVersion` is already imported from Phase 2.)
 
 - [ ] **Step 5: Run the Hub tests + typecheck**
@@ -189,23 +208,26 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ### Task 3: `/healthz` reports `protocolVersion`
 
 **Files:**
+
 - Modify: `server/src/web/server.ts`
 - Modify: `server/test/server.test.ts`
 
 **Interfaces:**
+
 - Consumes: `PROTOCOL_VERSION` (Task 1).
 - Produces: `/healthz` → `{ ok, appVersion, gitSha, protocolVersion }`.
 
 - [ ] **Step 1: Update the healthz test (failing first)**
 
 In `server/test/server.test.ts`, change the assertion to:
+
 ```ts
-  expect(res.json()).toEqual({
-    ok: true,
-    appVersion: "dev",
-    gitSha: "",
-    protocolVersion: 1,
-  });
+expect(res.json()).toEqual({
+  ok: true,
+  appVersion: "dev",
+  gitSha: "",
+  protocolVersion: 1,
+});
 ```
 
 Run: `npx vitest run server/test/server.test.ts`
@@ -214,18 +236,21 @@ Expected: FAIL — handler does not include `protocolVersion`.
 - [ ] **Step 2: Add `protocolVersion` to the handler**
 
 In `server/src/web/server.ts`, add to the imports:
+
 ```ts
 import { PROTOCOL_VERSION } from "@grove/shared";
 ```
+
 Update the `/healthz` handler to include it:
+
 ```ts
-  const version = readVersion();
-  app.get("/healthz", async () => ({
-    ok: true,
-    appVersion: version.appVersion,
-    gitSha: version.gitSha,
-    protocolVersion: PROTOCOL_VERSION,
-  }));
+const version = readVersion();
+app.get("/healthz", async () => ({
+  ok: true,
+  appVersion: version.appVersion,
+  gitSha: version.gitSha,
+  protocolVersion: PROTOCOL_VERSION,
+}));
 ```
 
 Run: `npx vitest run server/test/server.test.ts`
@@ -245,16 +270,19 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ### Task 4: Client protocol guard
 
 **Files:**
+
 - Create: `web/src/net/protocol-guard.ts`
 - Create: `web/test/protocol-guard.test.ts`
 - Modify: `web/src/net/feed.ts`
 
 **Interfaces:**
+
 - Produces: `protocolAction(server: number, client: number, alreadyReloaded: boolean): "reload" | "clear" | "none"` — the pure decision consumed by `feed.ts`.
 
 - [ ] **Step 1: Write the failing tests for the pure decision**
 
 Create `web/test/protocol-guard.test.ts`:
+
 ```ts
 import { expect, test } from "vitest";
 import { protocolAction } from "../src/net/protocol-guard.js";
@@ -281,6 +309,7 @@ Expected: FAIL — cannot resolve `../src/net/protocol-guard.js`.
 - [ ] **Step 3: Implement the pure decision**
 
 Create `web/src/net/protocol-guard.ts`:
+
 ```ts
 export type ProtocolAction = "reload" | "clear" | "none";
 
@@ -311,30 +340,39 @@ Expected: PASS (3 passed).
 - [ ] **Step 5: Wire the guard into feed.ts**
 
 In `web/src/net/feed.ts`, update the shared import to also pull the constant:
+
 ```ts
 import type { GroveEvent, WireMessage } from "@grove/shared";
 import { PROTOCOL_VERSION } from "@grove/shared";
 import { protocolAction } from "./protocol-guard.js";
 import { startDemo } from "./demo.js";
 ```
+
 Add a module-level constant near the other constants (after `SNAPSHOT_REPLAY_MS`):
+
 ```ts
 const RELOAD_KEY = "grove.proto-reloaded";
 ```
+
 In the `onmessage` handler, handle `hello` before snapshot/dispatch. Replace:
+
 ```ts
-      const parsed = JSON.parse(message.data as string) as WireMessage;
-      if (parsed.type === "snapshot") this.replay(parsed.events);
-      else this.dispatch(parsed);
+const parsed = JSON.parse(message.data as string) as WireMessage;
+if (parsed.type === "snapshot") this.replay(parsed.events);
+else this.dispatch(parsed);
 ```
+
 with:
+
 ```ts
-      const parsed = JSON.parse(message.data as string) as WireMessage;
-      if (parsed.type === "hello") this.handleHello(parsed.protocolVersion);
-      else if (parsed.type === "snapshot") this.replay(parsed.events);
-      else this.dispatch(parsed);
+const parsed = JSON.parse(message.data as string) as WireMessage;
+if (parsed.type === "hello") this.handleHello(parsed.protocolVersion);
+else if (parsed.type === "snapshot") this.replay(parsed.events);
+else this.dispatch(parsed);
 ```
+
 Add the `handleHello` method (e.g. after `dispatch`):
+
 ```ts
   /** Reload once if the server's protocol differs from this bundle's. */
   private handleHello(serverProtocol: number): void {
@@ -372,6 +410,7 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ### Task 5: Serve `index.html` no-cache (reload guard prerequisite)
 
 **Files:**
+
 - Modify: `server/src/web/server.ts`
 
 **Interfaces:** none (HTTP cache header only).
@@ -381,15 +420,16 @@ Context: confirmed there is **no service worker** in the app (no `serviceWorker`
 - [ ] **Step 1: Add a no-cache header for HTML to the static handler**
 
 In `server/src/web/server.ts`, update the `fastifyStatic` registration:
+
 ```ts
-    await app.register(fastifyStatic, {
-      root: dist,
-      setHeaders(res, filePath) {
-        if (filePath.endsWith(".html")) {
-          res.setHeader("Cache-Control", "no-cache");
-        }
-      },
-    });
+await app.register(fastifyStatic, {
+  root: dist,
+  setHeaders(res, filePath) {
+    if (filePath.endsWith(".html")) {
+      res.setHeader("Cache-Control", "no-cache");
+    }
+  },
+});
 ```
 
 - [ ] **Step 2: Typecheck + full server suite**
@@ -400,10 +440,12 @@ Expected: clean; all server tests pass (the existing `/healthz` test is unaffect
 - [ ] **Step 3: Manual verification note (post-deploy)**
 
 After Phase 2/3 deploy, confirm:
+
 ```bash
 curl -sI https://chia-grove.com/ | grep -i cache-control   # expect: no-cache
 curl -s  https://chia-grove.com/healthz                     # includes "protocolVersion":1
 ```
+
 (Record this in the PR description; it cannot be checked locally without a build + static mount.)
 
 - [ ] **Step 4: Commit**
@@ -420,6 +462,7 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ## Self-Review
 
 **Spec coverage (Phase 3 section of the foundation spec):**
+
 - "`PROTOCOL_VERSION = 1` + frozen `Hello` type in shared; add to `WireMessage`" → Task 1. ✓
 - "Server sends `hello` first on connect, before snapshot, with PROTOCOL_VERSION + appVersion" → Task 2. ✓
 - "Client compares protocolVersion; mismatch → reload once (sessionStorage guard); match → clear; unknown types ignored" → Task 4 (`protocolAction` + `handleHello`). ✓
