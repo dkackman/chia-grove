@@ -5,6 +5,14 @@ import type { XZ } from "../shared/util.js";
 import { cellLocal, chunkElevation } from "./layout.js";
 import { loadArtTexture } from "../gallery/media.js";
 import { mediaSrc } from "../../ui/media.js";
+import { LoadPool } from "../shared/load-pool.js";
+
+// Cap concurrent /img fetches. During snapshot replay hundreds of NFTs churn
+// through the 40 painting slots in ~3 s; loading every one bursts past the
+// proxy's per-IP rate limit (429s). A small cap paces the fetches and — because
+// a slot is usually recycled before a queued load reaches the front — collapses
+// them to roughly the handful of paintings that actually stay on screen.
+const ART_LOAD_CONCURRENCY = 6;
 
 const VILLAGER_CAP = 80;
 
@@ -100,6 +108,7 @@ export class Paintings {
   /** launcher id -> slot index, so a repeat lineage spend doesn't hang a duplicate */
   private readonly byLauncher = new Map<string, number>();
   private next = 0;
+  private readonly loads = new LoadPool(ART_LOAD_CONCURRENCY);
 
   constructor(
     scene: THREE.Scene,
@@ -158,20 +167,29 @@ export class Paintings {
     const src = mediaSrc(event);
     if (src) {
       // mediaKind is set whenever art exists (gate/demo guarantee it); "image" is just the type-level default
-      loadArtTexture(
-        src,
-        event.mediaKind ?? "image",
-        (tex) => {
-          // guard against a slot recycled before this load resolved
-          if (p.meta !== event) return;
-          tex.magFilter = THREE.NearestFilter;
-          tex.colorSpace = THREE.SRGBColorSpace;
-          mat.map = tex;
-          mat.color.set(0xffffff);
-          mat.needsUpdate = true;
+      const kind = event.mediaKind ?? "image";
+      this.loads.submit({
+        // by the time a queued load reaches the front the slot may have been
+        // recycled (replay churns hundreds of NFTs through it) — skip the fetch
+        stillWanted: () => p.meta === event,
+        start: (done) => {
+          loadArtTexture(
+            src,
+            kind,
+            (tex) => {
+              done(); // free the pool slot regardless of whether we still want the art
+              // guard against a slot recycled while this load was in flight
+              if (p.meta !== event) return;
+              tex.magFilter = THREE.NearestFilter;
+              tex.colorSpace = THREE.SRGBColorSpace;
+              mat.map = tex;
+              mat.color.set(0xffffff);
+              mat.needsUpdate = true;
+            },
+            done
+          );
         },
-        () => {}
-      );
+      });
     }
   }
 

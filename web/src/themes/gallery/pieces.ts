@@ -89,6 +89,11 @@ export class Pieces {
     if (event.launcherId) this.byLauncher.set(event.launcherId, slotId);
   }
 
+  /** Slot count: at most this many pieces hang before the oldest wraps off. */
+  get capacity(): number {
+    return this.cap;
+  }
+
   /** True if the NFT with this launcherId is currently hung. */
   hasLauncher(launcherId: string): boolean {
     return this.byLauncher.has(launcherId);
