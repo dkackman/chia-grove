@@ -1,4 +1,4 @@
-import type { AmbientEvent, GroveEvent, Hello } from "@grove/shared";
+import type { AmbientEvent, GroveEvent, Hello, Batch } from "@grove/shared";
 import { PROTOCOL_VERSION } from "@grove/shared";
 import type { RingBuffer } from "./ring-buffer.js";
 
@@ -43,22 +43,25 @@ export class Hub {
   }
 
   publish(events: GroveEvent[]): void {
+    if (events.length === 0) return;
     for (const event of events) {
       if (event.type === "ambient") this.lastAmbient = event;
       else this.buffer.push(event);
-
-      const data = JSON.stringify(event);
-      for (const socket of [...this.clients]) {
-        if (socket.readyState !== OPEN || socket.bufferedAmount > HARD_LIMIT) {
-          socket.terminate();
-          this.clients.delete(socket);
-          continue;
-        }
-        if (event.type === "ambient" && socket.bufferedAmount > SOFT_LIMIT) {
-          continue;
-        }
-        socket.send(data);
+    }
+    // One framed message per publish call (one stringify, one send per client).
+    // Ambient is published on its own and stays droppable under backpressure;
+    // block/reorg batches are only dropped by terminating a dead socket.
+    const batch: Batch = { type: "batch", events };
+    const data = JSON.stringify(batch);
+    const droppable = events.every((e) => e.type === "ambient");
+    for (const socket of [...this.clients]) {
+      if (socket.readyState !== OPEN || socket.bufferedAmount > HARD_LIMIT) {
+        socket.terminate();
+        this.clients.delete(socket);
+        continue;
       }
+      if (droppable && socket.bufferedAmount > SOFT_LIMIT) continue;
+      socket.send(data);
     }
   }
 }

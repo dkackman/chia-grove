@@ -5,7 +5,7 @@ export type MediaKind = "image" | "video" | "audio";
 // Bumped only when the WebSocket wire format changes (independent of app
 // semver). The server announces it in the frozen `Hello` handshake; the client
 // reloads when its baked-in value differs. See docs/superpowers/specs.
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 
 const VIDEO_EXT = new Set([".mp4", ".webm", ".ogv", ".mov"]);
 const AUDIO_EXT = new Set([".mp3", ".wav", ".ogg", ".oga", ".flac", ".aac"]);
@@ -73,4 +73,12 @@ export interface Snapshot {
   events: GroveEvent[];
 }
 
-export type WireMessage = GroveEvent | Snapshot | Hello;
+// One framed message carrying a publish call's events (a block plus its
+// sprouts, or a standalone ambient/reorg). Sent in place of per-event messages
+// to cut WebSocket framing overhead; the client drains it across frames.
+export interface Batch {
+  type: "batch";
+  events: GroveEvent[];
+}
+
+export type WireMessage = Snapshot | Hello | Batch;

@@ -11,7 +11,7 @@ adds a frame-budgeted client drain. That change alters the wire format, which
 raised the question: how do already-connected clients survive a wire-format
 change? Browsers can't hot-swap a loaded JS bundle, so a tab open across such a
 deploy will reconnect to the new server, still render the (unchanged) reconnect
-snapshot, then silently drop the new message type and *appear* live while frozen
+snapshot, then silently drop the new message type and _appear_ live while frozen
 until reload.
 
 Rather than special-case #6, we build the foundation that makes #6 — and every
@@ -24,7 +24,7 @@ future breaking change — land as a normal versioned release:
 
 ### The inoculation insight
 
-Shipping the protocol guard as its own release *before* #6 is the whole point:
+Shipping the protocol guard as its own release _before_ #6 is the whole point:
 
 - **This foundation release** adds an additive `hello` handshake carrying
   `protocolVersion: 1`. Old tabs receive an unknown message type, ignore it, and
@@ -34,7 +34,7 @@ Shipping the protocol guard as its own release *before* #6 is the whole point:
   since the foundation release sees `2 ≠ 1` on reconnect and reloads into the new
   bundle. Clean.
 
-The one unavoidable limit: tabs open from *before* the foundation release still
+The one unavoidable limit: tabs open from _before_ the foundation release still
 freeze at the #6 deploy (they predate the guard). Letting the foundation soak
 shrinks that population to near zero — which is exactly why we do it first.
 
@@ -60,16 +60,16 @@ shrinks that population to near zero — which is exactly why we do it first.
 
 ## Locked decisions (from brainstorming)
 
-| Decision | Choice |
-| --- | --- |
-| Client consumption model (for #6) | Unified frame-budgeted drain queue |
-| Publish target | Automated SSH/rsync deploy to droplet on tag |
-| Deploy atomicity | In-place rsync (as today) |
-| Scope before #6 | Full foundation (Phases 1–3), then #6 |
-| Version source of truth | Git tag; injected at build via `version.json` |
-| Server version plumbing | `version.json` read at startup (not systemd env) |
-| SSH transport | Port 22 SSH, as deploys work today |
-| Caddy config management | Manual infra step, documented + reconciled |
+| Decision                          | Choice                                           |
+| --------------------------------- | ------------------------------------------------ |
+| Client consumption model (for #6) | Unified frame-budgeted drain queue               |
+| Publish target                    | Automated SSH/rsync deploy to droplet on tag     |
+| Deploy atomicity                  | In-place rsync (as today)                        |
+| Scope before #6                   | Full foundation (Phases 1–3), then #6            |
+| Version source of truth           | Git tag; injected at build via `version.json`    |
+| Server version plumbing           | `version.json` read at startup (not systemd env) |
+| SSH transport                     | Port 22 SSH, as deploys work today               |
+| Caddy config management           | Manual infra step, documented + reconciled       |
 
 ## Current state (verified)
 
@@ -128,7 +128,7 @@ new `version.json` (generated at deploy time), `/healthz` extension.
 - **Deploy flow on tag `v*`:** checkout → node 24 → `npm ci` → gates
   (lint/typecheck/test) → `npm run build` on the runner → write `version.json` →
   SSH/rsync to droplet → `npm ci --omit=dev` **on the droplet** → `sudo
-  systemctl restart chia-grove`.
+systemctl restart chia-grove`.
   - `node_modules` stays excluded from rsync (native binary resolves on target).
   - `npm install` → **`npm ci`** for deterministic, lockfile-pinned installs
     (both on the runner and the droplet).
@@ -185,7 +185,7 @@ new `version.json` (generated at deploy time), `/healthz` extension.
 - **Action item:** reconcile `deploy/Caddyfile` (intended: `chia-grove.com` +
   `kackman.net` redirect + CSP/security headers) with the live config, and
   document the manual apply step (`scp deploy/Caddyfile → /etc/caddy/Caddyfile &&
-  systemctl reload caddy`). The release workflow does **not** touch Caddy, so the
+systemctl reload caddy`). The release workflow does **not** touch Caddy, so the
   deploy user's sudo scope stays minimal.
 
 ## Testing strategy
