@@ -72,36 +72,48 @@ test("new client receives snapshot of buffered events plus latest ambient", () =
   });
 });
 
-test("publish fans out to connected clients", () => {
+test("publish fans out one batch to connected clients", () => {
   const hub = makeHub();
   const a = new FakeSocket();
   const b = new FakeSocket();
   hub.add(a);
   hub.add(b);
   hub.publish([blockEvent(1)]);
-  expect(a.parsed()[2]).toEqual(blockEvent(1));
-  expect(b.parsed()[2]).toEqual(blockEvent(1));
+  // index 0 = hello, 1 = snapshot, 2 = the batch
+  expect(a.parsed()[2]).toEqual({ type: "batch", events: [blockEvent(1)] });
+  expect(b.parsed()[2]).toEqual({ type: "batch", events: [blockEvent(1)] });
 });
 
-test("slow client skips ambient but still gets blocks", () => {
+test("a block and its sprouts arrive as a single batch", () => {
+  const hub = makeHub();
+  const socket = new FakeSocket();
+  hub.add(socket);
+  const events = [blockEvent(1), blockEvent(2)];
+  hub.publish(events);
+  expect(socket.parsed()[2]).toEqual({ type: "batch", events });
+});
+
+test("slow client skips a standalone ambient batch but still gets blocks", () => {
   const hub = makeHub();
   const slow = new FakeSocket();
   hub.add(slow);
   slow.bufferedAmount = 100 * 1024; // over soft limit
-  hub.publish([ambientEvent, blockEvent(1)]);
-  const types = slow.parsed().map((m) => (m as GroveEvent).type);
-  expect(types).toEqual(["hello", "snapshot", "block"]);
+  hub.publish([ambientEvent]); // ambient-only -> droppable, skipped
+  hub.publish([blockEvent(1)]); // not droppable -> sent
+  const types = slow.parsed().map((m) => (m as { type: string }).type);
+  expect(types).toEqual(["hello", "snapshot", "batch"]);
 });
 
-test("hopelessly behind client is disconnected", () => {
+test("hopelessly behind client is disconnected and receives nothing more", () => {
   const hub = makeHub();
   const dead = new FakeSocket();
   hub.add(dead);
   dead.bufferedAmount = 2 * 1024 * 1024; // over hard limit
   hub.publish([blockEvent(1)]);
   expect(dead.closed).toBe(true);
+  const before = dead.sent.length;
   hub.publish([blockEvent(2)]);
-  expect(dead.parsed().filter((m) => (m as GroveEvent).type === "block")).toHaveLength(0);
+  expect(dead.sent.length).toBe(before);
 });
 
 test("removed client receives nothing", () => {
