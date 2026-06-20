@@ -38,18 +38,34 @@ function createMediaEl(src: string, kind: MediaKind): HTMLElement {
   return img;
 }
 
-// `mediaKind` is only a hint (guessed from the URL extension), so on a load or
-// decode error retry the next element type (image → video → audio) against the
-// same cached /img URL. Fixes extensionless videos rendering as a black <img>;
-// once the chain is exhausted the broken element is removed rather than shown.
+// `mediaKind` is only a hint (guessed from the URL extension), so when an
+// element can't play its source retry the next element type (image → video →
+// audio) against the same cached /img URL. Fixes extensionless videos rendering
+// as a black <img>; once the chain is exhausted the broken element is removed
+// rather than shown.
 function nftMediaEl(src: string, kind: MediaKind): HTMLElement {
-  const el = createMediaEl(src, kind);
-  el.addEventListener("error", () => {
+  const node = createMediaEl(src, kind);
+  node.addEventListener("error", () => {
+    // A media element reports why it failed: a transient network/abort error
+    // doesn't mean the element type is wrong, so don't downgrade the kind (a
+    // hiccuping <video> would otherwise be permanently replaced by an <audio>).
+    // Only a decode / unsupported-source error means the hint was wrong. An
+    // <img> exposes no such reason, so any error escalates — its kind is only a
+    // guess to begin with.
+    if (node instanceof HTMLMediaElement) {
+      const code = node.error?.code;
+      if (
+        code === MediaError.MEDIA_ERR_NETWORK ||
+        code === MediaError.MEDIA_ERR_ABORTED
+      ) {
+        return;
+      }
+    }
     const next = escalateMediaKind(kind);
-    if (next) el.replaceWith(nftMediaEl(src, next));
-    else el.remove();
+    if (next) node.replaceWith(nftMediaEl(src, next));
+    else node.remove();
   });
-  return el;
+  return node;
 }
 
 export function showCard(event: SproutEvent): void {
