@@ -49,7 +49,12 @@ export class GroveFeed {
     const ws = new WebSocket(`${proto}://${location.host}/ws`);
 
     ws.onmessage = (message) => {
-      const parsed = JSON.parse(message.data as string) as WireMessage;
+      let parsed: WireMessage;
+      try {
+        parsed = JSON.parse(message.data as string) as WireMessage;
+      } catch {
+        return; // drop a malformed frame rather than throw uncaught in the handler
+      }
       if (parsed.type === "hello") this.handleHello(parsed.protocolVersion);
       else this.queue.enqueue(parsed.events); // snapshot or batch
       this.setStatus("live");

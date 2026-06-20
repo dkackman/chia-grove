@@ -29,7 +29,7 @@ export class CoinsetPoller implements ChainSource {
     options: PollerOptions = {}
   ) {
     this.interval = options.pollIntervalMs ?? 3000;
-    this.backfill = options.backfillBlocks ?? 30;
+    this.backfill = options.backfillBlocks ?? 150;
     this.maxBackoff = options.maxBackoffMs ?? 60_000;
     this.delayMs = this.interval;
   }
