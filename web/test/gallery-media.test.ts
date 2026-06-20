@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import type { SproutEvent } from "@grove/shared";
-import { mediaSrc } from "../src/ui/media.js";
+import { escalateMediaKind, mediaSrc } from "../src/ui/media.js";
 
 const base: SproutEvent = {
   type: "sprout",
@@ -22,4 +22,16 @@ test("passes inline data URIs through unchanged (demo)", () => {
 
 test("returns null when there is no art", () => {
   expect(mediaSrc(base)).toBeNull();
+});
+
+// When a mediaKind hint is wrong (e.g. an extensionless IPFS video guessed as
+// "image"), the render paths retry the next element type on load failure.
+
+test("escalateMediaKind walks image → video → audio", () => {
+  expect(escalateMediaKind("image")).toBe("video");
+  expect(escalateMediaKind("video")).toBe("audio");
+});
+
+test("escalateMediaKind returns null once the chain is exhausted", () => {
+  expect(escalateMediaKind("audio")).toBeNull();
 });
