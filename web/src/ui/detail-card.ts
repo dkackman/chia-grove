@@ -1,6 +1,6 @@
 import type { SproutEvent } from "@grove/shared";
 import { mojosToXch, mojosToCAT, shortHex } from "./format.js";
-import { mediaSrc, type MediaKind } from "./media.js";
+import { escalateMediaKind, mediaSrc, type MediaKind } from "./media.js";
 
 const KIND_LABELS: Record<SproutEvent["kind"], string> = {
   xch: "XCH spend",
@@ -16,7 +16,7 @@ function el(tag: string, cls?: string, text?: string): HTMLElement {
   return e;
 }
 
-function nftMediaEl(src: string, kind: MediaKind): HTMLElement {
+function createMediaEl(src: string, kind: MediaKind): HTMLElement {
   if (kind === "video") {
     const v = document.createElement("video");
     v.src = src;
@@ -36,6 +36,20 @@ function nftMediaEl(src: string, kind: MediaKind): HTMLElement {
   img.alt = "NFT";
   img.loading = "lazy";
   return img;
+}
+
+// `mediaKind` is only a hint (guessed from the URL extension), so on a load or
+// decode error retry the next element type (image → video → audio) against the
+// same cached /img URL. Fixes extensionless videos rendering as a black <img>;
+// once the chain is exhausted the broken element is removed rather than shown.
+function nftMediaEl(src: string, kind: MediaKind): HTMLElement {
+  const el = createMediaEl(src, kind);
+  el.addEventListener("error", () => {
+    const next = escalateMediaKind(kind);
+    if (next) el.replaceWith(nftMediaEl(src, next));
+    else el.remove();
+  });
+  return el;
 }
 
 export function showCard(event: SproutEvent): void {

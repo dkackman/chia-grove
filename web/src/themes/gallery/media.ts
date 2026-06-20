@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import type { MediaKind } from "../../ui/media.js";
+import { escalateMediaKind, type MediaKind } from "../../ui/media.js";
 
 /**
  * Load an NFT's media as a Three.js texture, mirroring the media-type handling
@@ -58,6 +58,12 @@ export function loadArtTexture(
     src,
     (texture) => onReady(texture),
     undefined,
-    () => onFail()
+    () => {
+      // the "image" hint may be wrong (e.g. an extensionless video) — retry as
+      // the next element type against the same cached /img URL before giving up
+      const next = escalateMediaKind(kind);
+      if (next) loadArtTexture(src, next, onReady, onFail);
+      else onFail();
+    }
   );
 }
