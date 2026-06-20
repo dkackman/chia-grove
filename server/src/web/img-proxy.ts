@@ -6,9 +6,13 @@ import { isIP, type LookupFunction } from "node:net";
 import type { IncomingMessage } from "node:http";
 import type { FastifyInstance } from "fastify";
 import type { MediaIndex } from "./media-index.js";
+import { FailureCache } from "./failure-cache.js";
 
 const MAX_REDIRECTS = 4;
-const REQUEST_TIMEOUT_MS = 12_000;
+// Short idle timeout: art that hangs (unpinned IPFS CID, slow gateway) frees the
+// painting slot fast instead of stalling a viewer. Resets on socket activity, so
+// a steadily-streaming large video isn't cut off mid-download.
+const REQUEST_TIMEOUT_MS = 6_000;
 // Cap the response body so a huge (or endless) upstream can't exhaust bandwidth
 // or memory. NFT video is the largest legit media; 64 MB is generous for it.
 const MAX_BODY_BYTES = 64 * 1024 * 1024;
@@ -22,6 +26,12 @@ const MAX_BODY_BYTES = 64 * 1024 * 1024;
 const RATE_WINDOW_MS = 60_000;
 const RATE_MAX_PER_IP = 600;
 const MAX_INFLIGHT = 32;
+// Negative cache: once an NFT's art fetch fails (dead DNS, unpinned IPFS CID
+// that hangs to the timeout, deprecated gateway), remember it so we short-circuit
+// instead of re-stalling on every viewer and every snapshot replay. Capacity
+// tracks the MediaIndex so any replayable NFT can be remembered.
+const FAIL_TTL_MS = 10 * 60 * 1000;
+const FAIL_CAPACITY = 10_000;
 
 // hostnames refused outright; IP-literal and DNS-resolved addresses are checked
 // against private ranges separately (isPrivateAddress / safeLookup)
@@ -174,7 +184,11 @@ function byteCap(max: number): Transform {
  * also closes rebinding; manual redirect re-validation) and against open-proxy
  * HTML/script injection (media-only content-type + nosniff + sandbox CSP).
  */
-export function registerImageProxy(app: FastifyInstance, media: MediaIndex): void {
+export function registerImageProxy(
+  app: FastifyInstance,
+  media: MediaIndex,
+  failures: FailureCache = new FailureCache(FAIL_TTL_MS, FAIL_CAPACITY)
+): void {
   const hits = new Map<string, number[]>(); // ip → recent request timestamps
   let inflight = 0;
 
@@ -195,16 +209,23 @@ export function registerImageProxy(app: FastifyInstance, media: MediaIndex): voi
       if (recent.length === 0) hits.delete(ip);
       else hits.set(ip, recent);
     }
+    failures.sweep();
   }, RATE_WINDOW_MS);
   sweep.unref();
 
   app.get("/img", async (request, reply) => {
     if (rateLimited(request.ip)) return reply.code(429).send("rate limited");
-    if (inflight >= MAX_INFLIGHT) return reply.code(503).send("proxy busy");
 
     const launcherId = (request.query as { nft?: string }).nft;
     const entry = launcherId ? media.get(launcherId) : undefined;
     if (!entry) return reply.code(404).send("unknown nft");
+
+    // a recently-failed target short-circuits here — before consuming an inflight
+    // slot or re-incurring the upstream stall on every viewer / snapshot replay
+    if (failures.has(launcherId!)) return reply.code(504).send("upstream recently failed");
+
+    if (inflight >= MAX_INFLIGHT) return reply.code(503).send("proxy busy");
+
     const target = validateProxyTarget(entry.url);
     if (!target) return reply.code(400).send("disallowed nft url");
 
@@ -222,10 +243,12 @@ export function registerImageProxy(app: FastifyInstance, media: MediaIndex): voi
       upstream = await fetchFollowingSafeRedirects(target, request.headers.range);
     } catch {
       release();
+      failures.mark(launcherId!);
       return reply.code(504).send("upstream fetch failed");
     }
     if (!upstream) {
       release();
+      failures.mark(launcherId!);
       return reply.code(502).send("upstream unavailable");
     }
 
@@ -234,6 +257,7 @@ export function registerImageProxy(app: FastifyInstance, media: MediaIndex): voi
     if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
       upstream.destroy();
       release();
+      failures.mark(launcherId!);
       return reply.code(502).send("upstream too large");
     }
 
