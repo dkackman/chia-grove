@@ -1,9 +1,16 @@
 import { expect, test } from "vitest";
-import { isPrivateAddress, safeContentType, validateProxyTarget } from "../src/web/img-proxy.js";
+import fastify from "fastify";
+import {
+  isPrivateAddress,
+  registerImageProxy,
+  safeContentType,
+  validateProxyTarget,
+} from "../src/web/img-proxy.js";
 import { buildServer } from "../src/web/server.js";
 import { Hub } from "../src/web/hub.js";
 import { RingBuffer } from "../src/web/ring-buffer.js";
 import { MediaIndex } from "../src/web/media-index.js";
+import { FailureCache } from "../src/web/failure-cache.js";
 import type { GroveEvent } from "@grove/shared";
 
 test("accepts public http(s) urls", () => {
@@ -123,5 +130,33 @@ test("GET /img?nft=abc with a disallowed (loopback) URL → 400", async () => {
   const app = await buildServer(new Hub(new RingBuffer<GroveEvent>(10), "test"), media);
   const res = await app.inject({ method: "GET", url: "/img?nft=abc" });
   expect(res.statusCode).toBe(400);
+  await app.close();
+});
+
+// Negative-cache behavior. The `.invalid` TLD (RFC 6761) is guaranteed never to
+// resolve, so the upstream fetch fails fast and offline — no real network host.
+
+test("a recently-failed nft short-circuits without re-fetching", async () => {
+  const media = new MediaIndex(10);
+  media.set("abc", { url: "http://nonexistent.invalid/x.png", kind: "image" });
+  const failures = new FailureCache(60_000, 10);
+  failures.mark("abc"); // stand in for a prior fetch that already failed
+  const app = fastify();
+  registerImageProxy(app, media, failures);
+  const res = await app.inject({ method: "GET", url: "/img?nft=abc" });
+  expect(res.statusCode).toBe(504);
+  expect(res.body).toContain("recently failed"); // cached message, not a fresh fetch
+  await app.close();
+});
+
+test("marks an nft as failed after its upstream fetch fails", async () => {
+  const media = new MediaIndex(10);
+  media.set("fail1", { url: "http://nonexistent.invalid/y.png", kind: "image" });
+  const failures = new FailureCache(60_000, 10);
+  const app = fastify();
+  registerImageProxy(app, media, failures);
+  const res = await app.inject({ method: "GET", url: "/img?nft=fail1" });
+  expect(res.statusCode).toBe(504);
+  expect(failures.has("fail1")).toBe(true); // future requests will short-circuit
   await app.close();
 });
