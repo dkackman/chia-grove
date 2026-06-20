@@ -1,7 +1,7 @@
 chia-grove.com {
     reverse_proxy localhost:8080
     header {
-        Content-Security-Policy "default-src 'self'; connect-src 'self' https://gateway.umami.is; img-src 'self' data: https:; media-src https:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+        Content-Security-Policy "default-src 'self'; connect-src 'self' https://gateway.umami.is; img-src 'self' data: https://icons.dexie.space; media-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
         X-Content-Type-Options "nosniff"
         X-Frame-Options "DENY"
         Referrer-Policy "no-referrer"

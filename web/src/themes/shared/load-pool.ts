@@ -19,7 +19,8 @@ export interface PooledLoad {
 }
 
 export class LoadPool {
-  private readonly queue: PooledLoad[] = [];
+  private queue: PooledLoad[] = [];
+  private head = 0; // index of the next job to consider
   private active = 0;
 
   constructor(private readonly concurrency: number) {}
@@ -30,8 +31,8 @@ export class LoadPool {
   }
 
   private pump(): void {
-    while (this.active < this.concurrency && this.queue.length > 0) {
-      const job = this.queue.shift()!;
+    while (this.active < this.concurrency && this.head < this.queue.length) {
+      const job = this.queue[this.head++];
       if (!job.stillWanted()) {
         job.onDrop?.(); // slot recycled before we got to it — let it clean up
         continue;
@@ -44,6 +45,12 @@ export class LoadPool {
         this.active--;
         this.pump();
       });
+    }
+    // fully consumed → release the backing array. Advancing a head index rather
+    // than Array.shift keeps draining a snapshot-replay burst O(n) overall.
+    if (this.head >= this.queue.length) {
+      this.queue = [];
+      this.head = 0;
     }
   }
 }
