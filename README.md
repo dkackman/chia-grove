@@ -68,7 +68,7 @@ One Node process polls [coinset.org](https://coinset.org) for new blocks, classi
 
 No database, no full node. Runs on the smallest droplet.
 
-New clients receive a snapshot of the last 2000 events so the scene is already populated on connect.
+New clients receive a snapshot of the last 10,000 events so the scene is already populated on connect.
 
 ## Development
 
@@ -111,4 +111,4 @@ First-time server setup:
 | ------------------ | ------- | --------------------------- |
 | `PORT`             | `8080`  | HTTP/WebSocket listen port  |
 | `POLL_INTERVAL_MS` | `3000`  | Blockchain poll cadence     |
-| `BACKFILL_BLOCKS`  | `30`    | Blocks to replay on startup |
+| `BACKFILL_BLOCKS`  | `150`   | Blocks to replay on startup |

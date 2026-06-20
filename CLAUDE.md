@@ -13,6 +13,7 @@ npm run typecheck    # tsc across all three workspaces
 npm run lint         # ESLint 10 (flat config, eslint.config.js)
 npm run format       # Prettier 3 write
 npm run build        # production Vite bundle → web/dist/
+npm run start        # production server (serves web/dist/ + WebSocket)
 ```
 
 Run a single test file: `npx vitest run server/test/classify.test.ts`
@@ -45,7 +46,7 @@ GroveFeed  (web/src/net/feed.ts)
 active Visualization  (web/src/themes/)
 ```
 
-New WebSocket clients receive a `Snapshot` of the last 2000 events from `RingBuffer`, replayed over ~3 seconds by `GroveFeed.replay()`. After that, events stream live.
+New WebSocket clients first receive a `Hello` handshake (protocol version check), then a `Snapshot` of the last 10,000 events from `RingBuffer`, drained at 60 events/frame by `DrainQueue` (~3 s at 60 fps). After that, events stream live as `Batch` messages.
 
 ### Server internals
 
@@ -54,6 +55,7 @@ New WebSocket clients receive a `Snapshot` of the last 2000 events from `RingBuf
 - `CatRegistry` fetches the full CAT list from `api.dexie.space` on start and refreshes hourly. It enriches CAT sprout events with `catName`, `catTicker`, and `catIconUrl`.
 - NFT art is never sent to the client as a URL. `classifyBlock` records each NFT's on-chain art URL in a bounded `MediaIndex` (`server/src/web/media-index.ts`, keyed by NFT `launcherId`); the `SproutEvent` carries only a `mediaKind` hint. The `/img` proxy resolves `?nft=<launcherId>` through `MediaIndex` (404 unknown, 400 disallowed) so it can never fetch an arbitrary client-supplied URL. launcherId keys are stable across spends, so the proxy URL caches well.
 - `Hub` handles backpressure: sockets above 1 MB buffered are terminated; ambient events are dropped for sockets above 64 KB.
+- The `/healthz` GET endpoint returns `{ ok, appVersion, gitSha, protocolVersion }` — used by deploy health checks.
 
 ### Web/scene internals
 
@@ -79,7 +81,9 @@ New WebSocket clients receive a `Snapshot` of the last 2000 events from `RingBuf
 
 - **mine** (`web/src/themes/mine/`): Minecraft-inspired voxel island growing on a phyllotaxis spiral. XCH spends pave grass/dirt land; CATs become color-and-material voxel blocks (family + dye hashed from assetId); NFTs become framed paintings (clickable → MintGarden); DIDs become villager figures. Rim torches track mempool; 150 s day-night cycle scales with netspace; mints fire beacon beams; reorg triggers a creeper burst. Terrain is persistent (keyed by block-slot index); only activity-layer specials churn.
   - `island.ts` — `Island` class: persistent grass/dirt instanced terrain (6-material per-face grass blocks, 6 000-slot caps, build-to-stable via `Map<number, ChunkGround>`).
-  - `cats.ts` — `CatBlocks`: 3 `InstancedKind` families (opaque wool, transparent glass, emissive glowstone), 192-per-block budget, shared `nextSeat()` across specials.
+  - `cats.ts` — `CatBlocks`: 3 `InstancedKind` families (opaque wool, transparent glass, emissive glowstone); slot caps opaque 2000 / transparent 600 / emissive 400; 600-per-block budget caps airdrop bursts. Uses `resolveCatBlock()` from `material.ts` for family + dye assignment.
+  - `material.ts` — `resolveCatBlock()`: maps a CAT `assetId` hash to a `CatFamily`, material name, and dye color. Separated from `cats.ts` so material logic is independently testable.
+  - `water.ts` — translucent ocean plane (GPU vertex wave shader) the island sits in; `WATER_LEVEL` constant used by terrain to align shoreline.
   - `structures.ts` — `Villagers` (80-cap pool mesh, pop-in scale animation) + `Paintings` (40-cap, launcher-id–proxied NFT art via `gallery/media.ts` + `ui/media.ts` (`mediaSrc`)).
   - `vfx.ts` — `Vfx`: beacon columns, rim torches, creeper-burst particle system (frame-rate-independent via real `dt`).
   - `sky.ts` — pure functions for 150 s day-night cycle; `createMineSky()` drives sun + moon `DirectionalLight` and `FogExp2`.
@@ -88,13 +92,15 @@ New WebSocket clients receive a `Snapshot` of the last 2000 events from `RingBuf
 
 ### Event types (`shared/src/index.ts`)
 
-| Type           | When emitted                        |
-| -------------- | ----------------------------------- |
-| `BlockEvent`   | Every new block                     |
-| `SproutEvent`  | Every classified coin spend         |
-| `AmbientEvent` | Each poll cycle (mempool, netspace) |
-| `ReorgEvent`   | Chain reorg detected                |
-| `Snapshot`     | Sent once on WebSocket connect      |
+| Type           | When emitted                                         |
+| -------------- | ---------------------------------------------------- |
+| `BlockEvent`   | Every new block                                      |
+| `SproutEvent`  | Every classified coin spend                          |
+| `AmbientEvent` | Each poll cycle (mempool, netspace)                  |
+| `ReorgEvent`   | Chain reorg detected                                 |
+| `Hello`        | First message on every connection (protocol version) |
+| `Snapshot`     | Sent after `Hello` on connect (full ring buffer)     |
+| `Batch`        | Live streaming: one or more events per frame         |
 
 ### Environment variables (server)
 
