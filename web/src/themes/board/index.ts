@@ -9,7 +9,7 @@ export const board: Visualization = {
     ["sw-mint", "★ NEW — NFT mint"],
     ["sw-gauge", "header bar — mempool fill"],
     ["sw-tile", "side panel — latest NFT art"],
-    ["sw-key", "double-click — toggle clatter"],
+    ["sw-clatter", "double-click — toggle clatter"],
   ],
   start: (canvas, feed) => startBoard(canvas, feed),
 };

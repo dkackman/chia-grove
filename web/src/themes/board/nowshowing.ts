@@ -15,7 +15,6 @@ const SIZE = 3.2;
 export class NowShowing {
   private readonly mesh: THREE.Mesh;
   private readonly mat: THREE.MeshBasicMaterial;
-  private fade = 0;
   private want: string | null = null; // launcherId we're currently loading/showing
 
   constructor(scene: THREE.Scene, private readonly pool: LoadPool, opts: { x?: number } = {}) {
@@ -44,7 +43,6 @@ export class NowShowing {
             this.mat.map = tex;
             this.mat.color.set(0xffffff);
             this.mat.needsUpdate = true;
-            this.fade = 0; // restart the cross-fade
           },
           undefined,
           () => done() // silent on failure; tile keeps prior art
@@ -55,7 +53,6 @@ export class NowShowing {
 
   update(dt: number): void {
     const targetOpacity = this.mat.map ? 1 : 0;
-    this.fade = Math.min(1, this.fade + dt * 1.5);
     this.mat.opacity += (targetOpacity - this.mat.opacity) * Math.min(dt * 3, 1);
   }
 }

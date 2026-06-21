@@ -142,7 +142,7 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
     renderer.setSize(innerWidth, innerHeight);
   });
 
-  // toggle clatter by clicking the housing background (no row hit)
+  // double-click anywhere on the board toggles the clatter sound
   canvas.addEventListener("dblclick", () => clatter.setEnabled(!clatter.enabled));
 
   return {
