@@ -12,6 +12,7 @@ import { Header } from "./header.js";
 import { NowShowing, shouldShowArt } from "./nowshowing.js";
 import { Clatter } from "./clatter.js";
 import { rowText, BOARD_COLS } from "./rows.js";
+import { fitDistance } from "./fit.js";
 
 const LEDGER_ROWS = 20;
 const FAST_FORWARD = 8; // sprouts/frame above which we snap instead of riffle
@@ -27,28 +28,42 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(BOARD.backdrop);
 
-  // board housing
+  // Layout: a 3-row header (originY HEADER_ORIGIN_Y) above the ledger (originY
+  // LEDGER_ORIGIN_Y). Frame the camera on the true content center so the header
+  // is never clipped, and fit the whole board to the viewport on any aspect.
   const cell = 0.6;
-  const boardW = BOARD_COLS * cell + 1.2;
-  const boardH = (LEDGER_ROWS + 4) * cell + 1.2;
+  const HEADER_ORIGIN_Y = 7;
+  const LEDGER_ORIGIN_Y = 5;
+  const VFOV = 40;
+  const contentTop = HEADER_ORIGIN_Y + cell; // top edge of the header row
+  const contentBottom = LEDGER_ORIGIN_Y - (LEDGER_ROWS - 1) * cell - cell; // bottom of the last ledger row
+  const centerY = (contentTop + contentBottom) / 2;
+  const contentH = contentTop - contentBottom;
+  const contentW = BOARD_COLS * cell + cell * 2;
+
   const housing = new THREE.Mesh(
-    new THREE.PlaneGeometry(boardW, boardH),
+    new THREE.PlaneGeometry(contentW + 0.8, contentH + 0.8),
     new THREE.MeshBasicMaterial({ color: BOARD.housing })
   );
-  housing.position.set(0, (7 - (LEDGER_ROWS - 1) * cell) / 2, -0.05);
+  housing.position.set(0, centerY, -0.05);
   scene.add(housing);
 
-  const camera = new THREE.PerspectiveCamera(40, innerWidth / innerHeight, 0.1, 1000);
-  const baseZ = boardH * 1.15;
-  camera.position.set(0, housing.position.y, baseZ);
-  camera.lookAt(0, housing.position.y, 0);
+  const camera = new THREE.PerspectiveCamera(VFOV, innerWidth / innerHeight, 0.1, 1000);
+  let baseZ = fitDistance(contentW, contentH, VFOV, innerWidth / innerHeight);
+  camera.position.set(0, centerY, baseZ);
+  camera.lookAt(0, centerY, 0);
 
   const atlas = buildGlyphAtlas();
-  // ledger sits below the 3-row header (header originY 7 → rows at 7,6.4,5.8)
-  const ledger = new FlapGrid(scene, atlas, LEDGER_ROWS, BOARD_COLS, { cell, originY: 5 });
-  const header = new Header(scene, atlas, { originY: 7 });
+  const ledger = new FlapGrid(scene, atlas, LEDGER_ROWS, BOARD_COLS, { cell, originY: LEDGER_ORIGIN_Y });
+  const header = new Header(scene, atlas, { originY: HEADER_ORIGIN_Y });
   const artPool = new LoadPool(ART_CONCURRENCY);
-  const nowShowing = new NowShowing(scene, artPool, { x: boardW / 2 + 2.2 });
+  // float the NFT tile in front of the board's bottom-right corner so it stays
+  // on-screen regardless of how the board is fit to the viewport
+  const nowShowing = new NowShowing(scene, artPool, {
+    x: contentW / 2 - 2.2,
+    y: centerY - contentH / 2 + 2.2,
+    z: 0.6,
+  });
   const clatter = new Clatter();
 
   const events: SproutEvent[] = []; // newest first, capped at LEDGER_ROWS
@@ -129,7 +144,7 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
     const sway = reducedMotion ? 0 : Math.sin(t * 0.4) * 0.25;
     camera.position.x += (sway - camera.position.x) * Math.min(dt, 1);
     camera.position.z += (baseZ - pushZ * 4 - camera.position.z) * Math.min(dt * 2, 1);
-    camera.lookAt(0, housing.position.y, 0);
+    camera.lookAt(0, centerY, 0);
 
     for (const fn of frameCallbacks) fn();
     renderer.render(scene, camera);
@@ -140,6 +155,7 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
     camera.aspect = innerWidth / innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(innerWidth, innerHeight);
+    baseZ = fitDistance(contentW, contentH, VFOV, camera.aspect);
   });
 
   // double-click anywhere on the board toggles the clatter sound

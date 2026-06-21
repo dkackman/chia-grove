@@ -17,10 +17,14 @@ export class NowShowing {
   private readonly mat: THREE.MeshBasicMaterial;
   private want: string | null = null; // launcherId we're currently loading/showing
 
-  constructor(scene: THREE.Scene, private readonly pool: LoadPool, opts: { x?: number } = {}) {
+  constructor(
+    scene: THREE.Scene,
+    private readonly pool: LoadPool,
+    opts: { x?: number; y?: number; z?: number } = {}
+  ) {
     this.mat = new THREE.MeshBasicMaterial({ color: 0x0b0d10, transparent: true, opacity: 0 });
     this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(SIZE, SIZE), this.mat);
-    this.mesh.position.set(opts.x ?? 17, 0, 0);
+    this.mesh.position.set(opts.x ?? 17, opts.y ?? 0, opts.z ?? 0);
     scene.add(this.mesh);
   }
 

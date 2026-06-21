@@ -32,7 +32,9 @@ const FRAG = /* glsl */ `
   void main() {
     float col = mod(vGlyph, uCols);
     float row = floor(vGlyph / uCols);
-    vec2 cell = (vec2(col, row) + vUv) / uCols;
+    // atlas (flipY=false) has v=0 at the canvas top; flip the cell-local v so the
+    // plane's top maps to the glyph's top (upright). col/row match glyphCell().
+    vec2 cell = (vec2(col, row) + vec2(vUv.x, 1.0 - vUv.y)) / uCols;
     vec4 tex = texture2D(uAtlas, cell);
     gl_FragColor = vec4(tex.rgb * vTint, 1.0);
   }

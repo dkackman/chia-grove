@@ -48,5 +48,10 @@ export function buildGlyphAtlas(): THREE.CanvasTexture {
   tex.minFilter = THREE.NearestFilter;
   tex.generateMipmaps = false;
   tex.colorSpace = THREE.SRGBColorSpace;
+  // Canvas is drawn top-down (cell row 0 at the top). flipY defaults to true,
+  // which would invert the v axis so glyph row r samples canvas row (cols-1-r).
+  // Disable it so texture v aligns with canvas y, and let the shader flip the
+  // per-cell uv to keep glyphs upright. Keeps glyphCell() and the shader in sync.
+  tex.flipY = false;
   return tex;
 }
