@@ -26,6 +26,7 @@ const VERT = /* glsl */ `
 const FRAG = /* glsl */ `
   uniform sampler2D uAtlas;
   uniform float uCols;
+  uniform vec3 uInk;
   varying vec2 vUv;
   varying float vGlyph;
   varying vec3 vTint;
@@ -36,9 +37,17 @@ const FRAG = /* glsl */ `
     // plane's top maps to the glyph's top (upright). col/row match glyphCell().
     vec2 cell = (vec2(col, row) + vec2(vUv.x, 1.0 - vUv.y)) / uCols;
     vec4 tex = texture2D(uAtlas, cell);
-    gl_FragColor = vec4(tex.rgb * vTint, 1.0);
+    // the atlas bakes the glyph in white on a gray card; recolor only the bright
+    // glyph pixels to the ink color so the gray card never picks up the tint
+    float luma = dot(tex.rgb, vec3(0.299, 0.587, 0.114));
+    float mask = smoothstep(0.46, 0.74, luma);
+    vec3 ink = uInk * vTint; // vTint stays white except a hovered row (brightens)
+    gl_FragColor = vec4(mix(tex.rgb, ink, mask), 1.0);
   }
 `;
+
+// Solari golden-amber, as raw sRGB components to match the sampled atlas texels.
+const INK = new THREE.Vector3(242 / 255, 188 / 255, 28 / 255);
 
 export class FlapGrid {
   readonly mesh: THREE.InstancedMesh;
@@ -85,7 +94,7 @@ export class FlapGrid {
     geo.setAttribute("aGlyph", this.aGlyph);
 
     const mat = new THREE.ShaderMaterial({
-      uniforms: { uAtlas: { value: atlas }, uCols: { value: ATLAS_COLS } },
+      uniforms: { uAtlas: { value: atlas }, uCols: { value: ATLAS_COLS }, uInk: { value: INK } },
       vertexShader: VERT,
       fragmentShader: FRAG,
     });

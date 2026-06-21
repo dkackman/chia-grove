@@ -30,40 +30,47 @@ export function nextGlyph(cur: number, target: number): number {
  * signature horizontal seam where the two leaves meet (it cuts the glyph).
  */
 function drawFlap(ctx: CanvasRenderingContext2D, x0: number, y0: number, S: number, ch: string): void {
-  // matte plastic face — slightly lit at the top, falling off toward the bottom
-  const face = ctx.createLinearGradient(0, y0, 0, y0 + S);
-  face.addColorStop(0, "#191c22");
-  face.addColorStop(0.48, "#101216");
-  face.addColorStop(0.5, "#0c0e12");
-  face.addColorStop(1, "#08090c");
-  ctx.fillStyle = face;
+  const t = Math.max(1, Math.round(S / 32)); // unit line thickness
+  const m = Math.max(1, Math.round(S * 0.03)); // gap to the recessed slot
+  const r = Math.round(S * 0.1); // rounded card corners
+  const w = S - 2 * m;
+
+  // near-black slot the card sits in (shows at the rounded corners + gaps)
+  ctx.fillStyle = "#050506";
   ctx.fillRect(x0, y0, S, S);
 
-  // character (drawn before the seam so the seam splits it like a real flap)
+  // gray plastic card face, lit from the top — kept dark enough that the shader's
+  // glyph mask (bright = ink) never mistakes the card for a character
+  const face = ctx.createLinearGradient(0, y0, 0, y0 + S);
+  face.addColorStop(0, "#525258");
+  face.addColorStop(0.49, "#45454b");
+  face.addColorStop(0.5, "#3c3c42");
+  face.addColorStop(1, "#34343a");
+  ctx.fillStyle = face;
+  ctx.beginPath();
+  ctx.roundRect(x0 + m, y0 + m, w, w, r);
+  ctx.fill();
+
+  // glyph in WHITE — the shader recolors these bright pixels to the ink color
   if (ch !== " ") {
-    ctx.fillStyle = "#f6edd6";
+    ctx.fillStyle = "#ffffff";
     ctx.fillText(ch, x0 + S / 2, y0 + S * 0.52);
   }
 
-  // the seam: a dark gap, with the upper leaf's underside shadow above it and
-  // the lower leaf's lit top edge below it
+  // seam where the two leaves meet (drawn over the glyph so it splits the char)
   const mid = Math.round(y0 + S / 2);
-  const t = Math.max(1, Math.round(S / 32));
-  ctx.fillStyle = "rgba(0,0,0,0.55)";
-  ctx.fillRect(x0, mid - t, S, t); // underside of the upper leaf
-  ctx.fillStyle = "rgba(0,0,0,0.92)";
-  ctx.fillRect(x0, mid, S, t); // the gap
-  ctx.fillStyle = "rgba(246,237,214,0.10)";
-  ctx.fillRect(x0, mid + t, S, Math.max(1, t - 1)); // lit top edge of the lower leaf
-
-  // recessed-card bevel
-  ctx.fillStyle = "rgba(255,255,255,0.06)";
-  ctx.fillRect(x0, y0, S, t); // top highlight
-  ctx.fillStyle = "rgba(0,0,0,0.55)";
-  ctx.fillRect(x0, y0 + S - t, S, t); // bottom shadow into the slot
   ctx.fillStyle = "rgba(0,0,0,0.40)";
-  ctx.fillRect(x0, y0, t, S); // left side shadow
-  ctx.fillRect(x0 + S - t, y0, t, S); // right side shadow
+  ctx.fillRect(x0 + m, mid - t, w, t); // underside of the upper leaf
+  ctx.fillStyle = "rgba(0,0,0,0.85)";
+  ctx.fillRect(x0 + m, mid, w, t); // the gap
+  ctx.fillStyle = "rgba(255,255,255,0.10)";
+  ctx.fillRect(x0 + m, mid + t, w, Math.max(1, t - 1)); // lit top edge of the lower leaf
+
+  // soft top highlight + bottom shadow so the card reads as raised plastic
+  ctx.fillStyle = "rgba(255,255,255,0.10)";
+  ctx.fillRect(x0 + m + r, y0 + m, w - 2 * r, t);
+  ctx.fillStyle = "rgba(0,0,0,0.45)";
+  ctx.fillRect(x0 + m + r, y0 + S - m - t, w - 2 * r, t);
 }
 
 /** Procedural split-flap glyph atlas (one realistic flap per cell). DOM access stays here. */

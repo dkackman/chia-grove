@@ -4,7 +4,7 @@ import type { GroveFeed } from "../../net/feed.js";
 import type { SproutEvent } from "@grove/shared";
 import type { VisualizationHandle } from "../types.js";
 import { createFrameLimiter } from "../shared/frame-limiter.js";
-import { BOARD, kindAccent } from "./palette.js";
+import { BOARD } from "./palette.js";
 import { buildGlyphAtlas } from "./glyphs.js";
 import { FlapGrid } from "./flapgrid.js";
 import { Header } from "./header.js";
@@ -72,7 +72,6 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
       const e = events[r + scrollOffset];
       if (e) {
         ledger.setRow(r, rowText(e), instant);
-        ledger.tintRow(r, kindAccent(e));
       } else {
         ledger.clearRow(r);
       }
