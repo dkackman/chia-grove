@@ -6,7 +6,8 @@ const padR = (s: string, n: number) => s.slice(0, n).padEnd(n);
 
 /** A `▮`/`·` fill bar `width` chars wide. Pure. */
 export function mempoolGauge(size: number, width: number, full = 5000): string {
-  const filled = Math.round(Math.min(1, size / full) * width);
+  const raw = Math.round(Math.min(1, size / full) * width);
+  const filled = Number.isFinite(raw) ? Math.max(0, Math.min(width, raw)) : 0;
   return "▮".repeat(filled) + "·".repeat(width - filled);
 }
 
@@ -27,8 +28,6 @@ const clock = (d: Date) =>
 
 export class Header {
   private readonly grid: FlapGrid;
-  private mempoolSize = 0;
-  private netspace = "0";
 
   constructor(scene: THREE.Scene, atlas: THREE.CanvasTexture, opts: { originY?: number } = {}) {
     // 3 rows sitting above the ledger; the ledger sets its own originY below this.
@@ -41,8 +40,6 @@ export class Header {
   }
 
   setAmbient(mempoolSize: number, netspace: string): void {
-    this.mempoolSize = mempoolSize;
-    this.netspace = netspace;
     this.grid.setRow(
       1,
       padR(`MEMPOOL [${mempoolGauge(mempoolSize, 12)}]   NETSPACE ${netspaceText(netspace)}`, BOARD_COLS)
