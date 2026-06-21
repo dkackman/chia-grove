@@ -1,6 +1,6 @@
 // web/src/themes/board/flapgrid.ts
 import * as THREE from "three";
-import { GLYPHS, ATLAS_COLS, charToGlyph, nextGlyph } from "./glyphs.js";
+import { ATLAS_COLS, charToGlyph, nextGlyph } from "./glyphs.js";
 
 const FLIP_TIME = 0.06; // seconds per single flap
 const STAGGER = 0.012; // per-column riffle start delay
