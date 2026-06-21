@@ -24,29 +24,69 @@ export function nextGlyph(cur: number, target: number): number {
   return (cur + 1) % GLYPHS.length;
 }
 
-/** Procedural nearest-filtered glyph atlas. DOM access stays inside here. */
+/**
+ * Draw one Solari split-flap card filling [x0,y0 .. x0+S,y0+S]: a plastic face
+ * with a vertical sheen, a beveled/recessed edge, the character, and the
+ * signature horizontal seam where the two leaves meet (it cuts the glyph).
+ */
+function drawFlap(ctx: CanvasRenderingContext2D, x0: number, y0: number, S: number, ch: string): void {
+  // matte plastic face — slightly lit at the top, falling off toward the bottom
+  const face = ctx.createLinearGradient(0, y0, 0, y0 + S);
+  face.addColorStop(0, "#191c22");
+  face.addColorStop(0.48, "#101216");
+  face.addColorStop(0.5, "#0c0e12");
+  face.addColorStop(1, "#08090c");
+  ctx.fillStyle = face;
+  ctx.fillRect(x0, y0, S, S);
+
+  // character (drawn before the seam so the seam splits it like a real flap)
+  if (ch !== " ") {
+    ctx.fillStyle = "#f6edd6";
+    ctx.fillText(ch, x0 + S / 2, y0 + S * 0.52);
+  }
+
+  // the seam: a dark gap, with the upper leaf's underside shadow above it and
+  // the lower leaf's lit top edge below it
+  const mid = Math.round(y0 + S / 2);
+  const t = Math.max(1, Math.round(S / 32));
+  ctx.fillStyle = "rgba(0,0,0,0.55)";
+  ctx.fillRect(x0, mid - t, S, t); // underside of the upper leaf
+  ctx.fillStyle = "rgba(0,0,0,0.92)";
+  ctx.fillRect(x0, mid, S, t); // the gap
+  ctx.fillStyle = "rgba(246,237,214,0.10)";
+  ctx.fillRect(x0, mid + t, S, Math.max(1, t - 1)); // lit top edge of the lower leaf
+
+  // recessed-card bevel
+  ctx.fillStyle = "rgba(255,255,255,0.06)";
+  ctx.fillRect(x0, y0, S, t); // top highlight
+  ctx.fillStyle = "rgba(0,0,0,0.55)";
+  ctx.fillRect(x0, y0 + S - t, S, t); // bottom shadow into the slot
+  ctx.fillStyle = "rgba(0,0,0,0.40)";
+  ctx.fillRect(x0, y0, t, S); // left side shadow
+  ctx.fillRect(x0 + S - t, y0, t, S); // right side shadow
+}
+
+/** Procedural split-flap glyph atlas (one realistic flap per cell). DOM access stays here. */
 export function buildGlyphAtlas(): THREE.CanvasTexture {
-  const cell = 32; // px per glyph
+  const cell = 64; // px per glyph — room for the seam, bevel, and smooth shading
   const size = ATLAS_COLS * cell;
   const canvas = document.createElement("canvas");
   canvas.width = size;
   canvas.height = size;
   const ctx = canvas.getContext("2d")!;
-  ctx.fillStyle = "#0b0d10"; // flap face baked in
-  ctx.fillRect(0, 0, size, size);
-  ctx.fillStyle = "#f4ead2"; // warm character
-  ctx.font = `700 ${Math.round(cell * 0.66)}px ui-monospace, "DejaVu Sans Mono", monospace`;
+  ctx.font = `700 ${Math.round(cell * 0.6)}px ui-monospace, "DejaVu Sans Mono", monospace`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   for (let i = 0; i < GLYPHS.length; i++) {
     const { col, row } = glyphCell(i);
-    const ch = GLYPHS[i];
-    if (ch !== " ") ctx.fillText(ch, col * cell + cell / 2, row * cell + cell * 0.54);
+    drawFlap(ctx, col * cell, row * cell, cell, GLYPHS[i]);
   }
   const tex = new THREE.CanvasTexture(canvas);
-  tex.magFilter = THREE.NearestFilter;
-  tex.minFilter = THREE.NearestFilter;
-  tex.generateMipmaps = false;
+  // smooth (not pixelated) so the plastic shading and seam read as physical;
+  // every cell edge is dark face, so linear/mip bleed between cells is invisible
+  tex.magFilter = THREE.LinearFilter;
+  tex.minFilter = THREE.LinearMipmapLinearFilter;
+  tex.generateMipmaps = true;
   tex.colorSpace = THREE.SRGBColorSpace;
   // Canvas is drawn top-down (cell row 0 at the top). flipY defaults to true,
   // which would invert the v axis so glyph row r samples canvas row (cols-1-r).
