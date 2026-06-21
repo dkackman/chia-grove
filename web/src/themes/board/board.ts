@@ -4,12 +4,10 @@ import type { GroveFeed } from "../../net/feed.js";
 import type { SproutEvent } from "@grove/shared";
 import type { VisualizationHandle } from "../types.js";
 import { createFrameLimiter } from "../shared/frame-limiter.js";
-import { LoadPool } from "../shared/load-pool.js";
 import { BOARD, kindAccent } from "./palette.js";
 import { buildGlyphAtlas } from "./glyphs.js";
 import { FlapGrid } from "./flapgrid.js";
 import { Header } from "./header.js";
-import { NowShowing, shouldShowArt } from "./nowshowing.js";
 import { Clatter } from "./clatter.js";
 import { rowText, BOARD_COLS } from "./rows.js";
 import { fitDistance } from "./fit.js";
@@ -17,7 +15,6 @@ import { fitDistance } from "./fit.js";
 const LEDGER_ROWS = 20;
 const HISTORY = 500; // spends kept in memory for scrolling back through
 const FAST_FORWARD = 8; // sprouts/frame above which we snap instead of riffle
-const ART_CONCURRENCY = 2;
 const SCROLL_PX_PER_ROW = 30; // wheel delta per row scrolled
 
 export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): VisualizationHandle {
@@ -58,14 +55,6 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
   const atlas = buildGlyphAtlas();
   const ledger = new FlapGrid(scene, atlas, LEDGER_ROWS, BOARD_COLS, { cell, originY: LEDGER_ORIGIN_Y });
   const header = new Header(scene, atlas, { originY: HEADER_ORIGIN_Y });
-  const artPool = new LoadPool(ART_CONCURRENCY);
-  // float the NFT tile in front of the board's bottom-right corner so it stays
-  // on-screen regardless of how the board is fit to the viewport
-  const nowShowing = new NowShowing(scene, artPool, {
-    x: contentW / 2 - 2.2,
-    y: centerY - contentH / 2 + 2.2,
-    z: 0.6,
-  });
   const clatter = new Clatter();
 
   const events: SproutEvent[] = []; // newest first, capped at HISTORY
@@ -99,7 +88,6 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
         if (scrollOffset > 0) scrollOffset = Math.min(scrollOffset + 1, maxOffset());
         ledgerDirty = true;
         sproutsSinceFrame++;
-        if (shouldShowArt(event)) nowShowing.show(event);
         break;
       case "block":
         header.setBlock(event.height, event.spendCount, event.fees);
@@ -151,7 +139,6 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
 
     ledger.update(dt);
     header.update(dt);
-    nowShowing.update(dt);
 
     // gentle idle parallax sway + decaying push-in on a new block
     pushZ = Math.max(0, pushZ - dt);

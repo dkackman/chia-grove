@@ -90,7 +90,7 @@ New WebSocket clients first receive a `Hello` handshake (protocol version check)
   - `textures.ts` — procedural 16×16 `NearestFilter` pixel textures (wool weave, glass pane, glowstone cells, grass top/side, dirt).
   - `layout.ts` — `chunkPosition()` phyllotaxis spiral, 7×7 Chebyshev-ordered floor grid, `seatCell()` stack-not-sprawl seating, `chunkElevation()` deterministic terrain height (max 1 block).
 
-- **board** (`web/src/themes/board/`): "The Big Board" — a Solari split-flap departure board rendering the chain as a live spend ledger. Each spend flips in as a new row (per-character riffle via `FlapGrid`, an instanced cell grid with a per-instance glyph attribute); a header strip shows block/mempool/netspace/clock, a side tile shows the latest NFT mint's art, and reorg riffles rows back to the fork height. Pure formatting (`rows.ts`, `glyphs.ts`, `palette.ts`) is unit-tested.
+- **board** (`web/src/themes/board/`): "The Big Board" — a Solari split-flap departure board rendering the chain as a live spend ledger. Each spend flips in as a new row (per-character riffle via `FlapGrid`, an instanced cell grid with a per-instance glyph attribute); a header strip shows block/mempool/netspace/clock, the wheel scrolls back through history (newest-first, 500-deep, with a LIVE/HISTORY header marker), and reorg riffles rows back to the fork height. Pure formatting (`rows.ts`, `glyphs.ts`, `palette.ts`) is unit-tested.
 
 ### Event types (`shared/src/index.ts`)
 
