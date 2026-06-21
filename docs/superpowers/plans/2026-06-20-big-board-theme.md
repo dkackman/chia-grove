@@ -1046,10 +1046,9 @@ import { BOARD, kindAccent } from "./palette.js";
 import { buildGlyphAtlas } from "./glyphs.js";
 import { FlapGrid } from "./flapgrid.js";
 import { Header } from "./header.js";
-import { NowShowing } from "./nowshowing.js";
+import { NowShowing, shouldShowArt } from "./nowshowing.js";
 import { Clatter } from "./clatter.js";
 import { rowText, BOARD_COLS } from "./rows.js";
-import { shouldShowArt } from "./nowshowing.js";
 
 const LEDGER_ROWS = 20;
 const FAST_FORWARD = 8; // sprouts/frame above which we snap instead of riffle
