@@ -13,7 +13,7 @@ authentic **per-character riffle** — every character cell rifles through the a
 on its glyph, with the iconic mechanical clatter — and the explicit teaching of the
 pending → block → confirmation lifecycle.
 
-Working name: theme id `board`, label "board" (rename freely).
+Theme id `board`, label "The Big Board".
 
 ## Decisions made during brainstorming
 
