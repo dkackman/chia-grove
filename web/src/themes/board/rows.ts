@@ -30,20 +30,20 @@ function amount(e: SproutEvent): string {
 }
 
 function status(e: SproutEvent): string {
-  return e.mint ? "★ NEW" : "CONFRM";
+  return e.mint ? "★ NEW" : "CONFIRMED";
 }
 
-/** One fixed-width ledger line for a spend. Pure. */
+/** One fixed-width ledger line for a spend. Pure. Fields sum to BOARD_COLS (48). */
 export function rowText(event: SproutEvent): string {
   return (
     padR(kindLabel(event), 3) +
     " ▸ " +
-    padR(asset(event), 12) +
+    padR(asset(event), 11) +
     " " +
-    padL(amount(event), 13) +
+    padL(amount(event), 11) +
     " " +
     padL(String(event.height), 8) +
     " " +
-    padR(status(event), 6)
+    padR(status(event), 9)
   );
 }

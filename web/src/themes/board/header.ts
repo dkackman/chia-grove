@@ -28,6 +28,8 @@ const clock = (d: Date) =>
 
 export class Header {
   private readonly grid: FlapGrid;
+  private clockText = "00:00:00";
+  private live = true;
 
   constructor(scene: THREE.Scene, atlas: THREE.CanvasTexture, opts: { originY?: number } = {}) {
     // 3 rows sitting above the ledger; the ledger sets its own originY below this.
@@ -47,7 +49,20 @@ export class Header {
   }
 
   tick(date: Date): void {
-    this.grid.setRow(2, padR(`${clock(date)}   LIVE`, BOARD_COLS));
+    this.clockText = clock(date);
+    this.renderStatusRow();
+  }
+
+  /** LIVE when following the newest spends; a HISTORY marker when scrolled back. */
+  setLive(live: boolean): void {
+    if (this.live === live) return;
+    this.live = live;
+    this.renderStatusRow();
+  }
+
+  private renderStatusRow(): void {
+    const status = this.live ? "LIVE" : "★ HISTORY · SCROLL UP FOR LIVE";
+    this.grid.setRow(2, padR(`${this.clockText}   ${status}`, BOARD_COLS));
   }
 
   update(dt: number): void {

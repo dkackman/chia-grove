@@ -15,8 +15,10 @@ import { rowText, BOARD_COLS } from "./rows.js";
 import { fitDistance } from "./fit.js";
 
 const LEDGER_ROWS = 20;
+const HISTORY = 500; // spends kept in memory for scrolling back through
 const FAST_FORWARD = 8; // sprouts/frame above which we snap instead of riffle
 const ART_CONCURRENCY = 2;
+const SCROLL_PX_PER_ROW = 30; // wheel delta per row scrolled
 
 export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): VisualizationHandle {
   const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -66,14 +68,19 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
   });
   const clatter = new Clatter();
 
-  const events: SproutEvent[] = []; // newest first, capped at LEDGER_ROWS
+  const events: SproutEvent[] = []; // newest first, capped at HISTORY
   let ledgerDirty = false;
   let sproutsSinceFrame = 0;
   let pushZ = 0; // decaying camera push-in on a new block
+  let scrollOffset = 0; // rows scrolled back from the newest (0 = following live)
+  let scrollAccum = 0; // sub-row wheel remainder
+  let lastRenderedOffset = -1;
+
+  const maxOffset = () => Math.max(0, events.length - LEDGER_ROWS);
 
   function renderLedger(instant: boolean): void {
     for (let r = 0; r < LEDGER_ROWS; r++) {
-      const e = events[r];
+      const e = events[r + scrollOffset];
       if (e) {
         ledger.setRow(r, rowText(e), instant);
         ledger.tintRow(r, kindAccent(e));
@@ -87,7 +94,9 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
     switch (event.type) {
       case "sprout":
         events.unshift(event);
-        if (events.length > LEDGER_ROWS) events.pop();
+        if (events.length > HISTORY) events.pop();
+        // when scrolled back, keep the same spends in view (don't yank to live)
+        if (scrollOffset > 0) scrollOffset = Math.min(scrollOffset + 1, maxOffset());
         ledgerDirty = true;
         sproutsSinceFrame++;
         if (shouldShowArt(event)) nowShowing.show(event);
@@ -122,11 +131,16 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
     const dt = Math.min(timer.getDelta(), 0.1);
     const t = timer.getElapsed();
 
-    if (ledgerDirty) {
+    if (scrollOffset > maxOffset()) scrollOffset = maxOffset(); // a reorg may have shrunk history
+    const scrolled = scrollOffset !== lastRenderedOffset;
+    if (ledgerDirty || scrolled) {
       const wasIdle = ledger.idle();
-      renderLedger(reducedMotion || sproutsSinceFrame > FAST_FORWARD);
+      // scrubbing through history snaps instantly; live arrivals riffle
+      renderLedger(scrolled || reducedMotion || sproutsSinceFrame > FAST_FORWARD);
+      lastRenderedOffset = scrollOffset;
       ledgerDirty = false;
-      if (!wasIdle || !ledger.idle()) clatter.flap(Math.min(1, sproutsSinceFrame / 6));
+      if (!scrolled && (!wasIdle || !ledger.idle())) clatter.flap(Math.min(1, sproutsSinceFrame / 6));
+      header.setLive(scrollOffset === 0);
     }
     sproutsSinceFrame = 0;
 
@@ -158,6 +172,24 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
     baseZ = fitDistance(contentW, contentH, VFOV, camera.aspect);
   });
 
+  // wheel / trackpad scrolls vertically through history; scrolling down reveals
+  // older spends, scrolling back to the top resumes following live
+  canvas.addEventListener(
+    "wheel",
+    (e) => {
+      const max = maxOffset();
+      if (max === 0) return;
+      scrollAccum += e.deltaY;
+      const step = Math.trunc(scrollAccum / SCROLL_PX_PER_ROW);
+      if (step !== 0) {
+        scrollAccum -= step * SCROLL_PX_PER_ROW;
+        scrollOffset = Math.max(0, Math.min(max, scrollOffset + step));
+      }
+      e.preventDefault();
+    },
+    { passive: false }
+  );
+
   // double-click anywhere on the board toggles the clatter sound
   canvas.addEventListener("dblclick", () => clatter.setEnabled(!clatter.enabled));
 
@@ -166,7 +198,9 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
     onFrame: (fn) => frameCallbacks.push(fn),
     pickables: () => [ledger.mesh],
     metaFor: (object, instanceId) =>
-      object === ledger.mesh && instanceId !== undefined ? events[ledger.rowOf(instanceId)] ?? null : null,
+      object === ledger.mesh && instanceId !== undefined
+        ? events[scrollOffset + ledger.rowOf(instanceId)] ?? null
+        : null,
     setHovered: (object, instanceId) =>
       ledger.highlightRow(object === ledger.mesh && instanceId !== undefined ? ledger.rowOf(instanceId) : null),
   };
