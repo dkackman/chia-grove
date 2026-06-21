@@ -1,6 +1,6 @@
 // web/src/themes/board/flapgrid.ts
 import * as THREE from "three";
-import { GLYPHS, ATLAS_COLS, charToGlyph, glyphCell, nextGlyph } from "./glyphs.js";
+import { GLYPHS, ATLAS_COLS, charToGlyph, nextGlyph } from "./glyphs.js";
 
 const FLIP_TIME = 0.06; // seconds per single flap
 const STAGGER = 0.012; // per-column riffle start delay
@@ -174,6 +174,7 @@ export class FlapGrid {
 
   update(dt: number): void {
     if (this.animating === 0) return;
+    dt = Math.min(dt, FLIP_TIME);
     const n = this.cur.length;
     for (let i = 0; i < n; i++) {
       if (this.flip[i] < 0) continue;

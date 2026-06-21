@@ -37,3 +37,10 @@ test("animated setRow is not idle until it has riffled to target", () => {
   for (let i = 0; i < 500; i++) g.update(0.05); // run the riffle to completion
   expect(g.idle()).toBe(true);
 });
+
+test("riffles to completion even at the caller's max dt (0.1)", () => {
+  const g = grid(1, 6);
+  g.setRow(0, "ZZZZZZ", false);
+  for (let i = 0; i < 4000; i++) g.update(0.1);
+  expect(g.idle()).toBe(true);
+});
