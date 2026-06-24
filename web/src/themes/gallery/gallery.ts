@@ -25,7 +25,7 @@ const FOV = 45;
 // rate limit (429s). A small cap paces the fetches, and the generation guard
 // below drops loads for NFTs that newer arrivals would wrap straight off the
 // wall — collapsing the flood to the pieces that actually stay hung.
-const ART_LOAD_CONCURRENCY = 6;
+const ART_LOAD_CONCURRENCY = 10;
 const REST_Y = 4.2; // vertical center of the 3-row grid
 const REST_Z = 12; // pulled back so ~10–15 pieces are in frame at once
 const VIEW_AHEAD = 5; // keep the newest column right-of-center while auto-following

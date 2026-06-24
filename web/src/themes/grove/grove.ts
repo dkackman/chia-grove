@@ -11,7 +11,7 @@ import { createPostFx } from "../shared/postfx.js";
 import { createOrbitControl } from "../shared/orbit.js";
 
 /** Spiral slots wrap so the grove never grows beyond the meadow. */
-const MAX_BLOCK_SLOTS = 300;
+const MAX_BLOCK_SLOTS = 500;
 
 /**
  * Vertical night-sky gradient: a near-black zenith easing to a faint teal

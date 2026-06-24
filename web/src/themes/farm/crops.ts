@@ -93,7 +93,7 @@ export function scarecrowGeometries(): THREE.BufferGeometry[] {
   return [scarecrow(0, true), scarecrow(0.12, false), scarecrow(-0.08, true)];
 }
 
-const CAPS = { wheat: 800, gourd: 300, sunflower: 40, scarecrow: 80 } as const;
+const CAPS = { wheat: 1600, gourd: 600, sunflower: 80, scarecrow: 160 } as const;
 const VARIANTS = 3;
 
 interface PendingCrop {

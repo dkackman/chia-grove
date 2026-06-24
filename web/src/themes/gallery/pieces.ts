@@ -39,7 +39,7 @@ export class Pieces {
 
   constructor(
     private scene: THREE.Scene,
-    private cap = 28
+    private cap = 56
   ) {
     this.slots = new Array(cap).fill(null);
   }
