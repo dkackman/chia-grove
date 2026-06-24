@@ -8,9 +8,9 @@ export type FeedStatus = "connecting" | "live" | "stale" | "demo";
 
 const STALE_AFTER_MS = 2 * 60 * 1000;
 const RELOAD_KEY = "grove.proto-reloaded";
-// Events released per animation frame: ~60 keeps a 10k-event snapshot filling
-// in over ~3 s at 60 fps while smoothing big live blocks across a few frames.
-const DRAIN_BUDGET = 60;
+// Events released per animation frame: ~120 keeps a 10k-event snapshot filling
+// in over ~1.5 s at 60 fps while smoothing big live blocks across a few frames.
+const DRAIN_BUDGET = 120;
 
 export class GroveFeed {
   private listeners: Array<(event: GroveEvent) => void> = [];
