@@ -63,6 +63,7 @@ export interface AggregatedRow {
   assetId?: string;
   catName?: string;
   catTicker?: string;
+  sample?: SproutEvent; // a representative underlying spend, for the detail card
 }
 
 export type DisplayRow = AggregatedRow | SproutEvent;
@@ -171,6 +172,7 @@ export function toDisplayRows(events: SproutEvent[]): DisplayRow[] {
         assetId: first.assetId,
         catName: first.catName,
         catTicker: first.catTicker,
+        sample: first,
       });
     }
 
@@ -180,4 +182,19 @@ export function toDisplayRows(events: SproutEvent[]): DisplayRow[] {
   }
 
   return rows;
+}
+
+/**
+ * The detail-card payload for a clicked row, or null when there's nothing to
+ * show. Individual rows (NFT/DID) return their own event; an aggregated CAT row
+ * returns a synthesized event carrying the asset identity from a representative
+ * spend but the block-wide aggregated total as its amount. XCH aggregates have
+ * no asset identity, so they get no card.
+ */
+export function cardMetaFor(row: DisplayRow): SproutEvent | null {
+  if (row.type === "sprout") return row;
+  if (row.kind === "cat" && row.sample) {
+    return { ...row.sample, amount: row.totalMojos.toString() };
+  }
+  return null;
 }

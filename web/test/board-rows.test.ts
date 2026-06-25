@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { BOARD_COLS, isBlockStart, rowText, rowTextFor, shouldShowHeight, toDisplayRows } from "../src/themes/board/rows.js";
+import { BOARD_COLS, cardMetaFor, isBlockStart, rowText, rowTextFor, shouldShowHeight, toDisplayRows } from "../src/themes/board/rows.js";
 import type { AggregatedRow } from "../src/themes/board/rows.js";
 import type { SproutEvent } from "@grove/shared";
 
@@ -304,4 +304,33 @@ test("shouldShowHeight is true at a block boundary (height changes)", () => {
     sprout({ kind: "xch", amount: "2000", height: 100 }),
   ]);
   expect(shouldShowHeight(rows[0], rows[1], false)).toBe(true);
+});
+
+// --- cardMetaFor ---
+
+test("cardMetaFor returns the event itself for an individual sprout row (NFT/DID)", () => {
+  const e = sprout({ kind: "nft", mint: true, height: 900 });
+  const rows = toDisplayRows([e]);
+  expect(cardMetaFor(rows[0])).toBe(e);
+});
+
+test("cardMetaFor builds a CAT detail carrying identity and the aggregated total", () => {
+  const rows = toDisplayRows([
+    sprout({ kind: "cat", assetId: "aaa", catName: "Stably", catTicker: "SBX", catIconUrl: "http://x/i.png", amount: "1000", height: 800 }),
+    sprout({ kind: "cat", assetId: "aaa", catTicker: "SBX", amount: "2000", height: 800 }),
+  ]);
+  const meta = cardMetaFor(rows[0]);
+  expect(meta).not.toBeNull();
+  expect(meta!.kind).toBe("cat");
+  expect(meta!.amount).toBe("3000"); // aggregated total, not a single spend
+  expect(meta!.assetId).toBe("aaa");
+  expect(meta!.catName).toBe("Stably");
+  expect(meta!.catTicker).toBe("SBX");
+  expect(meta!.catIconUrl).toBe("http://x/i.png");
+  expect(meta!.height).toBe(800);
+});
+
+test("cardMetaFor returns null for an XCH aggregate (no asset identity to show)", () => {
+  const rows = toDisplayRows([sprout({ kind: "xch", amount: "1000000000000", height: 700 })]);
+  expect(cardMetaFor(rows[0])).toBeNull();
 });

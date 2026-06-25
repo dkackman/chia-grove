@@ -9,7 +9,7 @@ import { buildGlyphAtlas } from "./glyphs.js";
 import { FlapGrid } from "./flapgrid.js";
 import { Header } from "./header.js";
 import { Clatter } from "./clatter.js";
-import { rowTextFor, shouldShowHeight, toDisplayRows, BOARD_COLS } from "./rows.js";
+import { rowTextFor, shouldShowHeight, cardMetaFor, toDisplayRows, BOARD_COLS } from "./rows.js";
 import type { DisplayRow } from "./rows.js";
 import { fitDistance } from "./fit.js";
 
@@ -196,7 +196,7 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
     metaFor: (object, instanceId) => {
       if (object !== ledger.mesh || instanceId === undefined) return null;
       const row = displayRows[scrollOffset + ledger.rowOf(instanceId)];
-      return row?.type === "sprout" ? row : null;
+      return row ? cardMetaFor(row) : null;
     },
     setHovered: (object, instanceId) =>
       ledger.highlightRow(object === ledger.mesh && instanceId !== undefined ? ledger.rowOf(instanceId) : null),
