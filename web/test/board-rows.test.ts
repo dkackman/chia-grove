@@ -29,8 +29,8 @@ test("nft mint shows MINT and the new-mint marker", () => {
 
 test("cat row shows the ticker (truncated) and token amount", () => {
   const t = rowText(sprout({ kind: "cat", catTicker: "SUPERLONGTICKER", amount: "250000" }));
-  expect(t).toContain("SUPERLONGTICK"); // 13-char asset clamp
-  expect(t).not.toContain("SUPERLONGTICKER");
+  expect(t).toContain("SUPERLONGTIC"); // 12-char asset clamp
+  expect(t).not.toContain("SUPERLONGTICK");
 });
 
 test("did and amount-less kinds use a dash placeholder", () => {
@@ -147,7 +147,7 @@ test("rowTextFor aggregated xch shows kind, summed amount, block, and count mark
   ]);
   const t = rowTextFor(rows[0]);
   expect(t).toContain("XCH");
-  expect(t).toContain("2×"); // count marker
+  expect(t).toContain("2 SPENDS"); // count
   expect(t).toContain("5121");
   expect(t).toContain("2"); // "2" XCH total
 });
@@ -162,8 +162,16 @@ test("rowTextFor aggregated cat row is BOARD_COLS wide and shows ticker and coun
   expect(t.length).toBe(BOARD_COLS);
   expect(t).toContain("CAT");
   expect(t).toContain("SBX");
-  expect(t).toContain("2×"); // 2 spends
+  expect(t).toContain("2 SPENDS"); // 2 spends
   expect(t).toContain("800");
+});
+
+test("a single spend reads '1 SPEND' (singular)", () => {
+  const rows = toDisplayRows([sprout({ kind: "cat", assetId: "aaa", catTicker: "SBX", amount: "1000", height: 800 })]);
+  const t = rowTextFor(rows[0]);
+  expect(t.length).toBe(BOARD_COLS);
+  expect(t).toContain("1 SPEND");
+  expect(t).not.toContain("1 SPENDS");
 });
 
 test("rowTextFor individual sprout row delegates to rowText", () => {
@@ -216,7 +224,7 @@ test("rowTextFor with showHeight:false blanks the height on an aggregated row", 
   expect(hidden.length).toBe(BOARD_COLS);
   expect(hidden).not.toContain("8421");
   expect(hidden).toContain("SBX");
-  expect(hidden).toContain("2×");
+  expect(hidden).toContain("2 SPENDS");
 });
 
 // --- isBlockStart ---

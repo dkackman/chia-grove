@@ -46,11 +46,11 @@ export function rowText(event: SproutEvent, { showHeight = true }: RowOptions = 
     " " +
     padR(kindLabel(event), 3) +
     " " +
-    padR(asset(event), 13) +
+    padR(asset(event), 12) +
     " " +
     padL(amount(event), 11) +
     " " +
-    padR(status(event), 9)
+    padR(status(event), 10)
   );
 }
 
@@ -75,18 +75,18 @@ function aggregatedRowText(row: AggregatedRow, { showHeight = true }: RowOptions
     row.kind === "xch"
       ? clampFrac(mojosToXch(row.totalMojos.toString()), 4)
       : clampFrac(mojosToCAT(row.totalMojos.toString()), 3);
-  const countStr = `${row.count}×`;
+  const countStr = `${row.count} ${row.count === 1 ? "SPEND" : "SPENDS"}`;
 
   return (
     (showHeight ? padR(String(row.height), 8) : " ".repeat(8)) +
     " " +
     padR(kindStr, 3) +
     " " +
-    padR(assetStr, 13) +
+    padR(assetStr, 12) +
     " " +
     padL(amountStr, 11) +
     " " +
-    padR(countStr, 9)
+    padR(countStr, 10)
   );
 }
 
