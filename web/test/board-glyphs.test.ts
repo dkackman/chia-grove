@@ -7,6 +7,12 @@ test("glyph table starts with space and fits the atlas", () => {
   expect(GLYPHS).toContain("A");
   expect(GLYPHS).toContain("9");
   expect(GLYPHS).toContain("★");
+  expect(GLYPHS).toContain("×");
+});
+
+test("charToGlyph maps the multiplication sign to a non-blank cell", () => {
+  expect(charToGlyph("×")).not.toBe(0);
+  expect(GLYPHS[charToGlyph("×")]).toBe("×");
 });
 
 test("charToGlyph maps letters, digits, folds case, blanks unknown", () => {

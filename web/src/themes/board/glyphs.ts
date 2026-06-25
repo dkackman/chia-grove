@@ -1,7 +1,7 @@
 import * as THREE from "three";
 
 // Index = atlas cell. Space first so an unknown/blank cell is cell 0.
-export const GLYPHS = " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-:▸★▮·";
+export const GLYPHS = " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-:▸★▮·×";
 export const ATLAS_COLS = 8; // 8×8 = 64 cells ≥ GLYPHS.length
 
 const INDEX = new Map<string, number>();

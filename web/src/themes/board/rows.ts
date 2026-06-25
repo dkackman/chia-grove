@@ -33,7 +33,7 @@ function status(e: SproutEvent): string {
   return e.mint ? "★ NEW" : "CONFIRMED";
 }
 
-/** One fixed-width ledger line for a spend. Pure. Fields sum to BOARD_COLS (48). */
+/** One fixed-width ledger line for an individual spend. Pure. Fields sum to BOARD_COLS (48). */
 export function rowText(event: SproutEvent): string {
   return (
     padR(kindLabel(event), 3) +
@@ -46,4 +46,109 @@ export function rowText(event: SproutEvent): string {
     " " +
     padR(status(event), 9)
   );
+}
+
+export interface AggregatedRow {
+  type: "aggregated";
+  kind: "xch" | "cat";
+  height: number;
+  totalMojos: bigint;
+  count: number;
+  assetId?: string;
+  catName?: string;
+  catTicker?: string;
+}
+
+export type DisplayRow = AggregatedRow | SproutEvent;
+
+function aggregatedRowText(row: AggregatedRow): string {
+  const kindStr = row.kind.toUpperCase();
+  const assetStr =
+    row.kind === "cat" ? (row.catTicker ?? row.catName ?? "CAT").toUpperCase() : "-";
+  const amountStr =
+    row.kind === "xch"
+      ? clampFrac(mojosToXch(row.totalMojos.toString()), 4)
+      : clampFrac(mojosToCAT(row.totalMojos.toString()), 3);
+  const countStr = `${row.count}×`;
+
+  return (
+    padR(kindStr, 3) +
+    " ▸ " +
+    padR(assetStr, 11) +
+    " " +
+    padL(amountStr, 11) +
+    " " +
+    padL(String(row.height), 8) +
+    " " +
+    padR(countStr, 9)
+  );
+}
+
+/** Render a DisplayRow to a fixed-width 48-char string. */
+export function rowTextFor(row: DisplayRow): string {
+  return row.type === "aggregated" ? aggregatedRowText(row) : rowText(row);
+}
+
+/**
+ * Derive display rows from raw events (newest-first).
+ * For each block: one XCH aggregate row (if any), one row per distinct CAT
+ * assetId (in order of first appearance), then individual NFT rows, then DID rows.
+ */
+export function toDisplayRows(events: SproutEvent[]): DisplayRow[] {
+  const blockOrder: number[] = [];
+  const byHeight = new Map<number, SproutEvent[]>();
+
+  for (const e of events) {
+    if (!byHeight.has(e.height)) {
+      blockOrder.push(e.height);
+      byHeight.set(e.height, []);
+    }
+    byHeight.get(e.height)!.push(e);
+  }
+
+  const rows: DisplayRow[] = [];
+
+  for (const height of blockOrder) {
+    const blockEvents = byHeight.get(height)!;
+
+    // XCH — one aggregate row
+    const xchEvents = blockEvents.filter((e) => e.kind === "xch");
+    if (xchEvents.length > 0) {
+      rows.push({
+        type: "aggregated",
+        kind: "xch",
+        height,
+        totalMojos: xchEvents.reduce((s, e) => s + BigInt(e.amount), 0n),
+        count: xchEvents.length,
+      });
+    }
+
+    // CAT — one aggregate row per distinct assetId, in order of first appearance
+    const catByAsset = new Map<string, SproutEvent[]>();
+    for (const e of blockEvents) {
+      if (e.kind !== "cat") continue;
+      const key = e.assetId ?? "";
+      if (!catByAsset.has(key)) catByAsset.set(key, []);
+      catByAsset.get(key)!.push(e);
+    }
+    for (const catEvents of catByAsset.values()) {
+      const first = catEvents[0];
+      rows.push({
+        type: "aggregated",
+        kind: "cat",
+        height,
+        totalMojos: catEvents.reduce((s, e) => s + BigInt(e.amount), 0n),
+        count: catEvents.length,
+        assetId: first.assetId,
+        catName: first.catName,
+        catTicker: first.catTicker,
+      });
+    }
+
+    // NFT rows first, then DID rows — each in arrival order
+    for (const e of blockEvents) if (e.kind === "nft") rows.push(e);
+    for (const e of blockEvents) if (e.kind === "did") rows.push(e);
+  }
+
+  return rows;
 }
