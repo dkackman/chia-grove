@@ -34,6 +34,7 @@ function drawFlap(ctx: CanvasRenderingContext2D, x0: number, y0: number, S: numb
   const m = Math.max(1, Math.round(S * 0.03)); // gap to the recessed slot
   const r = Math.round(S * 0.1); // rounded card corners
   const w = S - 2 * m;
+  const fold = 0.48; // vertical fold position — a touch above the tile center
 
   // near-black slot the card sits in (shows at the rounded corners + gaps)
   ctx.fillStyle = "#050506";
@@ -43,8 +44,8 @@ function drawFlap(ctx: CanvasRenderingContext2D, x0: number, y0: number, S: numb
   // glyph mask (bright = ink) never mistakes the card for a character
   const face = ctx.createLinearGradient(0, y0, 0, y0 + S);
   face.addColorStop(0, "#525258");
-  face.addColorStop(0.49, "#45454b");
-  face.addColorStop(0.5, "#3c3c42");
+  face.addColorStop(fold - 0.01, "#45454b");
+  face.addColorStop(fold, "#3c3c42");
   face.addColorStop(1, "#34343a");
   ctx.fillStyle = face;
   ctx.beginPath();
@@ -54,16 +55,17 @@ function drawFlap(ctx: CanvasRenderingContext2D, x0: number, y0: number, S: numb
   // glyph in WHITE — the shader recolors these bright pixels to the ink color
   if (ch !== " ") {
     ctx.fillStyle = "#ffffff";
-    ctx.fillText(ch, x0 + S / 2, y0 + S * 0.52);
+    ctx.fillText(ch, x0 + S / 2, y0 + S * 0.5);
   }
 
-  // seam where the two leaves meet (drawn over the glyph so it splits the char)
-  const mid = Math.round(y0 + S / 2);
-  ctx.fillStyle = "rgba(0,0,0,0.40)";
+  // seam where the two leaves meet (drawn over the glyph so it splits the char);
+  // kept faint so it reads as a fold without competing with the glyph
+  const mid = Math.round(y0 + S * fold);
+  ctx.fillStyle = "rgba(0,0,0,0.22)";
   ctx.fillRect(x0 + m, mid - t, w, t); // underside of the upper leaf
-  ctx.fillStyle = "rgba(0,0,0,0.85)";
+  ctx.fillStyle = "rgba(0,0,0,0.5)";
   ctx.fillRect(x0 + m, mid, w, t); // the gap
-  ctx.fillStyle = "rgba(255,255,255,0.10)";
+  ctx.fillStyle = "rgba(255,255,255,0.06)";
   ctx.fillRect(x0 + m, mid + t, w, Math.max(1, t - 1)); // lit top edge of the lower leaf
 
   // soft top highlight + bottom shadow so the card reads as raised plastic
