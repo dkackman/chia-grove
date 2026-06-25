@@ -9,7 +9,8 @@ import { buildGlyphAtlas } from "./glyphs.js";
 import { FlapGrid } from "./flapgrid.js";
 import { Header } from "./header.js";
 import { Clatter } from "./clatter.js";
-import { rowText, BOARD_COLS } from "./rows.js";
+import { rowTextFor, toDisplayRows, BOARD_COLS } from "./rows.js";
+import type { DisplayRow } from "./rows.js";
 import { fitDistance } from "./fit.js";
 
 const LEDGER_ROWS = 20;
@@ -58,6 +59,7 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
   const clatter = new Clatter();
 
   const events: SproutEvent[] = []; // newest first, capped at HISTORY
+  let displayRows: DisplayRow[] = [];
   let ledgerDirty = false;
   let sproutsSinceFrame = 0;
   let pushZ = 0; // decaying camera push-in on a new block
@@ -65,13 +67,13 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
   let scrollAccum = 0; // sub-row wheel remainder
   let lastRenderedOffset = -1;
 
-  const maxOffset = () => Math.max(0, events.length - LEDGER_ROWS);
+  const maxOffset = () => Math.max(0, displayRows.length - LEDGER_ROWS);
 
   function renderLedger(instant: boolean): void {
     for (let r = 0; r < LEDGER_ROWS; r++) {
-      const e = events[r + scrollOffset];
-      if (e) {
-        ledger.setRow(r, rowText(e), instant);
+      const row = displayRows[r + scrollOffset];
+      if (row) {
+        ledger.setRow(r, rowTextFor(row), instant);
       } else {
         ledger.clearRow(r);
       }
@@ -83,8 +85,6 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
       case "sprout":
         events.unshift(event);
         if (events.length > HISTORY) events.pop();
-        // when scrolled back, keep the same spends in view (don't yank to live)
-        if (scrollOffset > 0) scrollOffset = Math.min(scrollOffset + 1, maxOffset());
         ledgerDirty = true;
         sproutsSinceFrame++;
         break;
@@ -122,10 +122,18 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
     const scrolled = scrollOffset !== lastRenderedOffset;
     if (ledgerDirty || scrolled) {
       const wasIdle = ledger.idle();
+      if (ledgerDirty) {
+        const prevLen = displayRows.length;
+        displayRows = toDisplayRows(events);
+        // keep the same block in view when scrolled back
+        if (scrollOffset > 0) {
+          scrollOffset = Math.min(scrollOffset + displayRows.length - prevLen, maxOffset());
+        }
+        ledgerDirty = false;
+      }
       // scrubbing through history snaps instantly; live arrivals riffle
       renderLedger(scrolled || reducedMotion || sproutsSinceFrame > FAST_FORWARD);
       lastRenderedOffset = scrollOffset;
-      ledgerDirty = false;
       if (!scrolled && (!wasIdle || !ledger.idle())) clatter.flap(Math.min(1, sproutsSinceFrame / 6));
       header.setLive(scrollOffset === 0);
     }
@@ -183,10 +191,11 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
     camera,
     onFrame: (fn) => frameCallbacks.push(fn),
     pickables: () => [ledger.mesh],
-    metaFor: (object, instanceId) =>
-      object === ledger.mesh && instanceId !== undefined
-        ? events[scrollOffset + ledger.rowOf(instanceId)] ?? null
-        : null,
+    metaFor: (object, instanceId) => {
+      if (object !== ledger.mesh || instanceId === undefined) return null;
+      const row = displayRows[scrollOffset + ledger.rowOf(instanceId)];
+      return row?.type === "sprout" ? row : null;
+    },
     setHovered: (object, instanceId) =>
       ledger.highlightRow(object === ledger.mesh && instanceId !== undefined ? ledger.rowOf(instanceId) : null),
   };
