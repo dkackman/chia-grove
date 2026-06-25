@@ -9,7 +9,7 @@ import { buildGlyphAtlas } from "./glyphs.js";
 import { FlapGrid } from "./flapgrid.js";
 import { Header } from "./header.js";
 import { Clatter } from "./clatter.js";
-import { rowTextFor, toDisplayRows, BOARD_COLS } from "./rows.js";
+import { rowTextFor, shouldShowHeight, toDisplayRows, BOARD_COLS } from "./rows.js";
 import type { DisplayRow } from "./rows.js";
 import { fitDistance } from "./fit.js";
 
@@ -71,9 +71,11 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
 
   function renderLedger(instant: boolean): void {
     for (let r = 0; r < LEDGER_ROWS; r++) {
-      const row = displayRows[r + scrollOffset];
+      const i = r + scrollOffset;
+      const row = displayRows[i];
       if (row) {
-        ledger.setRow(r, rowTextFor(row), instant);
+        const showHeight = shouldShowHeight(displayRows[i - 1], row, r === 0);
+        ledger.setRow(r, rowTextFor(row, showHeight), instant);
       } else {
         ledger.clearRow(r);
       }
