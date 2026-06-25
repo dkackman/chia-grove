@@ -42,7 +42,7 @@ export interface RowOptions {
 /** One fixed-width ledger line for an individual spend. Pure. Fields sum to BOARD_COLS (48). */
 export function rowText(event: SproutEvent, { showHeight = true }: RowOptions = {}): string {
   return (
-    (showHeight ? padL(String(event.height), 8) : " ".repeat(8)) +
+    (showHeight ? padR(String(event.height), 8) : " ".repeat(8)) +
     " " +
     padR(kindLabel(event), 3) +
     " " +
@@ -78,7 +78,7 @@ function aggregatedRowText(row: AggregatedRow, { showHeight = true }: RowOptions
   const countStr = `${row.count}×`;
 
   return (
-    (showHeight ? padL(String(row.height), 8) : " ".repeat(8)) +
+    (showHeight ? padR(String(row.height), 8) : " ".repeat(8)) +
     " " +
     padR(kindStr, 3) +
     " " +

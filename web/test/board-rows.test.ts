@@ -199,6 +199,14 @@ test("rowText lays out height first, then kind, then asset", () => {
   expect(t.indexOf("CAT")).toBeLessThan(t.indexOf("SBX"));
 });
 
+test("rowText left-aligns the height so column 0 is never a blank margin", () => {
+  // current Chia heights are 7 digits in an 8-wide field; left-aligning keeps
+  // the first digit flush at column 0 (aligned with the flush-left header)
+  const t = rowText(sprout({ kind: "xch", amount: "1000", height: 5121 }));
+  expect(t.startsWith("5121")).toBe(true);
+  expect(t[0]).not.toBe(" ");
+});
+
 test("rowTextFor with showHeight:false blanks the height on an aggregated row", () => {
   const rows = toDisplayRows([
     sprout({ kind: "cat", assetId: "aaa", catTicker: "SBX", amount: "1000", height: 8421 }),
