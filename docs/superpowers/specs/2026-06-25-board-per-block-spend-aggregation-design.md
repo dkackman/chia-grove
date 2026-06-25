@@ -65,6 +65,8 @@ DID ▸ PROFILE        -    1823456 CONFIRMED
 
 New dispatcher `rowTextFor(row: DisplayRow): string` calls `aggregatedRowText` or `rowText` based on `row.type`.
 
+The `×` glyph is not currently in the board's glyph atlas (`glyphs.ts`), so it must be added to the `GLYPHS` string. The atlas has 64 cells and currently uses 44, so there is room. Without this, `charToGlyph("×")` folds to the blank cell and the marker would render as a space.
+
 ## Board Changes (`board.ts`)
 
 - Add `let displayRows: DisplayRow[] = []`.
@@ -78,6 +80,7 @@ New dispatcher `rowTextFor(row: DisplayRow): string` calls `aggregatedRowText` o
 
 | File | Change |
 |------|--------|
+| `web/src/themes/board/glyphs.ts` | Add `×` to the `GLYPHS` atlas string |
 | `web/src/themes/board/rows.ts` | Add `AggregatedRow`, `DisplayRow`, `toDisplayRows()`, `aggregatedRowText()`, `rowTextFor()` |
 | `web/src/themes/board/board.ts` | Add `displayRows`, update `renderLedger`, `maxOffset`, `metaFor`, scroll adjustment |
 
