@@ -33,22 +33,22 @@ function status(e: SproutEvent): string {
   return e.mint ? "★ NEW" : "CONFIRMED";
 }
 
-/** Display toggles for a ledger line: the block-start `▸` marker and the height. */
+/** Display toggles for a ledger line. The block height leads each row but is
+ *  blanked on continuation rows (shown only at block starts + the top row). */
 export interface RowOptions {
   showHeight?: boolean;
-  showMarker?: boolean;
 }
 
 /** One fixed-width ledger line for an individual spend. Pure. Fields sum to BOARD_COLS (48). */
-export function rowText(event: SproutEvent, { showHeight = true, showMarker = true }: RowOptions = {}): string {
+export function rowText(event: SproutEvent, { showHeight = true }: RowOptions = {}): string {
   return (
+    (showHeight ? padL(String(event.height), 8) : " ".repeat(8)) +
+    " " +
     padR(kindLabel(event), 3) +
-    (showMarker ? " ▸ " : "   ") +
-    padR(asset(event), 11) +
+    " " +
+    padR(asset(event), 13) +
     " " +
     padL(amount(event), 11) +
-    " " +
-    (showHeight ? padL(String(event.height), 8) : " ".repeat(8)) +
     " " +
     padR(status(event), 9)
   );
@@ -67,7 +67,7 @@ export interface AggregatedRow {
 
 export type DisplayRow = AggregatedRow | SproutEvent;
 
-function aggregatedRowText(row: AggregatedRow, { showHeight = true, showMarker = true }: RowOptions): string {
+function aggregatedRowText(row: AggregatedRow, { showHeight = true }: RowOptions): string {
   const kindStr = row.kind.toUpperCase();
   const assetStr =
     row.kind === "cat" ? (row.catTicker ?? row.catName ?? "CAT").toUpperCase() : "-";
@@ -78,13 +78,13 @@ function aggregatedRowText(row: AggregatedRow, { showHeight = true, showMarker =
   const countStr = `${row.count}×`;
 
   return (
+    (showHeight ? padL(String(row.height), 8) : " ".repeat(8)) +
+    " " +
     padR(kindStr, 3) +
-    (showMarker ? " ▸ " : "   ") +
-    padR(assetStr, 11) +
+    " " +
+    padR(assetStr, 13) +
     " " +
     padL(amountStr, 11) +
-    " " +
-    (showHeight ? padL(String(row.height), 8) : " ".repeat(8)) +
     " " +
     padR(countStr, 9)
   );

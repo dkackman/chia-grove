@@ -29,7 +29,7 @@ test("nft mint shows MINT and the new-mint marker", () => {
 
 test("cat row shows the ticker (truncated) and token amount", () => {
   const t = rowText(sprout({ kind: "cat", catTicker: "SUPERLONGTICKER", amount: "250000" }));
-  expect(t).toContain("SUPERLONGTI"); // 11-char asset clamp
+  expect(t).toContain("SUPERLONGTICK"); // 13-char asset clamp
   expect(t).not.toContain("SUPERLONGTICKER");
 });
 
@@ -186,11 +186,17 @@ test("rowText with showHeight:false blanks the height span but stays 48 wide", (
   expect(shown.length).toBe(hidden.length);
 });
 
-test("rowText defaults to showing the height and marker", () => {
+test("rowText defaults to showing the height", () => {
   const e = sprout({ kind: "xch", amount: "1500000000000", height: 5121 });
-  expect(rowText(e)).toBe(rowText(e, { showHeight: true, showMarker: true }));
+  expect(rowText(e)).toBe(rowText(e, { showHeight: true }));
   expect(rowText(e)).toContain("5121");
-  expect(rowText(e)).toContain("▸");
+});
+
+test("rowText lays out height first, then kind, then asset", () => {
+  const t = rowText(sprout({ kind: "cat", catTicker: "SBX", amount: "1000", height: 5121 }));
+  expect(t.indexOf("5121")).toBeGreaterThanOrEqual(0);
+  expect(t.indexOf("5121")).toBeLessThan(t.indexOf("CAT"));
+  expect(t.indexOf("CAT")).toBeLessThan(t.indexOf("SBX"));
 });
 
 test("rowTextFor with showHeight:false blanks the height on an aggregated row", () => {
@@ -203,25 +209,6 @@ test("rowTextFor with showHeight:false blanks the height on an aggregated row", 
   expect(hidden).not.toContain("8421");
   expect(hidden).toContain("SBX");
   expect(hidden).toContain("2×");
-});
-
-// --- showMarker option ---
-
-test("rowText with showMarker:false removes the ▸ but stays 48 wide", () => {
-  const e = sprout({ kind: "cat", catTicker: "SBX", amount: "1000", height: 5121 });
-  const hidden = rowText(e, { showMarker: false });
-  expect(hidden.length).toBe(BOARD_COLS);
-  expect(hidden).not.toContain("▸");
-  expect(hidden).toContain("CAT"); // kind intact
-  expect(hidden).toContain("SBX"); // asset intact
-});
-
-test("rowTextFor with showMarker:false removes the ▸ on an aggregated row", () => {
-  const rows = toDisplayRows([sprout({ kind: "xch", amount: "1000000000000", height: 8421 })]);
-  const hidden = rowTextFor(rows[0], { showMarker: false });
-  expect(hidden.length).toBe(BOARD_COLS);
-  expect(hidden).not.toContain("▸");
-  expect(hidden).toContain("XCH");
 });
 
 // --- isBlockStart ---
