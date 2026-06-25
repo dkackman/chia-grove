@@ -330,7 +330,14 @@ test("cardMetaFor builds a CAT detail carrying identity and the aggregated total
   expect(meta!.height).toBe(800);
 });
 
-test("cardMetaFor returns null for an XCH aggregate (no asset identity to show)", () => {
-  const rows = toDisplayRows([sprout({ kind: "xch", amount: "1000000000000", height: 700 })]);
-  expect(cardMetaFor(rows[0])).toBeNull();
+test("cardMetaFor builds an XCH detail carrying the aggregated total", () => {
+  const rows = toDisplayRows([
+    sprout({ kind: "xch", amount: "1500000000000", height: 700 }),
+    sprout({ kind: "xch", amount: "500000000000", height: 700 }),
+  ]);
+  const meta = cardMetaFor(rows[0]);
+  expect(meta).not.toBeNull();
+  expect(meta!.kind).toBe("xch");
+  expect(meta!.amount).toBe("2000000000000"); // 1.5 + 0.5 XCH = 2 XCH total
+  expect(meta!.height).toBe(700);
 });

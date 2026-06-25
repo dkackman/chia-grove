@@ -150,6 +150,7 @@ export function toDisplayRows(events: SproutEvent[]): DisplayRow[] {
         height,
         totalMojos: xchEvents.reduce((s, e) => s + BigInt(e.amount), 0n),
         count: xchEvents.length,
+        sample: xchEvents[0],
       });
     }
 
@@ -186,15 +187,12 @@ export function toDisplayRows(events: SproutEvent[]): DisplayRow[] {
 
 /**
  * The detail-card payload for a clicked row, or null when there's nothing to
- * show. Individual rows (NFT/DID) return their own event; an aggregated CAT row
- * returns a synthesized event carrying the asset identity from a representative
- * spend but the block-wide aggregated total as its amount. XCH aggregates have
- * no asset identity, so they get no card.
+ * show. Individual rows (NFT/DID) return their own event; an aggregated XCH/CAT
+ * row returns a synthesized event carrying the identity from a representative
+ * spend but the block-wide aggregated total as its amount.
  */
 export function cardMetaFor(row: DisplayRow): SproutEvent | null {
   if (row.type === "sprout") return row;
-  if (row.kind === "cat" && row.sample) {
-    return { ...row.sample, amount: row.totalMojos.toString() };
-  }
+  if (row.sample) return { ...row.sample, amount: row.totalMojos.toString() };
   return null;
 }
