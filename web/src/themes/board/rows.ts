@@ -75,7 +75,9 @@ function aggregatedRowText(row: AggregatedRow, { showHeight = true }: RowOptions
     row.kind === "xch"
       ? clampFrac(mojosToXch(row.totalMojos.toString()), 4)
       : clampFrac(mojosToCAT(row.totalMojos.toString()), 3);
-  const countStr = `${row.count} ${row.count === 1 ? "SPEND" : "SPENDS"}`;
+  // right-align the number in a 3-wide sub-column so counts line up and the word
+  // starts at a fixed column; padStart never truncates, so the digit count is safe
+  const countStr = `${String(row.count).padStart(3)} ${row.count === 1 ? "SPEND" : "SPENDS"}`;
 
   return (
     (showHeight ? padR(String(row.height), 8) : " ".repeat(8)) +

@@ -174,6 +174,18 @@ test("a single spend reads '1 SPEND' (singular)", () => {
   expect(t).not.toContain("1 SPENDS");
 });
 
+test("aggregated count right-aligns the number so the word starts at a fixed column", () => {
+  // N xch spends in one block aggregate to a single row with count = N
+  const mk = (n: number) =>
+    rowTextFor(toDisplayRows(Array.from({ length: n }, () => sprout({ kind: "xch", amount: "1000000000000", height: 100 })))[0]);
+  const two = mk(2); //  "2 SPENDS"
+  const twelve = mk(12); // "12 SPENDS"
+  expect(two).toContain("2 SPENDS");
+  expect(twelve).toContain("12 SPENDS");
+  // right-aligned number ⇒ the word sits at the same index regardless of digit count
+  expect(two.indexOf("SPENDS")).toBe(twelve.indexOf("SPENDS"));
+});
+
 test("rowTextFor individual sprout row delegates to rowText", () => {
   const e = sprout({ kind: "nft", mint: true, height: 900 });
   const rows = toDisplayRows([e]);
