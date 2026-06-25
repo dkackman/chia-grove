@@ -34,7 +34,7 @@ function status(e: SproutEvent): string {
 }
 
 /** One fixed-width ledger line for an individual spend. Pure. Fields sum to BOARD_COLS (48). */
-export function rowText(event: SproutEvent): string {
+export function rowText(event: SproutEvent, showHeight = true): string {
   return (
     padR(kindLabel(event), 3) +
     " ▸ " +
@@ -42,7 +42,7 @@ export function rowText(event: SproutEvent): string {
     " " +
     padL(amount(event), 11) +
     " " +
-    padL(String(event.height), 8) +
+    (showHeight ? padL(String(event.height), 8) : " ".repeat(8)) +
     " " +
     padR(status(event), 9)
   );
@@ -61,7 +61,7 @@ export interface AggregatedRow {
 
 export type DisplayRow = AggregatedRow | SproutEvent;
 
-function aggregatedRowText(row: AggregatedRow): string {
+function aggregatedRowText(row: AggregatedRow, showHeight: boolean): string {
   const kindStr = row.kind.toUpperCase();
   const assetStr =
     row.kind === "cat" ? (row.catTicker ?? row.catName ?? "CAT").toUpperCase() : "-";
@@ -78,15 +78,29 @@ function aggregatedRowText(row: AggregatedRow): string {
     " " +
     padL(amountStr, 11) +
     " " +
-    padL(String(row.height), 8) +
+    (showHeight ? padL(String(row.height), 8) : " ".repeat(8)) +
     " " +
     padR(countStr, 9)
   );
 }
 
 /** Render a DisplayRow to a fixed-width 48-char string. */
-export function rowTextFor(row: DisplayRow): string {
-  return row.type === "aggregated" ? aggregatedRowText(row) : rowText(row);
+export function rowTextFor(row: DisplayRow, showHeight = true): string {
+  return row.type === "aggregated" ? aggregatedRowText(row, showHeight) : rowText(row, showHeight);
+}
+
+/**
+ * Whether a visible ledger row should render its block height. The topmost
+ * visible row always does (so a scrolled-back view never loses its label);
+ * otherwise the height shows only at a block boundary (height differs from
+ * the row above it).
+ */
+export function shouldShowHeight(
+  prev: DisplayRow | undefined,
+  cur: DisplayRow,
+  isTopVisible: boolean
+): boolean {
+  return isTopVisible || prev === undefined || prev.height !== cur.height;
 }
 
 /**
