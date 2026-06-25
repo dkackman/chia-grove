@@ -33,11 +33,17 @@ function status(e: SproutEvent): string {
   return e.mint ? "★ NEW" : "CONFIRMED";
 }
 
+/** Display toggles for a ledger line: the block-start `▸` marker and the height. */
+export interface RowOptions {
+  showHeight?: boolean;
+  showMarker?: boolean;
+}
+
 /** One fixed-width ledger line for an individual spend. Pure. Fields sum to BOARD_COLS (48). */
-export function rowText(event: SproutEvent, showHeight = true): string {
+export function rowText(event: SproutEvent, { showHeight = true, showMarker = true }: RowOptions = {}): string {
   return (
     padR(kindLabel(event), 3) +
-    " ▸ " +
+    (showMarker ? " ▸ " : "   ") +
     padR(asset(event), 11) +
     " " +
     padL(amount(event), 11) +
@@ -61,7 +67,7 @@ export interface AggregatedRow {
 
 export type DisplayRow = AggregatedRow | SproutEvent;
 
-function aggregatedRowText(row: AggregatedRow, showHeight: boolean): string {
+function aggregatedRowText(row: AggregatedRow, { showHeight = true, showMarker = true }: RowOptions): string {
   const kindStr = row.kind.toUpperCase();
   const assetStr =
     row.kind === "cat" ? (row.catTicker ?? row.catName ?? "CAT").toUpperCase() : "-";
@@ -73,7 +79,7 @@ function aggregatedRowText(row: AggregatedRow, showHeight: boolean): string {
 
   return (
     padR(kindStr, 3) +
-    " ▸ " +
+    (showMarker ? " ▸ " : "   ") +
     padR(assetStr, 11) +
     " " +
     padL(amountStr, 11) +
@@ -85,22 +91,29 @@ function aggregatedRowText(row: AggregatedRow, showHeight: boolean): string {
 }
 
 /** Render a DisplayRow to a fixed-width 48-char string. */
-export function rowTextFor(row: DisplayRow, showHeight = true): string {
-  return row.type === "aggregated" ? aggregatedRowText(row, showHeight) : rowText(row, showHeight);
+export function rowTextFor(row: DisplayRow, opts: RowOptions = {}): string {
+  return row.type === "aggregated" ? aggregatedRowText(row, opts) : rowText(row, opts);
+}
+
+/**
+ * Whether a row begins a new block: it has no predecessor, or its height
+ * differs from the row above it. Drives the `▸` block-start marker.
+ */
+export function isBlockStart(prev: DisplayRow | undefined, cur: DisplayRow): boolean {
+  return prev === undefined || prev.height !== cur.height;
 }
 
 /**
  * Whether a visible ledger row should render its block height. The topmost
  * visible row always does (so a scrolled-back view never loses its label);
- * otherwise the height shows only at a block boundary (height differs from
- * the row above it).
+ * otherwise the height shows only at a block boundary.
  */
 export function shouldShowHeight(
   prev: DisplayRow | undefined,
   cur: DisplayRow,
   isTopVisible: boolean
 ): boolean {
-  return isTopVisible || prev === undefined || prev.height !== cur.height;
+  return isTopVisible || isBlockStart(prev, cur);
 }
 
 /**

@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { BOARD_COLS, rowText, rowTextFor, shouldShowHeight, toDisplayRows } from "../src/themes/board/rows.js";
+import { BOARD_COLS, isBlockStart, rowText, rowTextFor, shouldShowHeight, toDisplayRows } from "../src/themes/board/rows.js";
 import type { AggregatedRow } from "../src/themes/board/rows.js";
 import type { SproutEvent } from "@grove/shared";
 
@@ -172,12 +172,12 @@ test("rowTextFor individual sprout row delegates to rowText", () => {
   expect(rowTextFor(rows[0])).toBe(rowText(e));
 });
 
-// --- showHeight flag ---
+// --- showHeight option ---
 
-test("rowText with showHeight=false blanks the height span but stays 48 wide", () => {
+test("rowText with showHeight:false blanks the height span but stays 48 wide", () => {
   const e = sprout({ kind: "xch", amount: "1500000000000", height: 5121 });
-  const shown = rowText(e, true);
-  const hidden = rowText(e, false);
+  const shown = rowText(e, { showHeight: true });
+  const hidden = rowText(e, { showHeight: false });
   expect(hidden.length).toBe(BOARD_COLS);
   expect(hidden).not.toContain("5121"); // height digits gone
   expect(hidden).toContain("XCH"); // other fields intact
@@ -186,22 +186,76 @@ test("rowText with showHeight=false blanks the height span but stays 48 wide", (
   expect(shown.length).toBe(hidden.length);
 });
 
-test("rowText defaults to showing the height", () => {
+test("rowText defaults to showing the height and marker", () => {
   const e = sprout({ kind: "xch", amount: "1500000000000", height: 5121 });
-  expect(rowText(e)).toBe(rowText(e, true));
+  expect(rowText(e)).toBe(rowText(e, { showHeight: true, showMarker: true }));
   expect(rowText(e)).toContain("5121");
+  expect(rowText(e)).toContain("▸");
 });
 
-test("rowTextFor with showHeight=false blanks the height on an aggregated row", () => {
+test("rowTextFor with showHeight:false blanks the height on an aggregated row", () => {
   const rows = toDisplayRows([
     sprout({ kind: "cat", assetId: "aaa", catTicker: "SBX", amount: "1000", height: 8421 }),
     sprout({ kind: "cat", assetId: "aaa", catTicker: "SBX", amount: "2000", height: 8421 }),
   ]);
-  const hidden = rowTextFor(rows[0], false);
+  const hidden = rowTextFor(rows[0], { showHeight: false });
   expect(hidden.length).toBe(BOARD_COLS);
   expect(hidden).not.toContain("8421");
   expect(hidden).toContain("SBX");
   expect(hidden).toContain("2×");
+});
+
+// --- showMarker option ---
+
+test("rowText with showMarker:false removes the ▸ but stays 48 wide", () => {
+  const e = sprout({ kind: "cat", catTicker: "SBX", amount: "1000", height: 5121 });
+  const hidden = rowText(e, { showMarker: false });
+  expect(hidden.length).toBe(BOARD_COLS);
+  expect(hidden).not.toContain("▸");
+  expect(hidden).toContain("CAT"); // kind intact
+  expect(hidden).toContain("SBX"); // asset intact
+});
+
+test("rowTextFor with showMarker:false removes the ▸ on an aggregated row", () => {
+  const rows = toDisplayRows([sprout({ kind: "xch", amount: "1000000000000", height: 8421 })]);
+  const hidden = rowTextFor(rows[0], { showMarker: false });
+  expect(hidden.length).toBe(BOARD_COLS);
+  expect(hidden).not.toContain("▸");
+  expect(hidden).toContain("XCH");
+});
+
+// --- isBlockStart ---
+
+test("isBlockStart is true when prev is undefined", () => {
+  const rows = toDisplayRows([sprout({ kind: "xch", amount: "1000", height: 100 })]);
+  expect(isBlockStart(undefined, rows[0])).toBe(true);
+});
+
+test("isBlockStart is false for a continuation row (same height as prev)", () => {
+  const rows = toDisplayRows([
+    sprout({ kind: "cat", assetId: "aaa", catTicker: "SBX", amount: "1000", height: 100 }),
+    sprout({ kind: "cat", assetId: "bbb", catTicker: "DBX", amount: "2000", height: 100 }),
+  ]);
+  expect(isBlockStart(rows[0], rows[1])).toBe(false);
+});
+
+test("isBlockStart is true at a block boundary (height changes)", () => {
+  const rows = toDisplayRows([
+    sprout({ kind: "xch", amount: "1000", height: 101 }),
+    sprout({ kind: "xch", amount: "2000", height: 100 }),
+  ]);
+  expect(isBlockStart(rows[0], rows[1])).toBe(true);
+});
+
+test("isBlockStart ignores the topmost-row override (unlike shouldShowHeight)", () => {
+  // two distinct CATs in one block → two rows at the same height
+  const rows = toDisplayRows([
+    sprout({ kind: "cat", assetId: "aaa", catTicker: "SBX", amount: "1000", height: 100 }),
+    sprout({ kind: "cat", assetId: "bbb", catTicker: "DBX", amount: "2000", height: 100 }),
+  ]);
+  // same height: not a block start even though shouldShowHeight(...true) would show it
+  expect(isBlockStart(rows[0], rows[1])).toBe(false);
+  expect(shouldShowHeight(rows[0], rows[1], true)).toBe(true);
 });
 
 // --- shouldShowHeight ---
