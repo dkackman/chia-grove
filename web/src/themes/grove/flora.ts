@@ -10,7 +10,7 @@ import { glowTexture } from "../shared/textures.js";
 import { sproutOffset } from "./layout.js";
 
 // caps are per geometry variant (3 variants per kind)
-const CAPS = { grass: 800, mushroom: 140, bloom: 40, wisp: 80 } as const;
+const CAPS = { grass: 1600, mushroom: 300, bloom: 80, wisp: 160 } as const;
 const VARIANTS = 3;
 
 // nominal height multiplier per grass variant (broad blades stay low)

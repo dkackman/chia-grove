@@ -13,7 +13,7 @@ import { LoadPool } from "../shared/load-pool.js";
 // proxy's per-IP rate limit (429s). A small cap paces the fetches and — because
 // a slot is usually recycled before a queued load reaches the front — collapses
 // them to roughly the handful of paintings that actually stay on screen.
-const ART_LOAD_CONCURRENCY = 6;
+const ART_LOAD_CONCURRENCY = 10;
 
 const VILLAGER_CAP = 80;
 
