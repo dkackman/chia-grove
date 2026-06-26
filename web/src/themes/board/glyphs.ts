@@ -44,7 +44,13 @@ export function nextGlyph(cur: number, target: number): number {
  * with a vertical sheen, a beveled/recessed edge, the character, and the
  * signature horizontal seam where the two leaves meet (it cuts the glyph).
  */
-function drawFlap(ctx: CanvasRenderingContext2D, x0: number, y0: number, S: number, ch: string): void {
+function drawFlap(
+  ctx: CanvasRenderingContext2D,
+  x0: number,
+  y0: number,
+  S: number,
+  ch: string
+): void {
   const t = Math.max(1, Math.round(S / 32)); // unit line thickness
   const m = Math.max(1, Math.round(S * 0.03)); // gap to the recessed slot
   const r = Math.round(S * 0.1); // rounded card corners

@@ -23,8 +23,8 @@ New types added to `rows.ts`:
 
 ```typescript
 interface AggregatedRow {
-  type: 'aggregated';
-  kind: 'xch' | 'cat';
+  type: "aggregated";
+  kind: "xch" | "cat";
   height: number;
   totalMojos: bigint;
   count: number;
@@ -78,11 +78,11 @@ The `×` glyph is not currently in the board's glyph atlas (`glyphs.ts`), so it 
 
 ## Files Changed
 
-| File | Change |
-|------|--------|
-| `web/src/themes/board/glyphs.ts` | Add `×` to the `GLYPHS` atlas string |
-| `web/src/themes/board/rows.ts` | Add `AggregatedRow`, `DisplayRow`, `toDisplayRows()`, `aggregatedRowText()`, `rowTextFor()` |
-| `web/src/themes/board/board.ts` | Add `displayRows`, update `renderLedger`, `maxOffset`, `metaFor`, scroll adjustment |
+| File                             | Change                                                                                      |
+| -------------------------------- | ------------------------------------------------------------------------------------------- |
+| `web/src/themes/board/glyphs.ts` | Add `×` to the `GLYPHS` atlas string                                                        |
+| `web/src/themes/board/rows.ts`   | Add `AggregatedRow`, `DisplayRow`, `toDisplayRows()`, `aggregatedRowText()`, `rowTextFor()` |
+| `web/src/themes/board/board.ts`  | Add `displayRows`, update `renderLedger`, `maxOffset`, `metaFor`, scroll adjustment         |
 
 No other files change.
 

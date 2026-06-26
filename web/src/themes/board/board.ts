@@ -8,7 +8,6 @@ import { BOARD } from "./palette.js";
 import { buildGlyphAtlas } from "./glyphs.js";
 import { FlapGrid } from "./flapgrid.js";
 import { Header } from "./header.js";
-import { Clatter } from "./clatter.js";
 import { rowTextFor, shouldShowHeight, cardMetaFor, toDisplayRows, BOARD_COLS } from "./rows.js";
 import type { DisplayRow } from "./rows.js";
 import { fitDistance } from "./fit.js";
@@ -59,9 +58,11 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
   camera.lookAt(0, centerY, 0);
 
   const atlas = buildGlyphAtlas();
-  const ledger = new FlapGrid(scene, atlas, LEDGER_ROWS, BOARD_COLS, { cell, originY: LEDGER_ORIGIN_Y });
+  const ledger = new FlapGrid(scene, atlas, LEDGER_ROWS, BOARD_COLS, {
+    cell,
+    originY: LEDGER_ORIGIN_Y,
+  });
   const header = new Header(scene, atlas, { originY: HEADER_ORIGIN_Y });
-  const clatter = new Clatter();
 
   const events: SproutEvent[] = []; // newest first, capped at HISTORY
   let displayRows: DisplayRow[] = [];
@@ -143,7 +144,6 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
       const flooding = !wasIdle && sproutsSinceFrame > FAST_FORWARD;
       renderLedger(scrolled || reducedMotion || flooding);
       lastRenderedOffset = scrollOffset;
-      if (!scrolled && (!wasIdle || !ledger.idle())) clatter.flap(Math.min(1, sproutsSinceFrame / 6));
       header.setLive(scrollOffset === 0);
     }
     sproutsSinceFrame = 0;
@@ -193,9 +193,6 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
     { passive: false }
   );
 
-  // double-click anywhere on the board toggles the clatter sound
-  canvas.addEventListener("dblclick", () => clatter.setEnabled(!clatter.enabled));
-
   return {
     camera,
     onFrame: (fn) => frameCallbacks.push(fn),
@@ -206,6 +203,8 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
       return row ? cardMetaFor(row) : null;
     },
     setHovered: (object, instanceId) =>
-      ledger.highlightRow(object === ledger.mesh && instanceId !== undefined ? ledger.rowOf(instanceId) : null),
+      ledger.highlightRow(
+        object === ledger.mesh && instanceId !== undefined ? ledger.rowOf(instanceId) : null
+      ),
   };
 }

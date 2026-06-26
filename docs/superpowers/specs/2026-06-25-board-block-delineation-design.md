@@ -15,7 +15,7 @@ Make block boundaries visually obvious without breaking the Solari split-flap id
 
 Show the block height only on each block's **first row**; blank the height column on continuation rows. The reappearance of lit height flaps marks every new block. The height column is otherwise the same number repeated, so blanking it on continuation rows removes redundancy and turns the boundary into a clear visual signal.
 
-The block boundary is derived from the data with no new state: within `displayRows` (newest-first), consecutive rows share a height if and only if they belong to the same block, so a height *change* between adjacent rows marks a boundary.
+The block boundary is derived from the data with no new state: within `displayRows` (newest-first), consecutive rows share a height if and only if they belong to the same block, so a height _change_ between adjacent rows marks a boundary.
 
 ## Components
 
@@ -73,10 +73,10 @@ When scrolled back through history, the topmost visible row may be a block's con
 
 ## Files Changed
 
-| File | Change |
-|------|--------|
-| `web/src/themes/board/rows.ts` | Add `showHeight` param to `rowText`/`rowTextFor`/`aggregatedRowText`; add `shouldShowHeight()` |
-| `web/src/themes/board/board.ts` | Thread `shouldShowHeight()` result into `renderLedger` |
+| File                            | Change                                                                                         |
+| ------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `web/src/themes/board/rows.ts`  | Add `showHeight` param to `rowText`/`rowTextFor`/`aggregatedRowText`; add `shouldShowHeight()` |
+| `web/src/themes/board/board.ts` | Thread `shouldShowHeight()` result into `renderLedger`                                         |
 
 No other files change.
 

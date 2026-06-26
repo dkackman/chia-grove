@@ -55,10 +55,7 @@ function nftMediaEl(src: string, kind: MediaKind): HTMLElement {
     // guess to begin with.
     if (node instanceof HTMLMediaElement) {
       const code = node.error?.code;
-      if (
-        code === MediaError.MEDIA_ERR_NETWORK ||
-        code === MediaError.MEDIA_ERR_ABORTED
-      ) {
+      if (code === MediaError.MEDIA_ERR_NETWORK || code === MediaError.MEDIA_ERR_ABORTED) {
         return;
       }
     }

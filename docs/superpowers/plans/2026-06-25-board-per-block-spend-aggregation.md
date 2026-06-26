@@ -22,12 +22,14 @@
 ### Task 1: Aggregation types and functions in `rows.ts`
 
 **Files:**
+
 - Modify: `web/src/themes/board/glyphs.ts`
 - Modify: `web/test/board-glyphs.test.ts`
 - Modify: `web/src/themes/board/rows.ts`
 - Modify: `web/test/board-rows.test.ts`
 
 **Interfaces:**
+
 - Produces:
   - `export interface AggregatedRow { type: "aggregated"; kind: "xch" | "cat"; height: number; totalMojos: bigint; count: number; assetId?: string; catName?: string; catTicker?: string; }`
   - `export type DisplayRow = AggregatedRow | SproutEvent`
@@ -343,10 +345,7 @@ export type DisplayRow = AggregatedRow | SproutEvent;
 
 function aggregatedRowText(row: AggregatedRow): string {
   const kindStr = row.kind.toUpperCase();
-  const assetStr =
-    row.kind === "cat"
-      ? (row.catTicker ?? row.catName ?? "CAT").toUpperCase()
-      : "-";
+  const assetStr = row.kind === "cat" ? (row.catTicker ?? row.catName ?? "CAT").toUpperCase() : "-";
   const amountStr =
     row.kind === "xch"
       ? clampFrac(mojosToXch(row.totalMojos.toString()), 4)
@@ -490,18 +489,18 @@ import type { DisplayRow } from "./rows.js";
 Inside `startBoard`, find the three lines that declare the main state variables:
 
 ```typescript
-  const events: SproutEvent[] = []; // newest first, capped at HISTORY
-  let ledgerDirty = false;
-  let sproutsSinceFrame = 0;
+const events: SproutEvent[] = []; // newest first, capped at HISTORY
+let ledgerDirty = false;
+let sproutsSinceFrame = 0;
 ```
 
 Replace with:
 
 ```typescript
-  const events: SproutEvent[] = []; // newest first, capped at HISTORY
-  let displayRows: DisplayRow[] = [];
-  let ledgerDirty = false;
-  let sproutsSinceFrame = 0;
+const events: SproutEvent[] = []; // newest first, capped at HISTORY
+let displayRows: DisplayRow[] = [];
+let ledgerDirty = false;
+let sproutsSinceFrame = 0;
 ```
 
 - [ ] **Step 3: Remove per-event scroll increment from the `"sprout"` handler**
@@ -537,13 +536,13 @@ Replace with:
 Find:
 
 ```typescript
-  const maxOffset = () => Math.max(0, events.length - LEDGER_ROWS);
+const maxOffset = () => Math.max(0, events.length - LEDGER_ROWS);
 ```
 
 Replace with:
 
 ```typescript
-  const maxOffset = () => Math.max(0, displayRows.length - LEDGER_ROWS);
+const maxOffset = () => Math.max(0, displayRows.length - LEDGER_ROWS);
 ```
 
 - [ ] **Step 5: Update `renderLedger` to use `displayRows` and `rowTextFor`**
@@ -551,31 +550,31 @@ Replace with:
 Find:
 
 ```typescript
-  function renderLedger(instant: boolean): void {
-    for (let r = 0; r < LEDGER_ROWS; r++) {
-      const e = events[r + scrollOffset];
-      if (e) {
-        ledger.setRow(r, rowText(e), instant);
-      } else {
-        ledger.clearRow(r);
-      }
+function renderLedger(instant: boolean): void {
+  for (let r = 0; r < LEDGER_ROWS; r++) {
+    const e = events[r + scrollOffset];
+    if (e) {
+      ledger.setRow(r, rowText(e), instant);
+    } else {
+      ledger.clearRow(r);
     }
   }
+}
 ```
 
 Replace with:
 
 ```typescript
-  function renderLedger(instant: boolean): void {
-    for (let r = 0; r < LEDGER_ROWS; r++) {
-      const row = displayRows[r + scrollOffset];
-      if (row) {
-        ledger.setRow(r, rowTextFor(row), instant);
-      } else {
-        ledger.clearRow(r);
-      }
+function renderLedger(instant: boolean): void {
+  for (let r = 0; r < LEDGER_ROWS; r++) {
+    const row = displayRows[r + scrollOffset];
+    if (row) {
+      ledger.setRow(r, rowTextFor(row), instant);
+    } else {
+      ledger.clearRow(r);
     }
   }
+}
 ```
 
 - [ ] **Step 6: Recompute `displayRows` in the frame loop and adjust scroll offset**
@@ -583,41 +582,41 @@ Replace with:
 Find this block inside the `frame()` function:
 
 ```typescript
-    if (scrollOffset > maxOffset()) scrollOffset = maxOffset(); // a reorg may have shrunk history
-    const scrolled = scrollOffset !== lastRenderedOffset;
-    if (ledgerDirty || scrolled) {
-      const wasIdle = ledger.idle();
-      // scrubbing through history snaps instantly; live arrivals riffle
-      renderLedger(scrolled || reducedMotion || sproutsSinceFrame > FAST_FORWARD);
-      lastRenderedOffset = scrollOffset;
-      ledgerDirty = false;
-      if (!scrolled && (!wasIdle || !ledger.idle())) clatter.flap(Math.min(1, sproutsSinceFrame / 6));
-      header.setLive(scrollOffset === 0);
-    }
+if (scrollOffset > maxOffset()) scrollOffset = maxOffset(); // a reorg may have shrunk history
+const scrolled = scrollOffset !== lastRenderedOffset;
+if (ledgerDirty || scrolled) {
+  const wasIdle = ledger.idle();
+  // scrubbing through history snaps instantly; live arrivals riffle
+  renderLedger(scrolled || reducedMotion || sproutsSinceFrame > FAST_FORWARD);
+  lastRenderedOffset = scrollOffset;
+  ledgerDirty = false;
+  if (!scrolled && (!wasIdle || !ledger.idle())) clatter.flap(Math.min(1, sproutsSinceFrame / 6));
+  header.setLive(scrollOffset === 0);
+}
 ```
 
 Replace with:
 
 ```typescript
-    if (scrollOffset > maxOffset()) scrollOffset = maxOffset(); // a reorg may have shrunk history
-    const scrolled = scrollOffset !== lastRenderedOffset;
-    if (ledgerDirty || scrolled) {
-      const wasIdle = ledger.idle();
-      if (ledgerDirty) {
-        const prevLen = displayRows.length;
-        displayRows = toDisplayRows(events);
-        // keep the same block in view when scrolled back
-        if (scrollOffset > 0) {
-          scrollOffset = Math.min(scrollOffset + displayRows.length - prevLen, maxOffset());
-        }
-        ledgerDirty = false;
-      }
-      // scrubbing through history snaps instantly; live arrivals riffle
-      renderLedger(scrolled || reducedMotion || sproutsSinceFrame > FAST_FORWARD);
-      lastRenderedOffset = scrollOffset;
-      if (!scrolled && (!wasIdle || !ledger.idle())) clatter.flap(Math.min(1, sproutsSinceFrame / 6));
-      header.setLive(scrollOffset === 0);
+if (scrollOffset > maxOffset()) scrollOffset = maxOffset(); // a reorg may have shrunk history
+const scrolled = scrollOffset !== lastRenderedOffset;
+if (ledgerDirty || scrolled) {
+  const wasIdle = ledger.idle();
+  if (ledgerDirty) {
+    const prevLen = displayRows.length;
+    displayRows = toDisplayRows(events);
+    // keep the same block in view when scrolled back
+    if (scrollOffset > 0) {
+      scrollOffset = Math.min(scrollOffset + displayRows.length - prevLen, maxOffset());
     }
+    ledgerDirty = false;
+  }
+  // scrubbing through history snaps instantly; live arrivals riffle
+  renderLedger(scrolled || reducedMotion || sproutsSinceFrame > FAST_FORWARD);
+  lastRenderedOffset = scrollOffset;
+  if (!scrolled && (!wasIdle || !ledger.idle())) clatter.flap(Math.min(1, sproutsSinceFrame / 6));
+  header.setLive(scrollOffset === 0);
+}
 ```
 
 - [ ] **Step 7: Update `metaFor` to return `null` for aggregated rows**

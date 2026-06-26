@@ -1,16 +1,33 @@
 import { expect, test } from "vitest";
-import { BOARD_COLS, cardMetaFor, isBlockStart, rowText, rowTextFor, shouldShowHeight, toDisplayRows } from "../src/themes/board/rows.js";
+import {
+  BOARD_COLS,
+  cardMetaFor,
+  isBlockStart,
+  rowText,
+  rowTextFor,
+  shouldShowHeight,
+  toDisplayRows,
+} from "../src/themes/board/rows.js";
 import type { AggregatedRow } from "../src/themes/board/rows.js";
 import type { SproutEvent } from "@grove/shared";
 
 function sprout(over: Partial<SproutEvent>): SproutEvent {
-  return { type: "sprout", kind: "xch", height: 100, coinId: "00".repeat(32), amount: "0", ...over };
+  return {
+    type: "sprout",
+    kind: "xch",
+    height: 100,
+    coinId: "00".repeat(32),
+    amount: "0",
+    ...over,
+  };
 }
 
 test("every row is exactly BOARD_COLS wide", () => {
   expect(rowText(sprout({})).length).toBe(BOARD_COLS);
   expect(rowText(sprout({ kind: "nft", mint: true })).length).toBe(BOARD_COLS);
-  expect(rowText(sprout({ kind: "cat", catTicker: "SBX", amount: "250000" })).length).toBe(BOARD_COLS);
+  expect(rowText(sprout({ kind: "cat", catTicker: "SBX", amount: "250000" })).length).toBe(
+    BOARD_COLS
+  );
 });
 
 test("xch row shows kind, amount, block, CONFIRMED status", () => {
@@ -178,7 +195,9 @@ test("a CAT ticker stands in a box for each unrenderable glyph, preserving the l
 });
 
 test("a single spend reads '1 SPEND' (singular)", () => {
-  const rows = toDisplayRows([sprout({ kind: "cat", assetId: "aaa", catTicker: "SBX", amount: "1000", height: 800 })]);
+  const rows = toDisplayRows([
+    sprout({ kind: "cat", assetId: "aaa", catTicker: "SBX", amount: "1000", height: 800 }),
+  ]);
   const t = rowTextFor(rows[0]);
   expect(t.length).toBe(BOARD_COLS);
   expect(t).toContain("1 SPEND");
@@ -188,7 +207,13 @@ test("a single spend reads '1 SPEND' (singular)", () => {
 test("aggregated count right-aligns the number so the word starts at a fixed column", () => {
   // N xch spends in one block aggregate to a single row with count = N
   const mk = (n: number) =>
-    rowTextFor(toDisplayRows(Array.from({ length: n }, () => sprout({ kind: "xch", amount: "1000000000000", height: 100 })))[0]);
+    rowTextFor(
+      toDisplayRows(
+        Array.from({ length: n }, () =>
+          sprout({ kind: "xch", amount: "1000000000000", height: 100 })
+        )
+      )[0]
+    );
   const two = mk(2); //  "2 SPENDS"
   const twelve = mk(12); // "12 SPENDS"
   expect(two).toContain("2 SPENDS");
@@ -327,7 +352,15 @@ test("cardMetaFor returns the event itself for an individual sprout row (NFT/DID
 
 test("cardMetaFor builds a CAT detail carrying identity and the aggregated total", () => {
   const rows = toDisplayRows([
-    sprout({ kind: "cat", assetId: "aaa", catName: "Stably", catTicker: "SBX", catIconUrl: "http://x/i.png", amount: "1000", height: 800 }),
+    sprout({
+      kind: "cat",
+      assetId: "aaa",
+      catName: "Stably",
+      catTicker: "SBX",
+      catIconUrl: "http://x/i.png",
+      amount: "1000",
+      height: 800,
+    }),
     sprout({ kind: "cat", assetId: "aaa", catTicker: "SBX", amount: "2000", height: 800 }),
   ]);
   const meta = cardMetaFor(rows[0]);

@@ -107,13 +107,13 @@ Each cell holds `{ current, target, foldT }`:
 
 `rowCells(event: SproutEvent): RowCells` produces fixed-width columns:
 
-| Column | Source | Notes |
-|---|---|---|
-| KIND   | `event.kind` | `XCH` / `CAT` / `NFT` / `DID`; accent color from `cat-color.ts` |
-| ASSET  | ticker / name / id | CAT → `catTicker` (truncated); NFT → `MINT`+short `nftId` or `nft1…`; DID → `PROFILE`; XCH → `—` |
-| AMOUNT | `event.amount` | `mojosToXch` + magnitude via `scales.ts`; `—` for kinds without amount |
-| BLOCK  | `event.height` | right-aligned |
-| STATUS | `event.mint` / kind | `★ NEW` for mints, else `CONFIRM` |
+| Column | Source              | Notes                                                                                            |
+| ------ | ------------------- | ------------------------------------------------------------------------------------------------ |
+| KIND   | `event.kind`        | `XCH` / `CAT` / `NFT` / `DID`; accent color from `cat-color.ts`                                  |
+| ASSET  | ticker / name / id  | CAT → `catTicker` (truncated); NFT → `MINT`+short `nftId` or `nft1…`; DID → `PROFILE`; XCH → `—` |
+| AMOUNT | `event.amount`      | `mojosToXch` + magnitude via `scales.ts`; `—` for kinds without amount                           |
+| BLOCK  | `event.height`      | right-aligned                                                                                    |
+| STATUS | `event.mint` / kind | `★ NEW` for mints, else `CONFIRM`                                                                |
 
 Pure and unit-tested (amount scaling, ticker truncation, mint `★`, DID/XCH placeholders),
 matching how `mine/material.ts` and `gallery`'s `placardModel` are tested.
@@ -183,4 +183,7 @@ falls below it. `prefers-reduced-motion` forces instant swaps always.
 - No per-CAT custom icons; the board stays text with a single accent color per kind.
 - No persistence/history beyond the on-screen rows; the snapshot replay repopulates on reload,
   same as every other theme.
+
+```
+
 ```

@@ -24,10 +24,12 @@
 ### Task 1: Palette + per-kind accent (`palette.ts`)
 
 **Files:**
+
 - Create: `web/src/themes/board/palette.ts`
 - Test: `web/test/board-palette.test.ts`
 
 **Interfaces:**
+
 - Consumes: `catColor(assetIdHex)` from `../shared/cat-color.js`; `SproutEvent` from `@grove/shared`; `THREE.Color`.
 - Produces:
   - `export const BOARD: { backdrop: number; housing: number; flapFace: number; flapText: number; live: number }`
@@ -123,10 +125,12 @@ git commit -m "feat(board): solari palette + per-kind accent color"
 ### Task 2: Glyph atlas + glyph math (`glyphs.ts`)
 
 **Files:**
+
 - Create: `web/src/themes/board/glyphs.ts`
 - Test: `web/test/board-glyphs.test.ts`
 
 **Interfaces:**
+
 - Consumes: `THREE.CanvasTexture` (atlas build only).
 - Produces:
   - `export const GLYPHS: string` — ordered glyph table; index = atlas cell index.
@@ -141,7 +145,13 @@ git commit -m "feat(board): solari palette + per-kind accent color"
 ```ts
 // web/test/board-glyphs.test.ts
 import { expect, test } from "vitest";
-import { GLYPHS, ATLAS_COLS, charToGlyph, glyphCell, nextGlyph } from "../src/themes/board/glyphs.js";
+import {
+  GLYPHS,
+  ATLAS_COLS,
+  charToGlyph,
+  glyphCell,
+  nextGlyph,
+} from "../src/themes/board/glyphs.js";
 
 test("glyph table starts with space and fits the atlas", () => {
   expect(GLYPHS[0]).toBe(" ");
@@ -253,16 +263,18 @@ git commit -m "feat(board): glyph atlas + charToGlyph/nextGlyph math"
 ### Task 3: Row formatting (`rows.ts`)
 
 **Files:**
+
 - Create: `web/src/themes/board/rows.ts`
 - Test: `web/test/board-rows.test.ts`
 
 **Interfaces:**
+
 - Consumes: `SproutEvent` from `@grove/shared`; `mojosToXch`, `mojosToCAT` from `../../ui/format.js`.
 - Produces:
   - `export const BOARD_COLS = 48` — characters per ledger row.
   - `export function rowText(event: SproutEvent): string` — a `BOARD_COLS`-wide fixed-width line: `KIND ▸ ASSET AMOUNT BLOCK STATUS`.
 
-Field widths (sum incl. separators = 48): KIND 3, ` ▸ ` 3, ASSET 12, ` ` 1, AMOUNT 13 (right), ` ` 1, BLOCK 8 (right), ` ` 1, STATUS 6.
+Field widths (sum incl. separators = 48): KIND 3, `▸` 3, ASSET 12, ` ` 1, AMOUNT 13 (right), ` ` 1, BLOCK 8 (right), ` ` 1, STATUS 6.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -273,13 +285,22 @@ import { BOARD_COLS, rowText } from "../src/themes/board/rows.js";
 import type { SproutEvent } from "@grove/shared";
 
 function sprout(over: Partial<SproutEvent>): SproutEvent {
-  return { type: "sprout", kind: "xch", height: 100, coinId: "00".repeat(32), amount: "0", ...over };
+  return {
+    type: "sprout",
+    kind: "xch",
+    height: 100,
+    coinId: "00".repeat(32),
+    amount: "0",
+    ...over,
+  };
 }
 
 test("every row is exactly BOARD_COLS wide", () => {
   expect(rowText(sprout({})).length).toBe(BOARD_COLS);
   expect(rowText(sprout({ kind: "nft", mint: true })).length).toBe(BOARD_COLS);
-  expect(rowText(sprout({ kind: "cat", catTicker: "SBX", amount: "250000" })).length).toBe(BOARD_COLS);
+  expect(rowText(sprout({ kind: "cat", catTicker: "SBX", amount: "250000" })).length).toBe(
+    BOARD_COLS
+  );
 });
 
 test("xch row shows kind, amount, block, CONFIRM", () => {
@@ -386,10 +407,12 @@ git commit -m "feat(board): fixed-width ledger row formatting"
 ### Task 4: FlapGrid — instanced cells + riffle (`flapgrid.ts`)
 
 **Files:**
+
 - Create: `web/src/themes/board/flapgrid.ts`
 - Test: `web/test/board-flapgrid.test.ts`
 
 **Interfaces:**
+
 - Consumes: `THREE`; `GLYPHS`, `charToGlyph`, `glyphCell`, `nextGlyph`, `ATLAS_COLS` from `./glyphs.js`.
 - Produces:
   - `export class FlapGrid` with:
@@ -564,7 +587,10 @@ export class FlapGrid {
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.mesh.count = n;
     // instanceColor must exist so the shader's `instanceColor` attribute is bound
-    this.mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(n * 3).fill(1), 3);
+    this.mesh.instanceColor = new THREE.InstancedBufferAttribute(
+      new Float32Array(n * 3).fill(1),
+      3
+    );
 
     this.cur = new Int16Array(n);
     this.target = new Int16Array(n);
@@ -626,7 +652,10 @@ export class FlapGrid {
     if (this.hovered >= 0) this.applyRowColor(this.hovered, this.base[this.hovered]);
     this.hovered = row ?? -1;
     if (this.hovered >= 0) {
-      this.applyRowColor(this.hovered, this.tint.copy(this.base[this.hovered]).multiplyScalar(HIGHLIGHT));
+      this.applyRowColor(
+        this.hovered,
+        this.tint.copy(this.base[this.hovered]).multiplyScalar(HIGHLIGHT)
+      );
     }
   }
 
@@ -703,10 +732,12 @@ git commit -m "feat(board): FlapGrid instanced split-flap cells with riffle"
 ### Task 5: Header strip (`header.ts`)
 
 **Files:**
+
 - Create: `web/src/themes/board/header.ts`
 - Test: `web/test/board-header.test.ts`
 
 **Interfaces:**
+
 - Consumes: `THREE`; `FlapGrid` from `./flapgrid.js`; `BOARD_COLS` from `./rows.js`.
 - Produces:
   - `export function mempoolGauge(size: number, width: number, full?: number): string` — `▮`-filled bar `width` chars wide; fraction `min(1, size/full)` (default `full = 5000`). Pure.
@@ -783,7 +814,10 @@ export class Header {
   }
 
   setBlock(height: number, spendCount: number, fees: string): void {
-    this.grid.setRow(0, padR(`BLOCK ${height}   ${spendCount} SPENDS   ${fees} MOJO FEES`, BOARD_COLS));
+    this.grid.setRow(
+      0,
+      padR(`BLOCK ${height}   ${spendCount} SPENDS   ${fees} MOJO FEES`, BOARD_COLS)
+    );
   }
 
   setAmbient(mempoolSize: number, netspace: string): void {
@@ -791,7 +825,10 @@ export class Header {
     this.netspace = netspace;
     this.grid.setRow(
       1,
-      padR(`MEMPOOL [${mempoolGauge(mempoolSize, 12)}]   NETSPACE ${netspaceText(netspace)}`, BOARD_COLS)
+      padR(
+        `MEMPOOL [${mempoolGauge(mempoolSize, 12)}]   NETSPACE ${netspaceText(netspace)}`,
+        BOARD_COLS
+      )
     );
   }
 
@@ -822,10 +859,12 @@ git commit -m "feat(board): header strip with mempool gauge, netspace, clock"
 ### Task 6: NOW SHOWING NFT tile (`nowshowing.ts`)
 
 **Files:**
+
 - Create: `web/src/themes/board/nowshowing.ts`
 - Test: `web/test/board-nowshowing.test.ts`
 
 **Interfaces:**
+
 - Consumes: `THREE`; `SproutEvent` from `@grove/shared`; `mediaSrc` from `../../ui/media.js`; `LoadPool` from `../shared/load-pool.js`.
 - Produces:
   - `export function shouldShowArt(event: SproutEvent): boolean` — pure gate: NFT, has a resolvable `mediaSrc`, and is an image kind (the tile is a static texture; video/audio are skipped). Pure.
@@ -883,7 +922,11 @@ export class NowShowing {
   private fade = 0;
   private want: string | null = null; // launcherId we're currently loading/showing
 
-  constructor(scene: THREE.Scene, private readonly pool: LoadPool, opts: { x?: number } = {}) {
+  constructor(
+    scene: THREE.Scene,
+    private readonly pool: LoadPool,
+    opts: { x?: number } = {}
+  ) {
     this.mat = new THREE.MeshBasicMaterial({ color: 0x0b0d10, transparent: true, opacity: 0 });
     this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(SIZE, SIZE), this.mat);
     this.mesh.position.set(opts.x ?? 17, 0, 0);
@@ -943,9 +986,11 @@ git commit -m "feat(board): NOW SHOWING NFT art tile"
 ### Task 7: Clatter audio (`clatter.ts`)
 
 **Files:**
+
 - Create: `web/src/themes/board/clatter.ts`
 
 **Interfaces:**
+
 - Consumes: Web Audio API.
 - Produces:
   - `export class Clatter` with `constructor()`, `setEnabled(on: boolean): void`, `get enabled(): boolean`, `flap(intensity: number): void`. Default disabled; lazily creates the `AudioContext` on first enable (a user gesture), throttles clacks, and degrades to silent on any failure.
@@ -988,9 +1033,14 @@ export class Clatter {
     this.last = now;
     try {
       const len = 0.025;
-      const buf = this.ctx.createBuffer(1, Math.floor(this.ctx.sampleRate * len), this.ctx.sampleRate);
+      const buf = this.ctx.createBuffer(
+        1,
+        Math.floor(this.ctx.sampleRate * len),
+        this.ctx.sampleRate
+      );
       const data = buf.getChannelData(0);
-      for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+      for (let i = 0; i < data.length; i++)
+        data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
       const src = this.ctx.createBufferSource();
       src.buffer = buf;
       const gain = this.ctx.createGain();
@@ -1024,9 +1074,11 @@ git commit -m "feat(board): default-muted split-flap clatter audio"
 ### Task 8: Scene assembly (`board.ts`)
 
 **Files:**
+
 - Create: `web/src/themes/board/board.ts`
 
 **Interfaces:**
+
 - Consumes: everything above; `GroveFeed` from `../../net/feed.js`; `VisualizationHandle` from `../types.js`; `createFrameLimiter` from `../shared/frame-limiter.js`; `LoadPool` from `../shared/load-pool.js`; `BOARD` + `kindAccent` from `./palette.js`; `buildGlyphAtlas` from `./glyphs.js`; `FlapGrid`, `Header`, `NowShowing`, `Clatter`, `rowText`, `BOARD_COLS`, `shouldShowArt`.
 - Produces: `export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): VisualizationHandle`.
 
@@ -1187,9 +1239,13 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
     onFrame: (fn) => frameCallbacks.push(fn),
     pickables: () => [ledger.mesh],
     metaFor: (object, instanceId) =>
-      object === ledger.mesh && instanceId !== undefined ? events[ledger.rowOf(instanceId)] ?? null : null,
+      object === ledger.mesh && instanceId !== undefined
+        ? (events[ledger.rowOf(instanceId)] ?? null)
+        : null,
     setHovered: (object, instanceId) =>
-      ledger.highlightRow(object === ledger.mesh && instanceId !== undefined ? ledger.rowOf(instanceId) : null),
+      ledger.highlightRow(
+        object === ledger.mesh && instanceId !== undefined ? ledger.rowOf(instanceId) : null
+      ),
   };
 }
 ```
@@ -1211,6 +1267,7 @@ git commit -m "feat(board): assemble scene, feed wiring, picking, fast-forward"
 ### Task 9: Register theme, legend, styles, docs
 
 **Files:**
+
 - Create: `web/src/themes/board/index.ts`
 - Modify: `web/src/themes/index.ts` (add `board` to `THEMES`)
 - Modify: `web/src/style.css` (add `.sw-flap`, `.sw-mint`, `.sw-gauge`, `.sw-tile`)
@@ -1218,6 +1275,7 @@ git commit -m "feat(board): assemble scene, feed wiring, picking, fast-forward"
 - Modify: `CLAUDE.md` (add `board` to the themes paragraph)
 
 **Interfaces:**
+
 - Consumes: `Visualization` from `../types.js`; `startBoard` from `./board.js`.
 - Produces: `export const board: Visualization` with id `board`, label `The Big Board`, a non-empty legend.
 
@@ -1296,7 +1354,9 @@ Append to `web/src/style.css`:
 
 .sw-tile {
   background: #0b0d10;
-  box-shadow: inset 0 0 0 1px #444, 0 0 4px rgba(244, 234, 210, 0.4);
+  box-shadow:
+    inset 0 0 0 1px #444,
+    0 0 4px rgba(244, 234, 210, 0.4);
 }
 ```
 
@@ -1310,6 +1370,7 @@ Expected: all green; `themes.test.ts` board test passes.
 - [ ] **Step 7: Manual verification in demo mode**
 
 Run: `npm run dev:web`, open `http://localhost:5173/?demo=1&theme=board`. Confirm:
+
 - the board fills with riffling rows, newest at top, header showing block/mempool/netspace/clock;
 - NFT mints flip in a `★ NEW` row and update the side art tile;
 - hovering a row brightens it and opens the detail card; clicking pins it;
@@ -1336,6 +1397,7 @@ git commit -m "feat(board): register The Big Board theme + legend, styles, docs"
 ## Self-Review
 
 **Spec coverage:**
+
 - Live spend ledger, newest-on-top, oldest falls off → Task 8 `events` ring + `renderLedger`. ✓
 - Per-character riffle (squash-swap, column stagger) → Task 4 `FlapGrid`. ✓
 - Glyph atlas + per-instance UV via custom shader → Task 2 atlas + Task 4 `ShaderMaterial`/`aGlyph`. ✓

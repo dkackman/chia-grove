@@ -46,7 +46,13 @@ import { BOARD_COLS, rowText, rowTextFor, toDisplayRows } from "../src/themes/bo
 Replace with:
 
 ```typescript
-import { BOARD_COLS, rowText, rowTextFor, shouldShowHeight, toDisplayRows } from "../src/themes/board/rows.js";
+import {
+  BOARD_COLS,
+  rowText,
+  rowTextFor,
+  shouldShowHeight,
+  toDisplayRows,
+} from "../src/themes/board/rows.js";
 ```
 
 Then append these tests at the end of the file:
@@ -173,8 +179,7 @@ In the same file, find:
 ```typescript
 function aggregatedRowText(row: AggregatedRow): string {
   const kindStr = row.kind.toUpperCase();
-  const assetStr =
-    row.kind === "cat" ? (row.catTicker ?? row.catName ?? "CAT").toUpperCase() : "-";
+  const assetStr = row.kind === "cat" ? (row.catTicker ?? row.catName ?? "CAT").toUpperCase() : "-";
   const amountStr =
     row.kind === "xch"
       ? clampFrac(mojosToXch(row.totalMojos.toString()), 4)
@@ -205,8 +210,7 @@ Replace with:
 ```typescript
 function aggregatedRowText(row: AggregatedRow, showHeight: boolean): string {
   const kindStr = row.kind.toUpperCase();
-  const assetStr =
-    row.kind === "cat" ? (row.catTicker ?? row.catName ?? "CAT").toUpperCase() : "-";
+  const assetStr = row.kind === "cat" ? (row.catTicker ?? row.catName ?? "CAT").toUpperCase() : "-";
   const amountStr =
     row.kind === "xch"
       ? clampFrac(mojosToXch(row.totalMojos.toString()), 4)
@@ -297,33 +301,33 @@ import { rowTextFor, shouldShowHeight, toDisplayRows, BOARD_COLS } from "./rows.
 Find:
 
 ```typescript
-  function renderLedger(instant: boolean): void {
-    for (let r = 0; r < LEDGER_ROWS; r++) {
-      const row = displayRows[r + scrollOffset];
-      if (row) {
-        ledger.setRow(r, rowTextFor(row), instant);
-      } else {
-        ledger.clearRow(r);
-      }
+function renderLedger(instant: boolean): void {
+  for (let r = 0; r < LEDGER_ROWS; r++) {
+    const row = displayRows[r + scrollOffset];
+    if (row) {
+      ledger.setRow(r, rowTextFor(row), instant);
+    } else {
+      ledger.clearRow(r);
     }
   }
+}
 ```
 
 Replace with:
 
 ```typescript
-  function renderLedger(instant: boolean): void {
-    for (let r = 0; r < LEDGER_ROWS; r++) {
-      const i = r + scrollOffset;
-      const row = displayRows[i];
-      if (row) {
-        const showHeight = shouldShowHeight(displayRows[i - 1], row, r === 0);
-        ledger.setRow(r, rowTextFor(row, showHeight), instant);
-      } else {
-        ledger.clearRow(r);
-      }
+function renderLedger(instant: boolean): void {
+  for (let r = 0; r < LEDGER_ROWS; r++) {
+    const i = r + scrollOffset;
+    const row = displayRows[i];
+    if (row) {
+      const showHeight = shouldShowHeight(displayRows[i - 1], row, r === 0);
+      ledger.setRow(r, rowTextFor(row, showHeight), instant);
+    } else {
+      ledger.clearRow(r);
     }
   }
+}
 ```
 
 - [ ] **Step 3: Run full test suite and typecheck**

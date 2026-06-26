@@ -103,7 +103,10 @@ export class FlapGrid {
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.mesh.count = n;
     // instanceColor must exist so the shader's `instanceColor` attribute is bound
-    this.mesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(n * 3).fill(1), 3);
+    this.mesh.instanceColor = new THREE.InstancedBufferAttribute(
+      new Float32Array(n * 3).fill(1),
+      3
+    );
 
     this.cur = new Int16Array(n);
     this.target = new Int16Array(n);
@@ -175,7 +178,10 @@ export class FlapGrid {
     if (this.hovered >= 0) this.applyRowColor(this.hovered, this.base[this.hovered]);
     this.hovered = row ?? -1;
     if (this.hovered >= 0) {
-      this.applyRowColor(this.hovered, this.tint.copy(this.base[this.hovered]).multiplyScalar(HIGHLIGHT));
+      this.applyRowColor(
+        this.hovered,
+        this.tint.copy(this.base[this.hovered]).multiplyScalar(HIGHLIGHT)
+      );
     }
   }
 

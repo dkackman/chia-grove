@@ -38,13 +38,19 @@ export class Header {
   }
 
   setBlock(height: number, spendCount: number, fees: string): void {
-    this.grid.setRow(0, padR(`BLOCK ${height}   ${spendCount} SPENDS   ${fees} MOJO FEES`, BOARD_COLS));
+    this.grid.setRow(
+      0,
+      padR(`BLOCK ${height}   ${spendCount} SPENDS   ${fees} MOJO FEES`, BOARD_COLS)
+    );
   }
 
   setAmbient(mempoolSize: number, netspace: string): void {
     this.grid.setRow(
       1,
-      padR(`MEMPOOL [${mempoolGauge(mempoolSize, 12)}]   NETSPACE ${netspaceText(netspace)}`, BOARD_COLS)
+      padR(
+        `MEMPOOL [${mempoolGauge(mempoolSize, 12)}]   NETSPACE ${netspaceText(netspace)}`,
+        BOARD_COLS
+      )
     );
   }
 

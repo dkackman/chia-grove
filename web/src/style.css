@@ -492,11 +492,6 @@ body {
   background: linear-gradient(to right, #3ad17a 0 55%, #1a1d22 55% 100%);
 }
 
-.sw-clatter {
-  background: #6b7280;
-  box-shadow: 0 0 4px rgba(160, 170, 185, 0.6);
-}
-
 @media (max-width: 640px) {
   #legend-scene select {
     font-size: 16px; /* >=16px stops iOS Safari focus-zoom; enlarges Android option list */
