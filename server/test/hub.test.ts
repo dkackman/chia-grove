@@ -56,7 +56,7 @@ test("first message on connect is the hello handshake", () => {
   hub.add(socket);
   expect(socket.parsed()[0]).toEqual({
     type: "hello",
-    protocolVersion: 2,
+    protocolVersion: 3,
     appVersion: "test-version",
   });
 });
