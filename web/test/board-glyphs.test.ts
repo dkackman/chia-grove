@@ -1,5 +1,12 @@
 import { expect, test } from "vitest";
-import { GLYPHS, ATLAS_COLS, charToGlyph, glyphCell, nextGlyph } from "../src/themes/board/glyphs.js";
+import {
+  GLYPHS,
+  ATLAS_COLS,
+  charToGlyph,
+  glyphCell,
+  isRenderable,
+  nextGlyph,
+} from "../src/themes/board/glyphs.js";
 
 test("glyph table starts with space and fits the atlas", () => {
   expect(GLYPHS[0]).toBe(" ");
@@ -20,8 +27,27 @@ test("charToGlyph maps letters, digits, folds case, blanks unknown", () => {
   expect(GLYPHS[charToGlyph("A")]).toBe("A");
   expect(charToGlyph("a")).toBe(charToGlyph("A"));
   expect(GLYPHS[charToGlyph("7")]).toBe("7");
-  expect(charToGlyph("~")).toBe(0); // not in table → blank
+  expect(charToGlyph("💎")).toBe(0); // outside the set → blank
+  expect(charToGlyph("é")).toBe(0); // accented letters aren't in the set
   expect(charToGlyph("")).toBe(0);
+});
+
+test("printable ASCII symbols have their own flaps (CAT names use them)", () => {
+  for (const ch of "!\"#$%&'()*+,/;<=>?@[\\]^_`{|}~") {
+    expect(isRenderable(ch)).toBe(true);
+    expect(GLYPHS[charToGlyph(ch)]).toBe(ch);
+  }
+});
+
+test("isRenderable accepts set members (case-folded, incl. space) and rejects others", () => {
+  expect(isRenderable("A")).toBe(true);
+  expect(isRenderable("a")).toBe(true); // case folded
+  expect(isRenderable("7")).toBe(true);
+  expect(isRenderable(" ")).toBe(true); // space is a real (blank) cell
+  expect(isRenderable("-")).toBe(true);
+  expect(isRenderable("$")).toBe(true); // ASCII symbols are in the set now
+  expect(isRenderable("💎")).toBe(false); // emoji has no flap
+  expect(isRenderable("é")).toBe(false); // accents fall back too
 });
 
 test("glyphCell lays indices out row-major over the atlas", () => {

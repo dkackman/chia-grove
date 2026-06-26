@@ -1,11 +1,31 @@
 import type { SproutEvent } from "@grove/shared";
 import type { CardMeta } from "../types.js";
+import { isRenderable } from "./glyphs.js";
 import { mojosToXch, mojosToCAT } from "../../ui/format.js";
 
 export const BOARD_COLS = 48;
 
 const padL = (s: string, n: number) => s.slice(0, n).padStart(n);
 const padR = (s: string, n: number) => s.slice(0, n).padEnd(n);
+
+// Stand-in for a glyph the flap atlas can't show: a filled box (the classic
+// "missing glyph"/tofu mark). Deliberately not "?", which is now a real flap and
+// would be indistinguishable from a literal question mark in a name.
+const MISSING_GLYPH = "▮";
+
+/**
+ * The board-renderable label for a CAT: ticker (or name), uppercased, with each
+ * glyph the flap atlas can't show replaced by a ▮ so the column count and
+ * surrounding separators are preserved. Iterates by code point so a surrogate-
+ * pair emoji becomes one box, not two — e.g. "TIBET-💎-XCH" → "TIBET-▮-XCH". Pure.
+ */
+function catLabel(ticker: string | undefined, name: string | undefined): string {
+  let out = "";
+  for (const ch of (ticker ?? name ?? "CAT").toUpperCase()) {
+    out += isRenderable(ch) ? ch : MISSING_GLYPH;
+  }
+  return out || "CAT";
+}
 
 /** Trim a decimal string to at most `maxFrac` fraction digits (no rounding). */
 function clampFrac(s: string, maxFrac: number): string {
@@ -18,7 +38,7 @@ function kindLabel(e: SproutEvent): string {
 }
 
 function asset(e: SproutEvent): string {
-  if (e.kind === "cat") return (e.catTicker ?? e.catName ?? "CAT").toUpperCase();
+  if (e.kind === "cat") return catLabel(e.catTicker, e.catName);
   if (e.kind === "nft") return e.mint ? "MINT" : "TRANSFER";
   if (e.kind === "did") return "PROFILE";
   return "-";
@@ -71,8 +91,7 @@ export type DisplayRow = AggregatedRow | SproutEvent;
 
 function aggregatedRowText(row: AggregatedRow, { showHeight = true }: RowOptions): string {
   const kindStr = row.kind.toUpperCase();
-  const assetStr =
-    row.kind === "cat" ? (row.catTicker ?? row.catName ?? "CAT").toUpperCase() : "-";
+  const assetStr = row.kind === "cat" ? catLabel(row.catTicker, row.catName) : "-";
   const amountStr =
     row.kind === "xch"
       ? clampFrac(mojosToXch(row.totalMojos.toString()), 4)

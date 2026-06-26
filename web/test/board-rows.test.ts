@@ -166,6 +166,17 @@ test("rowTextFor aggregated cat row is BOARD_COLS wide and shows ticker and coun
   expect(t).toContain("800");
 });
 
+test("a CAT ticker stands in a box for each unrenderable glyph, preserving the layout", () => {
+  // TibetSwap LP tickers look like "TIBET-💎-XCH"; the diamond has no flap, but
+  // as one code point it must occupy exactly one cell (a ▮), not vanish or split
+  const rows = toDisplayRows([
+    sprout({ kind: "cat", assetId: "aaa", catTicker: "TIBET-💎-XCH", amount: "1000", height: 800 }),
+  ]);
+  const t = rowTextFor(rows[0]);
+  expect(t.length).toBe(BOARD_COLS);
+  expect(t).toContain("TIBET-▮-XCH"); // one box where the diamond was
+});
+
 test("a single spend reads '1 SPEND' (singular)", () => {
   const rows = toDisplayRows([sprout({ kind: "cat", assetId: "aaa", catTicker: "SBX", amount: "1000", height: 800 })]);
   const t = rowTextFor(rows[0]);

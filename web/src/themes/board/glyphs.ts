@@ -1,8 +1,13 @@
 import * as THREE from "three";
 
-// Index = atlas cell. Space first so an unknown/blank cell is cell 0.
-export const GLYPHS = " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.-:▸★▮·×";
-export const ATLAS_COLS = 8; // 8×8 = 64 cells ≥ GLYPHS.length
+// The board's flap set, one glyph per atlas cell. Space first so an unknown or
+// blank cell is cell 0. Letters are uppercase only — charToGlyph folds case. The
+// full printable-ASCII symbol block is included because CAT names use it on
+// occasion; anything outside this set (emoji, accents) falls back to ▮.
+const PUNCT = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"; // all 32 printable ASCII symbols
+const SPECIAL = "▸★▮·×"; // markers: block-start ▸, mint ★, missing-glyph ▮, mid-dot ·, times ×
+export const GLYPHS = " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789" + PUNCT + SPECIAL;
+export const ATLAS_COLS = 9; // 9×9 = 81 cells ≥ GLYPHS.length (74)
 
 const INDEX = new Map<string, number>();
 for (let i = 0; i < GLYPHS.length; i++) INDEX.set(GLYPHS[i], i);
@@ -11,6 +16,16 @@ for (let i = 0; i < GLYPHS.length; i++) INDEX.set(GLYPHS[i], i);
 export function charToGlyph(ch: string): number {
   if (!ch) return 0;
   return INDEX.get(ch) ?? INDEX.get(ch.toUpperCase()) ?? 0;
+}
+
+/**
+ * Whether a character has its own flap in the atlas (case-folded). Space counts
+ * — it's a real blank cell — so this can't be inferred from `charToGlyph`, which
+ * also returns 0 for unknowns. Used to strip un-renderable text before display.
+ * Pure.
+ */
+export function isRenderable(ch: string): boolean {
+  return INDEX.has(ch) || INDEX.has(ch.toUpperCase());
 }
 
 /** Atlas cell coordinates for a glyph index. Pure. */

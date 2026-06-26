@@ -15,7 +15,12 @@ import { fitDistance } from "./fit.js";
 
 const LEDGER_ROWS = 20;
 const HISTORY = 500; // spends kept in memory for scrolling back through
-const FAST_FORWARD = 8; // sprouts/frame above which we snap instead of riffle
+// Sprouts/frame above which an already-busy board snaps instead of riffling.
+// Tuned just under the feed's 60/frame drain budget so only the sustained
+// connect-snapshot backlog snaps; a normal live block (even one overlapping a
+// still-settling riffle) stays under this and riffles. A settled board always
+// riffles regardless — this only gates the `!wasIdle` case.
+const FAST_FORWARD = 48;
 const SCROLL_PX_PER_ROW = 30; // wheel delta per row scrolled
 
 export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): VisualizationHandle {
