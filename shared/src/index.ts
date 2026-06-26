@@ -5,7 +5,7 @@ export type MediaKind = "image" | "video" | "audio";
 // Bumped only when the WebSocket wire format changes (independent of app
 // semver). The server announces it in the frozen `Hello` handshake; the client
 // reloads when its baked-in value differs. See docs/superpowers/specs.
-export const PROTOCOL_VERSION = 2;
+export const PROTOCOL_VERSION = 3;
 
 const VIDEO_EXT = new Set([".mp4", ".webm", ".ogv", ".mov"]);
 const AUDIO_EXT = new Set([".mp3", ".wav", ".ogg", ".oga", ".flac", ".aac"]);
@@ -42,6 +42,7 @@ export interface SproutEvent {
   nftId?: string; // NFT only, bech32m launcher ID e.g. "nft1..."
   dataUri?: string; // NFT only, inline data: URI for demo/offline art; live art is fetched via /img?nft=launcherId
   mediaKind?: MediaKind; // NFT only, set when proxiable art exists (URL held server-side, keyed by launcherId)
+  mediaFilter?: "blocked" | "sensitive"; // NFT only; absent = ok. Set server-side from MintGarden — blocked hides art (bytes made unreachable), sensitive blurs it.
 }
 
 export interface AmbientEvent {
