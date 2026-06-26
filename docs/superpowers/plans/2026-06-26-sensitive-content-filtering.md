@@ -71,10 +71,12 @@ git commit -m "feat(shared): add SproutEvent.mediaFilter and bump protocol to 3"
 ### Task 2: `MediaIndex.delete` (`server`)
 
 **Files:**
+
 - Modify: `server/src/web/media-index.ts`
 - Test: `server/test/media-index.test.ts`
 
 **Interfaces:**
+
 - Consumes: nothing.
 - Produces: `MediaIndex.delete(launcherId: string): void`.
 
@@ -132,10 +134,12 @@ git commit -m "feat(server): add MediaIndex.delete for unreachable blocked art"
 ### Task 3: `mapMintgarden` pure disposition mapper (`server`)
 
 **Files:**
+
 - Create: `server/src/classify/content-filter.ts`
 - Test: `server/test/content-filter.test.ts`
 
 **Interfaces:**
+
 - Consumes: nothing.
 - Produces: `type Disposition = "blocked" | "sensitive" | "ok"`; `mapMintgarden(json: unknown): Disposition`.
 
@@ -268,10 +272,12 @@ git commit -m "feat(server): map MintGarden NFT response to content disposition"
 ### Task 4: `ContentFilter` (fetch + cache + enrich) (`server`)
 
 **Files:**
+
 - Modify: `server/src/classify/content-filter.ts`
 - Test: `server/test/content-filter.test.ts`
 
 **Interfaces:**
+
 - Consumes: `mapMintgarden` (Task 3); `MediaIndex` + `MediaIndex.delete` (Task 2); `SproutEvent.mediaFilter` (Task 1).
 - Produces: `class ContentFilter` with constructor `(media: MediaIndex, opts?: ContentFilterOptions)` and `enrich(events: GroveEvent[]): Promise<void>`. `ContentFilterOptions = { fetchImpl?: typeof fetch; baseUrl?: string; timeoutMs?: number; concurrency?: number; cacheCapacity?: number }`.
 
@@ -517,11 +523,13 @@ git commit -m "feat(server): ContentFilter resolves and enriches NFT mediaFilter
 ### Task 5: Make the poller await `onBlock` (`server`)
 
 **Files:**
+
 - Modify: `server/src/ingest/types.ts` (the `ChainHandlers` interface, line ~35)
 - Modify: `server/src/ingest/coinset-poller.ts` (the `onBlock` call in `walkTo`, line ~108)
 - Test: `server/test/coinset-poller.test.ts`
 
 **Interfaces:**
+
 - Consumes: nothing.
 - Produces: `ChainHandlers.onBlock(block: BlockData): void | Promise<void>` — awaited in order by `walkTo`.
 
@@ -651,10 +659,12 @@ git commit -m "feat(server): enrich blocks with content filter before publishing
 ### Task 7: `resolveMedia` single-source resolver (`web`)
 
 **Files:**
+
 - Modify: `web/src/ui/media.ts`
 - Test: `web/test/media-resolve.test.ts`
 
 **Interfaces:**
+
 - Consumes: `SproutEvent.mediaFilter` (Task 1).
 - Produces:
   - `mediaSrc(event): string | null` — now returns `null` when `mediaFilter === "blocked"`.
@@ -787,10 +797,12 @@ git commit -m "feat(web): resolveMedia as the single content-filter chokepoint"
 ### Task 8: Apply the filter in the detail card (`web`)
 
 **Files:**
+
 - Modify: `web/src/ui/detail-card.ts` (imports line 4; the media branch lines ~99-102)
 - Modify: `web/src/style.css` (after the `#card img, #card video` block, ~line 82)
 
 **Interfaces:**
+
 - Consumes: `resolveMedia` (Task 7).
 - Produces: nothing.
 
@@ -1149,6 +1161,7 @@ Expected: PASS.
 
 Run: `npm run dev:web`, open `http://localhost:5173/?demo=1`.
 Expected:
+
 - Some gallery frames (and mine paintings on `?demo=1&theme=mine`) show the neutral hatched placeholder instead of art.
 - Clicking a sensitive NFT shows a blurred image with a "sensitive content" note; clicking a blocked one shows "media unavailable"; both still show amount, ids, and the spacescan/mintgarden links.
 

@@ -82,7 +82,8 @@ const nftEvent = (over: Partial<SproutEvent> = {}): SproutEvent => ({
   ...over,
 });
 
-const okJson = (obj: unknown) => ({ ok: true, status: 200, json: async () => obj }) as unknown as Response;
+const okJson = (obj: unknown) =>
+  ({ ok: true, status: 200, json: async () => obj }) as unknown as Response;
 const statusResp = (status: number) =>
   ({ ok: status >= 200 && status < 300, status, json: async () => ({}) }) as unknown as Response;
 const tick = () => new Promise((r) => setTimeout(r, 20));

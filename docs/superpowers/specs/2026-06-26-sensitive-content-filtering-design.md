@@ -156,6 +156,7 @@ blocked, so even an un-updated caller cannot fetch blocked bytes.
 ### Changed (client): `web/src/ui/detail-card.ts`
 
 Switch on `resolveMedia(event)`:
+
 - `art` -> current `nftMediaEl`.
 - `blur` -> same media element with a `sensitive` CSS class (`filter: blur(...)`,
   un-interactable) plus a small "sensitive content" caption.
