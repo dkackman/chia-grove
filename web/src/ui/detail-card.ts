@@ -1,4 +1,5 @@
 import type { SproutEvent } from "@grove/shared";
+import type { CardMeta } from "../themes/types.js";
 import { mojosToXch, mojosToCAT, shortHex } from "./format.js";
 import { escalateMediaKind, mediaSrc, type MediaKind } from "./media.js";
 
@@ -68,9 +69,15 @@ function nftMediaEl(src: string, kind: MediaKind): HTMLElement {
   return node;
 }
 
-export function showCard(event: SproutEvent): void {
+export function showCard(event: CardMeta): void {
   const card = document.getElementById("card") as HTMLDivElement;
   card.replaceChildren();
+
+  // When the row folds several spends into one (board XCH/CAT aggregates), the
+  // amount above is a block-wide total — so the card must not pin it to a single
+  // coin's id or a per-coin explorer link, which would describe a different
+  // value. A count of 1 is effectively a single spend; show it normally.
+  const agg = event.aggregate && event.aggregate.count > 1 ? event.aggregate : null;
 
   const h3 = document.createElement("h3");
   if (event.kind === "nft" && event.mint) {
@@ -102,7 +109,11 @@ export function showCard(event: SproutEvent): void {
       ? `${mojosToCAT(event.amount)} ${event.catTicker ?? "CAT"}`
       : `${mojosToXch(event.amount)} XCH`;
   card.appendChild(el("div", undefined, `${amountLabel} · block ${event.height}`));
-  card.appendChild(el("div", "dim", `coin ${shortHex(event.coinId)}`));
+  if (agg) {
+    card.appendChild(el("div", "dim", `${agg.count} spends this block`));
+  } else {
+    card.appendChild(el("div", "dim", `coin ${shortHex(event.coinId)}`));
+  }
 
   if (event.assetId) {
     card.appendChild(el("div", "dim", `asset ${shortHex(event.assetId)}`));
@@ -113,10 +124,13 @@ export function showCard(event: SproutEvent): void {
 
   const linkDiv = el("div");
   const a = document.createElement("a");
-  a.href = `https://www.spacescan.io/coin/0x${event.coinId}`;
+  // an aggregate points at the block (the total's scope); a single spend at the coin
+  a.href = agg
+    ? `https://www.spacescan.io/block/${event.height}`
+    : `https://www.spacescan.io/coin/0x${event.coinId}`;
   a.target = "_blank";
   a.rel = "noopener";
-  a.textContent = "view on spacescan ↗";
+  a.textContent = agg ? "view block on spacescan ↗" : "view on spacescan ↗";
   linkDiv.appendChild(a);
   card.appendChild(linkDiv);
 

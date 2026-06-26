@@ -1,4 +1,5 @@
 import type { SproutEvent } from "@grove/shared";
+import type { CardMeta } from "../types.js";
 import { mojosToXch, mojosToCAT } from "../../ui/format.js";
 
 export const BOARD_COLS = 48;
@@ -187,12 +188,15 @@ export function toDisplayRows(events: SproutEvent[]): DisplayRow[] {
 
 /**
  * The detail-card payload for a clicked row, or null when there's nothing to
- * show. Individual rows (NFT/DID) return their own event; an aggregated XCH/CAT
- * row returns a synthesized event carrying the identity from a representative
- * spend but the block-wide aggregated total as its amount.
+ * show. Individual rows (NFT/DID) return their own event. An aggregated XCH/CAT
+ * row carries the shared identity from a representative spend (CAT name/asset),
+ * the block-wide aggregated total as its `amount`, and an `aggregate.count` so
+ * the card can present it as a block total rather than a single coin.
  */
-export function cardMetaFor(row: DisplayRow): SproutEvent | null {
+export function cardMetaFor(row: DisplayRow): CardMeta | null {
   if (row.type === "sprout") return row;
-  if (row.sample) return { ...row.sample, amount: row.totalMojos.toString() };
+  if (row.sample) {
+    return { ...row.sample, amount: row.totalMojos.toString(), aggregate: { count: row.count } };
+  }
   return null;
 }

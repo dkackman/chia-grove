@@ -328,6 +328,12 @@ test("cardMetaFor builds a CAT detail carrying identity and the aggregated total
   expect(meta!.catTicker).toBe("SBX");
   expect(meta!.catIconUrl).toBe("http://x/i.png");
   expect(meta!.height).toBe(800);
+  expect(meta!.aggregate).toEqual({ count: 2 }); // two spends folded in
+});
+
+test("cardMetaFor reports a count of 1 for a single-spend aggregate (card shows it as one coin)", () => {
+  const rows = toDisplayRows([sprout({ kind: "xch", amount: "1000", height: 750 })]);
+  expect(cardMetaFor(rows[0])!.aggregate).toEqual({ count: 1 });
 });
 
 test("cardMetaFor builds an XCH detail carrying the aggregated total", () => {
