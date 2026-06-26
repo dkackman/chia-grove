@@ -6,9 +6,19 @@ export type Disposition = "blocked" | "sensitive" | "ok";
 const asRecord = (v: unknown): Record<string, unknown> =>
   typeof v === "object" && v !== null ? (v as Record<string, unknown>) : {};
 
-/** sensitive_content per CHIP-0007 may be boolean, the string "true", or a non-empty list. */
-const isSensitiveFlag = (v: unknown): boolean =>
-  v === true || v === "true" || (Array.isArray(v) && v.length > 0);
+/**
+ * sensitive_content per CHIP-0007 may be boolean, a string, or a non-empty list.
+ * A bare descriptive string (e.g. "nudity") flags as sensitive too; only the
+ * explicit negatives ("" / "false") and a literal `false` are treated as clear.
+ */
+const isSensitiveFlag = (v: unknown): boolean => {
+  if (v === true) return true;
+  if (typeof v === "string") {
+    const s = v.trim().toLowerCase();
+    return s !== "" && s !== "false";
+  }
+  return Array.isArray(v) && v.length > 0;
+};
 
 /**
  * Collapse a MintGarden GET /nfts/:id response object into one disposition.
@@ -43,24 +53,46 @@ export interface ContentFilterOptions {
   timeoutMs?: number;
   concurrency?: number;
   cacheCapacity?: number;
+  /** Max wall time enrich() will block a block's publish on lookups (0 = unbounded). */
+  enrichBudgetMs?: number;
+  /** How long a failed/timed-out lookup stays negatively cached as "ok" (0 = no negative cache). */
+  failTtlMs?: number;
+  /** Clock injection point for testing the negative-cache TTL. */
+  now?: () => number;
 }
 
 /**
  * Enriches NFT sprout events with a `mediaFilter` flag by resolving each NFT's
- * disposition from MintGarden. Determinations are cached per nftId (sensitivity
- * is stable per NFT) behind a bounded concurrency gate with a per-request
- * timeout; any failure is permissive ("ok") and not cached so a later spend can
- * retry. Blocked NFTs also have their MediaIndex entry dropped so /img cannot
- * serve the bytes (defense in depth, independent of the client flag).
+ * disposition from MintGarden. Successful determinations are cached per nftId
+ * (sensitivity is stable per NFT) behind a bounded concurrency gate with a
+ * per-request timeout. Blocked NFTs also have their MediaIndex entry dropped so
+ * /img cannot serve the bytes (defense in depth, independent of the client flag).
+ *
+ * Liveness is bounded so a slow/unavailable MintGarden can't stall the whole
+ * ingest pipeline (enrich() runs inline in the block walk):
+ *   - enrich() blocks at most `enrichBudgetMs`; lookups still running past the
+ *     budget keep going in the background to warm the cache, and their events
+ *     publish permissive ("ok") for now — the next spend of that NFT picks up the
+ *     resolved disposition.
+ *   - A failure or timeout is permissive AND negatively cached for `failTtlMs`,
+ *     so an outage doesn't re-stall every block with the same doomed lookups.
+ *   - Only HTTP 404 (genuinely unknown to MintGarden) is positively cached as
+ *     "ok"; 5xx/429 throw and fall through to the short-lived negative cache
+ *     rather than poisoning the cache with a permanent "ok".
  */
 export class ContentFilter {
   private readonly cache = new Map<string, Disposition>();
+  /** nftId -> epoch ms until which a recent failure keeps it permissive without refetch */
+  private readonly negativeUntil = new Map<string, number>();
   private readonly inflight = new Map<string, Promise<Disposition>>();
   private readonly fetchImpl: typeof fetch;
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
   private readonly concurrency: number;
   private readonly cacheCapacity: number;
+  private readonly enrichBudgetMs: number;
+  private readonly failTtlMs: number;
+  private readonly now: () => number;
   private active = 0;
   private readonly waiters: Array<() => void> = [];
 
@@ -73,6 +105,9 @@ export class ContentFilter {
     this.timeoutMs = opts.timeoutMs ?? 4000;
     this.concurrency = opts.concurrency ?? 4;
     this.cacheCapacity = opts.cacheCapacity ?? 10000;
+    this.enrichBudgetMs = opts.enrichBudgetMs ?? 1500;
+    this.failTtlMs = opts.failTtlMs ?? 60000;
+    this.now = opts.now ?? Date.now;
   }
 
   async enrich(events: GroveEvent[]): Promise<void> {
@@ -80,7 +115,24 @@ export class ContentFilter {
       (e): e is SproutEvent =>
         e.type === "sprout" && e.kind === "nft" && typeof e.nftId === "string"
     );
-    await Promise.all(nfts.map((e) => this.apply(e)));
+    if (nfts.length === 0) return;
+    // apply() never rejects (resolve() swallows failures into "ok"), so the batch
+    // settles rather than throwing — but we only *wait* up to the budget. Lookups
+    // still in flight when the budget elapses keep running to warm the cache.
+    const work = Promise.all(nfts.map((e) => this.apply(e)));
+    if (this.enrichBudgetMs <= 0) {
+      await work;
+      return;
+    }
+    let timer: ReturnType<typeof setTimeout>;
+    const budget = new Promise<void>((resolve) => {
+      timer = setTimeout(resolve, this.enrichBudgetMs);
+    });
+    try {
+      await Promise.race([work.then(() => undefined), budget]);
+    } finally {
+      clearTimeout(timer!);
+    }
   }
 
   private async apply(event: SproutEvent): Promise<void> {
@@ -97,6 +149,14 @@ export class ContentFilter {
     const cached = this.cache.get(nftId);
     if (cached !== undefined) return Promise.resolve(cached);
 
+    const until = this.negativeUntil.get(nftId);
+    if (until !== undefined) {
+      // a recent failure keeps us permissive without hammering a struggling
+      // MintGarden every block; once the TTL lapses we let the next lookup retry
+      if (this.now() < until) return Promise.resolve("ok");
+      this.negativeUntil.delete(nftId);
+    }
+
     const existing = this.inflight.get(nftId);
     if (existing !== undefined) return existing;
 
@@ -105,7 +165,12 @@ export class ContentFilter {
         this.remember(nftId, disposition);
         return disposition;
       })
-      .catch(() => "ok" as Disposition) // transient failure: permissive, not cached so we retry later
+      .catch(() => {
+        // transient failure/timeout: permissive now, negatively cached briefly so
+        // the same doomed lookup doesn't re-stall the next block
+        this.rememberFailure(nftId);
+        return "ok" as Disposition;
+      })
       .finally(() => {
         this.inflight.delete(nftId);
       });
@@ -121,7 +186,8 @@ export class ContentFilter {
       const res = await this.fetchImpl(`${this.baseUrl}/nfts/${nftId}`, {
         signal: controller.signal,
       });
-      if (!res.ok) return "ok"; // 404 (unknown to MintGarden) / 5xx → permissive, cacheable
+      if (res.status === 404) return "ok"; // genuinely unknown to MintGarden → cacheable permissive
+      if (!res.ok) throw new Error(`mintgarden ${res.status}`); // 5xx/429/etc → transient, don't poison the cache
       return mapMintgarden(await res.json());
     } finally {
       clearTimeout(timer);
@@ -134,6 +200,16 @@ export class ContentFilter {
     if (this.cache.size > this.cacheCapacity) {
       const oldest = this.cache.keys().next().value;
       if (oldest !== undefined) this.cache.delete(oldest);
+    }
+  }
+
+  private rememberFailure(nftId: string): void {
+    if (this.failTtlMs <= 0) return; // negative caching disabled
+    this.negativeUntil.delete(nftId);
+    this.negativeUntil.set(nftId, this.now() + this.failTtlMs);
+    if (this.negativeUntil.size > this.cacheCapacity) {
+      const oldest = this.negativeUntil.keys().next().value;
+      if (oldest !== undefined) this.negativeUntil.delete(oldest);
     }
   }
 
