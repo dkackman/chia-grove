@@ -60,9 +60,9 @@ function collect() {
     ambients,
     reorgs,
     handlers: {
-      onBlock: (b: BlockData) => blocks.push(b),
-      onAmbient: (s: ChainState) => ambients.push(s),
-      onReorg: (f: number) => reorgs.push(f),
+      onBlock: (b: BlockData) => { blocks.push(b); },
+      onAmbient: (s: ChainState) => { ambients.push(s); },
+      onReorg: (f: number) => { reorgs.push(f); },
     },
   };
 }
@@ -173,4 +173,26 @@ test("backs off exponentially on failure and recovers", async () => {
   expect(sink.blocks.map((b) => b.height)).toEqual([0]);
   poller.stop();
   vi.useRealTimers();
+});
+
+test("awaits an async onBlock so blocks are processed in order", async () => {
+  const rpc = new FakeRpc();
+  rpc.chain([
+    { h: 0, hash: "h0" },
+    { h: 1, hash: "h1" },
+    { h: 2, hash: "h2" },
+  ]);
+  const order: number[] = [];
+  const handlers = {
+    // block 0 resolves slowest; without awaiting, its push would land last
+    onBlock: async (b: BlockData) => {
+      await new Promise((r) => setTimeout(r, b.height === 0 ? 20 : 1));
+      order.push(b.height);
+    },
+    onAmbient: () => {},
+    onReorg: () => {},
+  };
+  const poller = new CoinsetPoller(rpc, handlers, { backfillBlocks: 3 });
+  await poller.tick();
+  expect(order).toEqual([0, 1, 2]);
 });
