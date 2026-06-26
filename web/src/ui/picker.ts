@@ -1,12 +1,11 @@
 import * as THREE from "three";
-import type { SproutEvent } from "@grove/shared";
-import type { VisualizationHandle } from "../themes/types.js";
+import type { CardMeta, VisualizationHandle } from "../themes/types.js";
 import { hideCard, showCard } from "./detail-card.js";
 
 interface Hit {
   object: THREE.Object3D;
   instanceId: number | undefined;
-  meta: SproutEvent;
+  meta: CardMeta;
 }
 
 export function attachPicker(canvas: HTMLCanvasElement, viz: VisualizationHandle): void {

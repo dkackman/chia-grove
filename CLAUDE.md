@@ -59,7 +59,7 @@ New WebSocket clients first receive a `Hello` handshake (protocol version check)
 
 ### Web/scene internals
 
-- The frontend supports multiple visualizations ("themes") behind the `Visualization` interface (`web/src/themes/types.ts`). The registry in `web/src/themes/index.ts` resolves the active theme from `?theme=` query param or `localStorage["grove.theme"]` (default: `grove`). Switching from the legend persists the choice and reloads; the WebSocket snapshot replay repopulates the new scene. Themes own their entire Three.js scene. Four themes ship: `grove`, `farm`, `gallery`, `mine`. Shared helpers (instancing, textures, CAT colors, amount scales, PRNG) live in `web/src/themes/shared/`.
+- The frontend supports multiple visualizations ("themes") behind the `Visualization` interface (`web/src/themes/types.ts`). The registry in `web/src/themes/index.ts` resolves the active theme from `?theme=` query param or `localStorage["grove.theme"]` (default: `grove`). Switching from the legend persists the choice and reloads; the WebSocket snapshot replay repopulates the new scene. Themes own their entire Three.js scene. Five themes ship: `grove`, `farm`, `gallery`, `mine`, `board`. Shared helpers (instancing, textures, CAT colors, amount scales, PRNG) live in `web/src/themes/shared/`.
 
 - **`InstancedKind`** (`web/src/themes/shared/instanced.ts`) is the shared `THREE.InstancedMesh` wrapper used by all themes. Key details:
   - Constructor accepts `THREE.Material | THREE.Material[]` (array enables per-face BoxGeometry materials).
@@ -89,6 +89,8 @@ New WebSocket clients first receive a `Hello` handshake (protocol version check)
   - `sky.ts` — pure functions for 150 s day-night cycle; `createMineSky()` drives sun + moon `DirectionalLight` and `FogExp2`.
   - `textures.ts` — procedural 16×16 `NearestFilter` pixel textures (wool weave, glass pane, glowstone cells, grass top/side, dirt).
   - `layout.ts` — `chunkPosition()` phyllotaxis spiral, 7×7 Chebyshev-ordered floor grid, `seatCell()` stack-not-sprawl seating, `chunkElevation()` deterministic terrain height (max 1 block).
+
+- **board** (`web/src/themes/board/`): "The Big Board" — a Solari split-flap departure board rendering the chain as a live spend ledger. Each spend flips in as a new row (per-character riffle via `FlapGrid`, an instanced cell grid with a per-instance glyph attribute); a header strip shows block/mempool/netspace/clock, the wheel scrolls back through history (newest-first, 500-deep, with a LIVE/HISTORY header marker), and reorg riffles rows back to the fork height. Pure formatting (`rows.ts`, `glyphs.ts`, `palette.ts`) is unit-tested.
 
 ### Event types (`shared/src/index.ts`)
 

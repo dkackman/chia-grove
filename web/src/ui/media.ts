@@ -16,14 +16,38 @@ export function escalateMediaKind(current: MediaKind): MediaKind | null {
 }
 
 /**
- * Resolve the loadable src for a sprout's art, or null if it has none.
- * Demo/offline events inline a data: URI; live events are addressed by NFT
- * launcher id through the same-origin image proxy (no open URL ever crosses the
- * wire). Keying on launcherId — stable across every spend of the NFT — keeps the
- * /img?nft= URL cacheable, unlike the per-spend coinId.
+ * Resolve the loadable src for a sprout's art, or null if it has none. Returns
+ * null for blocked NFTs so no surface can fetch the bytes. Demo/offline events
+ * inline a data: URI; live events are addressed by launcher id through the
+ * same-origin proxy (no open URL crosses the wire; launcherId keeps /img cacheable).
  */
 export function mediaSrc(event: SproutEvent): string | null {
+  if (event.mediaFilter === "blocked") return null;
   if (event.dataUri) return event.dataUri; // data: (demo)
   if (event.mediaKind && event.launcherId) return `/img?nft=${event.launcherId}`;
   return null;
+}
+
+/**
+ * The single source of truth for how an NFT's media should be presented. Every
+ * render surface (detail card, gallery walls, mine paintings) routes through
+ * this, so content filtering is uniform by construction — a new surface that
+ * calls resolveMedia inherits it automatically.
+ *
+ * - blocked   → placeholder, never any src (bytes unreachable).
+ * - sensitive → blur (DOM blurs the element; WebGL shows a placeholder texture).
+ * - otherwise → art if a src resolves, else none.
+ */
+export type MediaDisposition =
+  | { render: "art"; src: string; kind: MediaKind }
+  | { render: "blur"; src: string; kind: MediaKind }
+  | { render: "placeholder" }
+  | { render: "none" };
+
+export function resolveMedia(event: SproutEvent): MediaDisposition {
+  if (event.mediaFilter === "blocked") return { render: "placeholder" };
+  const src = mediaSrc(event);
+  if (!src) return { render: "none" };
+  const kind = event.mediaKind ?? "image";
+  return { render: event.mediaFilter === "sensitive" ? "blur" : "art", src, kind };
 }

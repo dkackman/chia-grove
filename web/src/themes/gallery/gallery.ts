@@ -13,7 +13,8 @@ import { SpendDust } from "./dust.js";
 import { netspaceLight } from "./ambience.js";
 import { shouldHang } from "./select.js";
 import { loadArtTexture } from "./media.js";
-import { mediaSrc } from "../../ui/media.js";
+import { resolveMedia } from "../../ui/media.js";
+import { sensitivePlaceholderTexture } from "../shared/textures.js";
 import { framePiece } from "./camera.js";
 import { FlingTracker } from "./swipe.js";
 import { LoadPool } from "../shared/load-pool.js";
@@ -115,37 +116,43 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
         if (pieces.hasLauncher(launcher)) {
           // already hung → register activity on the existing frame, no duplicate
           if (pieces.ping(event)) refreshPlacardIf(launcher);
-        } else if (shouldHang(event) && !pending.has(launcher)) {
-          // first sighting with art → load and hang. image → texture, video →
-          // looping VideoTexture, audio → skipped; CORS/404/decode errors discard.
-          const src = mediaSrc(event);
-          if (!src) break;
-          pending.add(launcher);
-          // mediaKind is set whenever art exists (gate/demo guarantee it); "image" is just the type-level default
-          const kind = event.mediaKind ?? "image";
-          const mySeq = nftSeq++;
-          artLoads.submit({
-            // if this many newer NFTs have queued behind it, this one would be
-            // wrapped straight off the wall — skip the fetch (and free its guard)
-            stillWanted: () => nftSeq - mySeq < pieces.capacity,
-            onDrop: () => pending.delete(launcher),
-            start: (done) => {
-              loadArtTexture(
-                src,
-                kind,
-                (texture) => {
-                  done(); // release the pool slot regardless of dedup outcome
-                  pending.delete(launcher);
-                  pieces.add(event, texture);
-                },
-                () => {
-                  done();
-                  pending.delete(launcher);
-                }
-              );
-            },
-          });
+          break;
         }
+        if (!shouldHang(event) || pending.has(launcher)) break;
+        const media = resolveMedia(event);
+        if (media.render === "none") break;
+        if (media.render !== "art") {
+          // blocked/sensitive → hang a neutral placeholder; never fetch the art.
+          // Clone the singleton because pieces disposes mat.map on slot eviction;
+          // a clone keeps the shared source intact so future filtered frames render.
+          pieces.add(event, sensitivePlaceholderTexture().clone());
+          break;
+        }
+        const src = media.src;
+        const kind = media.kind;
+        pending.add(launcher);
+        const mySeq = nftSeq++;
+        artLoads.submit({
+          // if this many newer NFTs have queued behind it, this one would be
+          // wrapped straight off the wall — skip the fetch (and free its guard)
+          stillWanted: () => nftSeq - mySeq < pieces.capacity,
+          onDrop: () => pending.delete(launcher),
+          start: (done) => {
+            loadArtTexture(
+              src,
+              kind,
+              (texture) => {
+                done(); // release the pool slot regardless of dedup outcome
+                pending.delete(launcher);
+                pieces.add(event, texture);
+              },
+              () => {
+                done();
+                pending.delete(launcher);
+              }
+            );
+          },
+        });
         break;
       }
       case "ambient":

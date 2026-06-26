@@ -81,6 +81,24 @@ body {
   display: block;
 }
 
+#card img.sensitive,
+#card video.sensitive {
+  filter: blur(24px);
+  pointer-events: none;
+}
+
+#card .media-note {
+  margin: 8px 0;
+  padding: 10px;
+  border-radius: 6px;
+  text-align: center;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: rgba(185, 255, 217, 0.6);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px dashed rgba(185, 255, 217, 0.25);
+}
+
 #card a {
   color: #5ef0a0;
 }
@@ -471,6 +489,25 @@ body {
   color: rgba(255, 255, 255, 0.6);
   display: block;
   text-align: center;
+}
+
+.sw-flap {
+  width: 11px;
+  height: 7px;
+  border-radius: 1px;
+  background: linear-gradient(to bottom, #1a1d22 0 49%, #0b0d10 51% 100%);
+  box-shadow: inset 0 0 0 1px #2a2f36;
+}
+
+.sw-mint {
+  background: #ffd166;
+  box-shadow: 0 0 7px rgba(255, 209, 102, 0.9);
+}
+
+.sw-gauge {
+  width: 13px;
+  height: 7px;
+  background: linear-gradient(to right, #3ad17a 0 55%, #1a1d22 55% 100%);
 }
 
 @media (max-width: 640px) {

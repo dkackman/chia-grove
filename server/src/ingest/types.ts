@@ -32,7 +32,7 @@ export interface BlockData {
 }
 
 export interface ChainHandlers {
-  onBlock(block: BlockData): void;
+  onBlock(block: BlockData): void | Promise<void>;
   onAmbient(state: ChainState): void;
   onReorg(forkHeight: number): void;
 }

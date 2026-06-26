@@ -4,7 +4,8 @@ import type { SproutEvent } from "@grove/shared";
 import type { XZ } from "../shared/util.js";
 import { cellLocal, chunkElevation } from "./layout.js";
 import { loadArtTexture } from "../gallery/media.js";
-import { mediaSrc } from "../../ui/media.js";
+import { resolveMedia } from "../../ui/media.js";
+import { sensitivePlaceholderTexture } from "../shared/textures.js";
 import { LoadPool } from "../shared/load-pool.js";
 
 // Cap concurrent /img fetches. During snapshot replay hundreds of NFTs churn
@@ -164,10 +165,10 @@ export class Paintings {
     mat.map = null;
     mat.color.set(0x9fb6c9);
     mat.needsUpdate = true;
-    const src = mediaSrc(event);
-    if (src) {
-      // mediaKind is set whenever art exists (gate/demo guarantee it); "image" is just the type-level default
-      const kind = event.mediaKind ?? "image";
+    const media = resolveMedia(event);
+    if (media.render === "art") {
+      const src = media.src;
+      const kind = media.kind;
       this.loads.submit({
         // by the time a queued load reaches the front the slot may have been
         // recycled (replay churns hundreds of NFTs through it) — skip the fetch
@@ -190,7 +191,13 @@ export class Paintings {
           );
         },
       });
+    } else if (media.render === "blur" || media.render === "placeholder") {
+      // filtered → neutral placeholder texture; never fetch the real art
+      mat.map = sensitivePlaceholderTexture();
+      mat.color.set(0xffffff);
+      mat.needsUpdate = true;
     }
+    // render === "none" → leave the solid placeholder color set above
   }
 
   /** Face the painting toward the orbiting camera each frame. */
