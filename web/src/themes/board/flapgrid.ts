@@ -168,11 +168,6 @@ export class FlapGrid {
     this.setRow(row, "", true);
   }
 
-  tintRow(row: number, color: THREE.Color): void {
-    this.base[row].copy(color);
-    if (row !== this.hovered) this.applyRowColor(row, color);
-  }
-
   highlightRow(row: number | null): void {
     if (this.hovered === (row ?? -1)) return;
     if (this.hovered >= 0) this.applyRowColor(this.hovered, this.base[this.hovered]);
