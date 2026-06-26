@@ -36,6 +36,16 @@ test("metadata_json.sensitive_content non-empty array → sensitive", () => {
   );
 });
 
+test("sensitive_content bare descriptive string → sensitive", () => {
+  expect(mapMintgarden({ collection: { sensitive_content: "nudity" } })).toBe("sensitive");
+});
+
+test('sensitive_content "false" / empty string → ok', () => {
+  expect(mapMintgarden({ collection: { sensitive_content: "false" } })).toBe("ok");
+  expect(mapMintgarden({ collection: { sensitive_content: "False" } })).toBe("ok");
+  expect(mapMintgarden({ collection: { sensitive_content: "  " } })).toBe("ok");
+});
+
 test("blocked takes precedence over sensitive", () => {
   expect(mapMintgarden({ is_blocked: true, collection: { sensitive_content: true } })).toBe(
     "blocked"
@@ -72,7 +82,10 @@ const nftEvent = (over: Partial<SproutEvent> = {}): SproutEvent => ({
   ...over,
 });
 
-const okJson = (obj: unknown) => ({ ok: true, json: async () => obj }) as unknown as Response;
+const okJson = (obj: unknown) => ({ ok: true, status: 200, json: async () => obj }) as unknown as Response;
+const statusResp = (status: number) =>
+  ({ ok: status >= 200 && status < 300, status, json: async () => ({}) }) as unknown as Response;
+const tick = () => new Promise((r) => setTimeout(r, 20));
 
 test("enrich marks blocked NFTs and makes their art unreachable", async () => {
   const media = new MediaIndex(10);
@@ -119,20 +132,84 @@ test("a determination is cached per nftId (no refetch)", async () => {
   expect(calls).toBe(1);
 });
 
-test("a fetch error is permissive and not cached (retries next time)", async () => {
+test("a fetch error is permissive, negatively cached within TTL, retried after it", async () => {
   let calls = 0;
+  let clock = 1000;
   const filter = new ContentFilter(new MediaIndex(10), {
     fetchImpl: async () => {
       calls++;
       throw new Error("network");
     },
+    failTtlMs: 60000,
+    now: () => clock,
   });
   const a = nftEvent();
   await filter.enrich([a]);
   expect(a.mediaFilter).toBeUndefined();
+  // within the TTL the failed lookup is not repeated (doesn't re-stall every block)
+  await filter.enrich([nftEvent()]);
+  expect(calls).toBe(1);
+  // once the TTL lapses the next lookup retries
+  clock += 60001;
+  await filter.enrich([nftEvent()]);
+  expect(calls).toBe(2);
+});
+
+test("a 404 is positively cached as ok (no refetch)", async () => {
+  let calls = 0;
+  const filter = new ContentFilter(new MediaIndex(10), {
+    fetchImpl: async () => {
+      calls++;
+      return statusResp(404);
+    },
+  });
+  await filter.enrich([nftEvent()]);
+  await filter.enrich([nftEvent()]);
+  expect(calls).toBe(1);
+});
+
+test("a 5xx is permissive, not positively cached, retried after TTL", async () => {
+  let calls = 0;
+  let clock = 0;
+  const filter = new ContentFilter(new MediaIndex(10), {
+    fetchImpl: async () => {
+      calls++;
+      return statusResp(503);
+    },
+    failTtlMs: 1000,
+    now: () => clock,
+  });
+  const a = nftEvent();
+  await filter.enrich([a]);
+  expect(a.mediaFilter).toBeUndefined();
+  await filter.enrich([nftEvent()]); // within TTL → no refetch (not poisoned as a permanent ok)
+  expect(calls).toBe(1);
+  clock += 1001;
+  await filter.enrich([nftEvent()]); // TTL elapsed → retry
+  expect(calls).toBe(2);
+});
+
+test("enrich returns within budget when MintGarden is slow, then warms the cache", async () => {
+  let release: () => void = () => {};
+  const filter = new ContentFilter(new MediaIndex(10), {
+    enrichBudgetMs: 10,
+    fetchImpl: () =>
+      new Promise<Response>((res) => {
+        release = () => res(okJson({ is_blocked: true }));
+      }),
+  });
+  const a = nftEvent();
+  const t0 = Date.now();
+  await filter.enrich([a]);
+  // didn't block on the still-pending lookup, and published permissive for now
+  expect(Date.now() - t0).toBeLessThan(300);
+  expect(a.mediaFilter).toBeUndefined();
+  // the background lookup finishes and warms the cache; a later spend sees it
+  release();
+  await tick();
   const b = nftEvent();
   await filter.enrich([b]);
-  expect(calls).toBe(2);
+  expect(b.mediaFilter).toBe("blocked");
 });
 
 test("non-NFT and nftId-less events are ignored", async () => {
