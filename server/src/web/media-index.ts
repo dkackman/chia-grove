@@ -30,4 +30,9 @@ export class MediaIndex {
   get(launcherId: string): MediaEntry | undefined {
     return this.map.get(launcherId);
   }
+
+  /** Remove an entry so /img?nft=<launcherId> can no longer resolve it. */
+  delete(launcherId: string): void {
+    this.map.delete(launcherId);
+  }
 }
