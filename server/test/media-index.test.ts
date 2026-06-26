@@ -28,3 +28,16 @@ test("re-inserting a key refreshes its recency so it survives eviction", () => {
   expect(m.get("a")?.url).toBe("u-a2");
   expect(m.get("c")?.url).toBe("u-c");
 });
+
+test("delete removes an entry so the proxy can no longer resolve it", () => {
+  const idx = new MediaIndex(10);
+  idx.set("launch1", { url: "https://example.com/a.png", kind: "image" });
+  expect(idx.get("launch1")).toBeDefined();
+  idx.delete("launch1");
+  expect(idx.get("launch1")).toBeUndefined();
+});
+
+test("delete of an absent key is a no-op", () => {
+  const idx = new MediaIndex(10);
+  expect(() => idx.delete("nope")).not.toThrow();
+});
