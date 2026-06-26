@@ -81,6 +81,24 @@ body {
   display: block;
 }
 
+#card img.sensitive,
+#card video.sensitive {
+  filter: blur(24px);
+  pointer-events: none;
+}
+
+#card .media-note {
+  margin: 8px 0;
+  padding: 10px;
+  border-radius: 6px;
+  text-align: center;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: rgba(185, 255, 217, 0.6);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px dashed rgba(185, 255, 217, 0.25);
+}
+
 #card a {
   color: #5ef0a0;
 }
