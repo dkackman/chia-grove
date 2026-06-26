@@ -28,7 +28,10 @@ export function mapMintgarden(json: unknown): Disposition {
   ) {
     return "blocked";
   }
-  if (isSensitiveFlag(collection.sensitive_content) || isSensitiveFlag(metadata.sensitive_content)) {
+  if (
+    isSensitiveFlag(collection.sensitive_content) ||
+    isSensitiveFlag(metadata.sensitive_content)
+  ) {
     return "sensitive";
   }
   return "ok";

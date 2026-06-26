@@ -37,9 +37,9 @@ test("metadata_json.sensitive_content non-empty array → sensitive", () => {
 });
 
 test("blocked takes precedence over sensitive", () => {
-  expect(
-    mapMintgarden({ is_blocked: true, collection: { sensitive_content: true } })
-  ).toBe("blocked");
+  expect(mapMintgarden({ is_blocked: true, collection: { sensitive_content: true } })).toBe(
+    "blocked"
+  );
 });
 
 test("benign NFT → ok", () => {
@@ -72,8 +72,7 @@ const nftEvent = (over: Partial<SproutEvent> = {}): SproutEvent => ({
   ...over,
 });
 
-const okJson = (obj: unknown) =>
-  ({ ok: true, json: async () => obj }) as unknown as Response;
+const okJson = (obj: unknown) => ({ ok: true, json: async () => obj }) as unknown as Response;
 
 test("enrich marks blocked NFTs and makes their art unreachable", async () => {
   const media = new MediaIndex(10);

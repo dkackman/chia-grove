@@ -36,11 +36,11 @@ shared functions. grove / farm / board render NFT events as flora / crops /
 split-flap glyphs — no image — so their only "media view" is the shared detail
 card.
 
-| Surface | Renders | Chokepoint |
-| --- | --- | --- |
-| DOM detail card (`web/src/ui/detail-card.ts`) — shared by **all** scenes | `<img>`/`<video>` | `mediaSrc()` + `mediaKind` |
-| gallery WebGL walls (`web/src/themes/gallery/gallery.ts`) | texture | `mediaSrc()` + `loadArtTexture` |
-| mine paintings (`web/src/themes/mine/structures.ts`) | texture | `mediaSrc()` + `loadArtTexture` |
+| Surface                                                                  | Renders           | Chokepoint                      |
+| ------------------------------------------------------------------------ | ----------------- | ------------------------------- |
+| DOM detail card (`web/src/ui/detail-card.ts`) — shared by **all** scenes | `<img>`/`<video>` | `mediaSrc()` + `mediaKind`      |
+| gallery WebGL walls (`web/src/themes/gallery/gallery.ts`)                | texture           | `mediaSrc()` + `loadArtTexture` |
+| mine paintings (`web/src/themes/mine/structures.ts`)                     | texture           | `mediaSrc()` + `loadArtTexture` |
 
 The rule lives in **one resolver** in `web/src/ui/media.ts`. Because the flag
 rides on the `SproutEvent` and every surface routes through that resolver, any
@@ -78,7 +78,7 @@ export interface SproutEvent {
 ```
 
 An **enum, not a boolean**, so future dispositions can be added. Crucially, all
-the *combination logic* (which signals mean what, future factors) lives
+the _combination logic_ (which signals mean what, future factors) lives
 server-side in `ContentFilter`; the client only reacts to the resulting flag.
 That is the extensibility seam.
 
@@ -103,7 +103,7 @@ every connected client to reload so none keep running un-filtered code.
   - **Bounded concurrency** and a per-request **`AbortController` timeout** so a
     slow MintGarden can't stall the poll loop or the 150-block backfill.
   - **Permissive on error/timeout** (returns `"ok"`). Successful determinations
-    (including `"ok"`) are cached; transient fetch errors are *not* cached so a
+    (including `"ok"`) are cached; transient fetch errors are _not_ cached so a
     later spend can retry.
   - MintGarden is a fixed trusted host and the URL is built from a server-derived
     `nftId`, so the SSRF machinery used by `/img` is unnecessary — plain `fetch`
@@ -136,10 +136,10 @@ Add a disposition resolver consumed by every surface:
 
 ```ts
 export type MediaDisposition =
-  | { render: "art"; src: string; kind: MediaKind }   // show normally
-  | { render: "blur"; src: string; kind: MediaKind }  // DOM blurs; WebGL placeholders
-  | { render: "placeholder" }                          // blocked: no bytes
-  | { render: "none" };                                // genuinely no art
+  | { render: "art"; src: string; kind: MediaKind } // show normally
+  | { render: "blur"; src: string; kind: MediaKind } // DOM blurs; WebGL placeholders
+  | { render: "placeholder" } // blocked: no bytes
+  | { render: "none" }; // genuinely no art
 
 export function resolveMedia(event: SproutEvent): MediaDisposition;
 ```
@@ -156,6 +156,7 @@ blocked, so even an un-updated caller cannot fetch blocked bytes.
 ### Changed (client): `web/src/ui/detail-card.ts`
 
 Switch on `resolveMedia(event)`:
+
 - `art` -> current `nftMediaEl`.
 - `blur` -> same media element with a `sensitive` CSS class (`filter: blur(...)`,
   un-interactable) plus a small "sensitive content" caption.

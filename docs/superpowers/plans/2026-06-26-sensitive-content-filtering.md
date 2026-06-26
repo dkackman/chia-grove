@@ -25,9 +25,11 @@
 ### Task 1: Wire field + protocol bump (`shared`)
 
 **Files:**
+
 - Modify: `shared/src/index.ts` (the `SproutEvent` interface near lines 30-45, and `PROTOCOL_VERSION` near line 8)
 
 **Interfaces:**
+
 - Consumes: nothing.
 - Produces: `SproutEvent.mediaFilter?: "blocked" | "sensitive"`; `PROTOCOL_VERSION === 3`.
 
@@ -69,10 +71,12 @@ git commit -m "feat(shared): add SproutEvent.mediaFilter and bump protocol to 3"
 ### Task 2: `MediaIndex.delete` (`server`)
 
 **Files:**
+
 - Modify: `server/src/web/media-index.ts`
 - Test: `server/test/media-index.test.ts`
 
 **Interfaces:**
+
 - Consumes: nothing.
 - Produces: `MediaIndex.delete(launcherId: string): void`.
 
@@ -130,10 +134,12 @@ git commit -m "feat(server): add MediaIndex.delete for unreachable blocked art"
 ### Task 3: `mapMintgarden` pure disposition mapper (`server`)
 
 **Files:**
+
 - Create: `server/src/classify/content-filter.ts`
 - Test: `server/test/content-filter.test.ts`
 
 **Interfaces:**
+
 - Consumes: nothing.
 - Produces: `type Disposition = "blocked" | "sensitive" | "ok"`; `mapMintgarden(json: unknown): Disposition`.
 
@@ -178,9 +184,9 @@ test("metadata_json.sensitive_content non-empty array → sensitive", () => {
 });
 
 test("blocked takes precedence over sensitive", () => {
-  expect(
-    mapMintgarden({ is_blocked: true, collection: { sensitive_content: true } })
-  ).toBe("blocked");
+  expect(mapMintgarden({ is_blocked: true, collection: { sensitive_content: true } })).toBe(
+    "blocked"
+  );
 });
 
 test("benign NFT → ok", () => {
@@ -239,7 +245,10 @@ export function mapMintgarden(json: unknown): Disposition {
   ) {
     return "blocked";
   }
-  if (isSensitiveFlag(collection.sensitive_content) || isSensitiveFlag(metadata.sensitive_content)) {
+  if (
+    isSensitiveFlag(collection.sensitive_content) ||
+    isSensitiveFlag(metadata.sensitive_content)
+  ) {
     return "sensitive";
   }
   return "ok";
@@ -263,10 +272,12 @@ git commit -m "feat(server): map MintGarden NFT response to content disposition"
 ### Task 4: `ContentFilter` (fetch + cache + enrich) (`server`)
 
 **Files:**
+
 - Modify: `server/src/classify/content-filter.ts`
 - Test: `server/test/content-filter.test.ts`
 
 **Interfaces:**
+
 - Consumes: `mapMintgarden` (Task 3); `MediaIndex` + `MediaIndex.delete` (Task 2); `SproutEvent.mediaFilter` (Task 1).
 - Produces: `class ContentFilter` with constructor `(media: MediaIndex, opts?: ContentFilterOptions)` and `enrich(events: GroveEvent[]): Promise<void>`. `ContentFilterOptions = { fetchImpl?: typeof fetch; baseUrl?: string; timeoutMs?: number; concurrency?: number; cacheCapacity?: number }`.
 
@@ -291,8 +302,7 @@ const nftEvent = (over: Partial<SproutEvent> = {}): SproutEvent => ({
   ...over,
 });
 
-const okJson = (obj: unknown) =>
-  ({ ok: true, json: async () => obj }) as unknown as Response;
+const okJson = (obj: unknown) => ({ ok: true, json: async () => obj }) as unknown as Response;
 
 test("enrich marks blocked NFTs and makes their art unreachable", async () => {
   const media = new MediaIndex(10);
@@ -513,11 +523,13 @@ git commit -m "feat(server): ContentFilter resolves and enriches NFT mediaFilter
 ### Task 5: Make the poller await `onBlock` (`server`)
 
 **Files:**
+
 - Modify: `server/src/ingest/types.ts` (the `ChainHandlers` interface, line ~35)
 - Modify: `server/src/ingest/coinset-poller.ts` (the `onBlock` call in `walkTo`, line ~108)
 - Test: `server/test/coinset-poller.test.ts`
 
 **Interfaces:**
+
 - Consumes: nothing.
 - Produces: `ChainHandlers.onBlock(block: BlockData): void | Promise<void>` — awaited in order by `walkTo`.
 
@@ -567,13 +579,13 @@ In `server/src/ingest/types.ts`, change the `onBlock` signature in `ChainHandler
 In `server/src/ingest/coinset-poller.ts`, in `walkTo`, change `this.handlers.onBlock({ … });` to await it:
 
 ```ts
-        await this.handlers.onBlock({
-          height,
-          headerHash: info.headerHash,
-          timestamp: Number(info.timestamp),
-          fees: info.fees ?? 0n,
-          spends,
-        });
+await this.handlers.onBlock({
+  height,
+  headerHash: info.headerHash,
+  timestamp: Number(info.timestamp),
+  fees: info.fees ?? 0n,
+  spends,
+});
 ```
 
 - [ ] **Step 5: Run tests to verify pass**
@@ -593,9 +605,11 @@ git commit -m "feat(server): await onBlock to preserve order with async enrichme
 ### Task 6: Wire `ContentFilter` into the server entrypoint (`server`)
 
 **Files:**
+
 - Modify: `server/src/index.ts` (imports; `media` construction near line 33; `onBlock` near line 40-43)
 
 **Interfaces:**
+
 - Consumes: `ContentFilter` (Task 4); awaited `onBlock` (Task 5).
 - Produces: nothing (composition root).
 
@@ -645,10 +659,12 @@ git commit -m "feat(server): enrich blocks with content filter before publishing
 ### Task 7: `resolveMedia` single-source resolver (`web`)
 
 **Files:**
+
 - Modify: `web/src/ui/media.ts`
 - Test: `web/test/media-resolve.test.ts`
 
 **Interfaces:**
+
 - Consumes: `SproutEvent.mediaFilter` (Task 1).
 - Produces:
   - `mediaSrc(event): string | null` — now returns `null` when `mediaFilter === "blocked"`.
@@ -781,10 +797,12 @@ git commit -m "feat(web): resolveMedia as the single content-filter chokepoint"
 ### Task 8: Apply the filter in the detail card (`web`)
 
 **Files:**
+
 - Modify: `web/src/ui/detail-card.ts` (imports line 4; the media branch lines ~99-102)
 - Modify: `web/src/style.css` (after the `#card img, #card video` block, ~line 82)
 
 **Interfaces:**
+
 - Consumes: `resolveMedia` (Task 7).
 - Produces: nothing.
 
@@ -872,9 +890,11 @@ git commit -m "feat(web): blur sensitive and hide blocked art in the detail card
 ### Task 9: Shared placeholder texture (`web`)
 
 **Files:**
+
 - Modify: `web/src/themes/shared/textures.ts`
 
 **Interfaces:**
+
 - Consumes: nothing.
 - Produces: `sensitivePlaceholderTexture(): THREE.CanvasTexture` (a shared singleton).
 
@@ -929,9 +949,11 @@ git commit -m "feat(web): shared neutral placeholder texture for filtered art"
 ### Task 10: Apply the filter in the gallery theme (`web`)
 
 **Files:**
+
 - Modify: `web/src/themes/gallery/gallery.ts` (imports line 15-16; the `case "sprout"` NFT branch lines ~113-149)
 
 **Interfaces:**
+
 - Consumes: `resolveMedia` (Task 7); `sensitivePlaceholderTexture` (Task 9). `shouldHang` (unchanged — sensitive/blocked NFTs keep `mediaKind`, so they still qualify for a frame).
 - Produces: nothing.
 
@@ -957,47 +979,47 @@ import { sensitivePlaceholderTexture } from "../shared/textures.js";
 Replace the block that currently begins at `if (!event.launcherId) break;` and ends at the closing of the `else if (shouldHang(event) && !pending.has(launcher)) { … }` branch (lines ~113-148) with:
 
 ```ts
-        if (!event.launcherId) break;
-        const launcher = event.launcherId;
-        if (pieces.hasLauncher(launcher)) {
-          // already hung → register activity on the existing frame, no duplicate
-          if (pieces.ping(event)) refreshPlacardIf(launcher);
-          break;
-        }
-        if (!shouldHang(event) || pending.has(launcher)) break;
-        const media = resolveMedia(event);
-        if (media.render === "none") break;
-        if (media.render !== "art") {
-          // blocked/sensitive → hang a neutral placeholder; never fetch the art
-          pieces.add(event, sensitivePlaceholderTexture());
-          break;
-        }
-        const src = media.src;
-        const kind = media.kind;
-        pending.add(launcher);
-        const mySeq = nftSeq++;
-        artLoads.submit({
-          // if this many newer NFTs have queued behind it, this one would be
-          // wrapped straight off the wall — skip the fetch (and free its guard)
-          stillWanted: () => nftSeq - mySeq < pieces.capacity,
-          onDrop: () => pending.delete(launcher),
-          start: (done) => {
-            loadArtTexture(
-              src,
-              kind,
-              (texture) => {
-                done(); // release the pool slot regardless of dedup outcome
-                pending.delete(launcher);
-                pieces.add(event, texture);
-              },
-              () => {
-                done();
-                pending.delete(launcher);
-              }
-            );
-          },
-        });
-        break;
+if (!event.launcherId) break;
+const launcher = event.launcherId;
+if (pieces.hasLauncher(launcher)) {
+  // already hung → register activity on the existing frame, no duplicate
+  if (pieces.ping(event)) refreshPlacardIf(launcher);
+  break;
+}
+if (!shouldHang(event) || pending.has(launcher)) break;
+const media = resolveMedia(event);
+if (media.render === "none") break;
+if (media.render !== "art") {
+  // blocked/sensitive → hang a neutral placeholder; never fetch the art
+  pieces.add(event, sensitivePlaceholderTexture());
+  break;
+}
+const src = media.src;
+const kind = media.kind;
+pending.add(launcher);
+const mySeq = nftSeq++;
+artLoads.submit({
+  // if this many newer NFTs have queued behind it, this one would be
+  // wrapped straight off the wall — skip the fetch (and free its guard)
+  stillWanted: () => nftSeq - mySeq < pieces.capacity,
+  onDrop: () => pending.delete(launcher),
+  start: (done) => {
+    loadArtTexture(
+      src,
+      kind,
+      (texture) => {
+        done(); // release the pool slot regardless of dedup outcome
+        pending.delete(launcher);
+        pieces.add(event, texture);
+      },
+      () => {
+        done();
+        pending.delete(launcher);
+      }
+    );
+  },
+});
+break;
 ```
 
 (This preserves the original `artLoads.submit` behavior for the `art` path; the only changes are the early `hasLauncher`/`shouldHang` breaks and the filtered placeholder branch. `const kind` replaces the previous `event.mediaKind ?? "image"` line — `media.kind` already applied that default.)
@@ -1024,9 +1046,11 @@ git commit -m "feat(web): gallery shows placeholder for filtered NFT art"
 ### Task 11: Apply the filter in the mine theme paintings (`web`)
 
 **Files:**
+
 - Modify: `web/src/themes/mine/structures.ts` (imports line 6-7; the painting art-load block lines ~167-193)
 
 **Interfaces:**
+
 - Consumes: `resolveMedia` (Task 7); `sensitivePlaceholderTexture` (Task 9).
 - Produces: nothing.
 
@@ -1052,39 +1076,39 @@ import { sensitivePlaceholderTexture } from "../shared/textures.js";
 Replace the block that currently begins at `const src = mediaSrc(event);` and ends at the close of `if (src) { … }` (lines ~167-193) with:
 
 ```ts
-    const media = resolveMedia(event);
-    if (media.render === "art") {
-      const src = media.src;
-      const kind = media.kind;
-      this.loads.submit({
-        // by the time a queued load reaches the front the slot may have been
-        // recycled (replay churns hundreds of NFTs through it) — skip the fetch
-        stillWanted: () => p.meta === event,
-        start: (done) => {
-          loadArtTexture(
-            src,
-            kind,
-            (tex) => {
-              done(); // free the pool slot regardless of whether we still want the art
-              // guard against a slot recycled while this load was in flight
-              if (p.meta !== event) return;
-              tex.magFilter = THREE.NearestFilter;
-              tex.colorSpace = THREE.SRGBColorSpace;
-              mat.map = tex;
-              mat.color.set(0xffffff);
-              mat.needsUpdate = true;
-            },
-            done
-          );
+const media = resolveMedia(event);
+if (media.render === "art") {
+  const src = media.src;
+  const kind = media.kind;
+  this.loads.submit({
+    // by the time a queued load reaches the front the slot may have been
+    // recycled (replay churns hundreds of NFTs through it) — skip the fetch
+    stillWanted: () => p.meta === event,
+    start: (done) => {
+      loadArtTexture(
+        src,
+        kind,
+        (tex) => {
+          done(); // free the pool slot regardless of whether we still want the art
+          // guard against a slot recycled while this load was in flight
+          if (p.meta !== event) return;
+          tex.magFilter = THREE.NearestFilter;
+          tex.colorSpace = THREE.SRGBColorSpace;
+          mat.map = tex;
+          mat.color.set(0xffffff);
+          mat.needsUpdate = true;
         },
-      });
-    } else if (media.render === "blur" || media.render === "placeholder") {
-      // filtered → neutral placeholder texture; never fetch the real art
-      mat.map = sensitivePlaceholderTexture();
-      mat.color.set(0xffffff);
-      mat.needsUpdate = true;
-    }
-    // render === "none" → leave the solid placeholder color set above
+        done
+      );
+    },
+  });
+} else if (media.render === "blur" || media.render === "placeholder") {
+  // filtered → neutral placeholder texture; never fetch the real art
+  mat.map = sensitivePlaceholderTexture();
+  mat.color.set(0xffffff);
+  mat.needsUpdate = true;
+}
+// render === "none" → leave the solid placeholder color set above
 ```
 
 - [ ] **Step 3: Typecheck and lint**
@@ -1109,9 +1133,11 @@ git commit -m "feat(web): mine paintings show placeholder for filtered NFT art"
 ### Task 12: Seed demo events so both paths are exercisable offline (`web`)
 
 **Files:**
+
 - Modify: `web/src/net/demo.ts` (the `if (kind === "nft")` block, lines ~65-72)
 
 **Interfaces:**
+
 - Consumes: `SproutEvent.mediaFilter` (Task 1).
 - Produces: nothing.
 
@@ -1120,10 +1146,10 @@ git commit -m "feat(web): mine paintings show placeholder for filtered NFT art"
 In `web/src/net/demo.ts`, inside `if (kind === "nft") { … }`, after the existing `if (Math.random() < 0.25) event.mint = true;` line, add:
 
 ```ts
-    // exercise the content filter offline: ~12% sensitive (blur), ~6% blocked (hidden)
-    const filterRoll = Math.random();
-    if (filterRoll < 0.06) event.mediaFilter = "blocked";
-    else if (filterRoll < 0.18) event.mediaFilter = "sensitive";
+// exercise the content filter offline: ~12% sensitive (blur), ~6% blocked (hidden)
+const filterRoll = Math.random();
+if (filterRoll < 0.06) event.mediaFilter = "blocked";
+else if (filterRoll < 0.18) event.mediaFilter = "sensitive";
 ```
 
 - [ ] **Step 2: Typecheck**
@@ -1135,6 +1161,7 @@ Expected: PASS.
 
 Run: `npm run dev:web`, open `http://localhost:5173/?demo=1`.
 Expected:
+
 - Some gallery frames (and mine paintings on `?demo=1&theme=mine`) show the neutral hatched placeholder instead of art.
 - Clicking a sensitive NFT shows a blurred image with a "sensitive content" note; clicking a blocked one shows "media unavailable"; both still show amount, ids, and the spacescan/mintgarden links.
 

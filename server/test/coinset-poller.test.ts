@@ -60,9 +60,15 @@ function collect() {
     ambients,
     reorgs,
     handlers: {
-      onBlock: (b: BlockData) => { blocks.push(b); },
-      onAmbient: (s: ChainState) => { ambients.push(s); },
-      onReorg: (f: number) => { reorgs.push(f); },
+      onBlock: (b: BlockData) => {
+        blocks.push(b);
+      },
+      onAmbient: (s: ChainState) => {
+        ambients.push(s);
+      },
+      onReorg: (f: number) => {
+        reorgs.push(f);
+      },
     },
   };
 }
