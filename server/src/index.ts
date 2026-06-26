@@ -8,6 +8,7 @@ import { Hub } from "./web/hub.js";
 import { RingBuffer } from "./web/ring-buffer.js";
 import { buildServer } from "./web/server.js";
 import { MediaIndex } from "./web/media-index.js";
+import { ContentFilter } from "./classify/content-filter.js";
 import { readVersion } from "./version.js";
 
 process.on("unhandledRejection", (reason) => {
@@ -31,14 +32,17 @@ const BACKFILL_BLOCKS = Number(process.env.BACKFILL_BLOCKS ?? 150);
 // still covering the full backfill window; older events fall off the back
 const hub = new Hub(new RingBuffer<GroveEvent>(10000), readVersion().appVersion);
 const media = new MediaIndex(10000); // >= ring buffer so replayable art stays resolvable
+const contentFilter = new ContentFilter(media); // >= ring buffer cap; MintGarden lookups cached per nftId
 const cats = new CatRegistry();
 await cats.start();
 
 const poller = new CoinsetPoller(
   coinsetView(RpcClient.mainnet()),
   {
-    onBlock(block) {
-      hub.publish(classifyBlock(block, cats, media));
+    async onBlock(block) {
+      const events = classifyBlock(block, cats, media);
+      await contentFilter.enrich(events);
+      hub.publish(events);
       console.log(`block ${block.height} (${block.spends.length} spends)`);
     },
     onAmbient(state) {
