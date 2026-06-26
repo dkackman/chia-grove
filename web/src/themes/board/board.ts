@@ -62,7 +62,6 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
   let displayRows: DisplayRow[] = [];
   let ledgerDirty = false;
   let sproutsSinceFrame = 0;
-  let pushZ = 0; // decaying camera push-in on a new block
   let scrollOffset = 0; // rows scrolled back from the newest (0 = following live)
   let scrollAccum = 0; // sub-row wheel remainder
   let lastRenderedOffset = -1;
@@ -92,7 +91,6 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
         break;
       case "block":
         header.setBlock(event.height, event.spendCount, event.fees);
-        pushZ = 1;
         break;
       case "ambient":
         header.setAmbient(event.mempoolSize, event.netspace);
@@ -133,8 +131,12 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
         }
         ledgerDirty = false;
       }
-      // scrubbing through history snaps instantly; live arrivals riffle
-      renderLedger(scrolled || reducedMotion || sproutsSinceFrame > FAST_FORWARD);
+      // Scrubbing through history snaps instantly; a settled board always
+      // riffles a fresh block no matter how many spends it carries. Only snap
+      // when we're already mid-riffle and being flooded (e.g. the startup
+      // snapshot replay) so the board can catch up instead of churning forever.
+      const flooding = !wasIdle && sproutsSinceFrame > FAST_FORWARD;
+      renderLedger(scrolled || reducedMotion || flooding);
       lastRenderedOffset = scrollOffset;
       if (!scrolled && (!wasIdle || !ledger.idle())) clatter.flap(Math.min(1, sproutsSinceFrame / 6));
       header.setLive(scrollOffset === 0);
@@ -149,11 +151,11 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
     ledger.update(dt);
     header.update(dt);
 
-    // gentle idle parallax sway + decaying push-in on a new block
-    pushZ = Math.max(0, pushZ - dt);
+    // gentle idle parallax sway; hold the framing distance (eased so a resize
+    // settles smoothly rather than jumping)
     const sway = reducedMotion ? 0 : Math.sin(t * 0.4) * 0.25;
     camera.position.x += (sway - camera.position.x) * Math.min(dt, 1);
-    camera.position.z += (baseZ - pushZ * 4 - camera.position.z) * Math.min(dt * 2, 1);
+    camera.position.z += (baseZ - camera.position.z) * Math.min(dt * 2, 1);
     camera.lookAt(0, centerY, 0);
 
     for (const fn of frameCallbacks) fn();
