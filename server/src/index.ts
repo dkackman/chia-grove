@@ -32,7 +32,7 @@ const BACKFILL_BLOCKS = Number(process.env.BACKFILL_BLOCKS ?? 150);
 // still covering the full backfill window; older events fall off the back
 const hub = new Hub(new RingBuffer<GroveEvent>(10000), readVersion().appVersion);
 const media = new MediaIndex(10000); // >= ring buffer so replayable art stays resolvable
-const contentFilter = new ContentFilter(media); // >= ring buffer cap; MintGarden lookups cached per nftId
+const contentFilter = new ContentFilter(media); // MintGarden lookups cached per nftId
 const cats = new CatRegistry();
 await cats.start();
 

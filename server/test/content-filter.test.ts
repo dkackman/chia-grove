@@ -1,5 +1,8 @@
 import { expect, test } from "vitest";
 import { mapMintgarden } from "../src/classify/content-filter.js";
+import { ContentFilter } from "../src/classify/content-filter.js";
+import { MediaIndex } from "../src/web/media-index.js";
+import type { GroveEvent, SproutEvent } from "@grove/shared";
 
 test("is_blocked true → blocked", () => {
   expect(mapMintgarden({ is_blocked: true })).toBe("blocked");
@@ -56,10 +59,6 @@ test("missing fields / non-object → ok", () => {
   expect(mapMintgarden("nope")).toBe("ok");
   expect(mapMintgarden({ collection: null, data: null, creator: null })).toBe("ok");
 });
-
-import { ContentFilter } from "../src/classify/content-filter.js";
-import { MediaIndex } from "../src/web/media-index.js";
-import type { GroveEvent, SproutEvent } from "@grove/shared";
 
 const nftEvent = (over: Partial<SproutEvent> = {}): SproutEvent => ({
   type: "sprout",
