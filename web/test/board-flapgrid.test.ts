@@ -44,3 +44,24 @@ test("riffles to completion even at the caller's max dt (0.1)", () => {
   for (let i = 0; i < 4000; i++) g.update(0.1);
   expect(g.idle()).toBe(true);
 });
+
+function scaleY(g: FlapGrid, cell: number): number {
+  const m = new THREE.Matrix4();
+  g.mesh.getMatrixAt(cell, m);
+  const scl = new THREE.Vector3();
+  m.decompose(new THREE.Vector3(), new THREE.Quaternion(), scl);
+  return scl.y;
+}
+
+test("an instant set restores full height on a cell caught mid-flip", () => {
+  const g = grid(1, 2);
+  g.setRow(0, "AB", false); // start a riffle
+  g.update(0.03); // half of FLIP_TIME → cell 0 sits at its thinnest (squashed)
+  expect(scaleY(g, 0)).toBeLessThan(0.5); // confirm it is mid-fold
+
+  // snapping the row instantly (the flooding / scroll / reorg path) must not
+  // leave the panel stuck thin — the fold has to be undone
+  g.setRow(0, "CD", true);
+  expect(scaleY(g, 0)).toBeCloseTo(1);
+  expect(g.idle()).toBe(true);
+});

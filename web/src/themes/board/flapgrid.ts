@@ -131,15 +131,24 @@ export class FlapGrid {
   }
 
   setRow(row: number, text: string, instant = false): void {
+    let matrixDirty = false;
     for (let c = 0; c < this.cols; c++) {
       const i = row * this.cols + c;
       const g = charToGlyph(text[c] ?? " ");
       this.target[i] = g;
       if (instant) {
-        if (this.flip[i] >= 0) this.animating--;
+        // Cancelling a cell that was mid-flip leaves its matrix folded
+        // (scale.y < 1); restore full height now, because once `animating`
+        // hits 0 update() bails early and never re-uploads the matrix.
+        if (this.flip[i] >= 0) {
+          this.animating--;
+          this.writeMatrix(i, 1);
+          matrixDirty = true;
+        }
         this.cur[i] = g;
         this.flip[i] = -1;
         this.wait[i] = 0;
+        this.swapped[i] = 0;
         this.aGlyph.array[i] = g;
       } else if (this.cur[i] !== g && this.flip[i] < 0) {
         this.flip[i] = 0;
@@ -149,6 +158,7 @@ export class FlapGrid {
       }
     }
     this.aGlyph.needsUpdate = true;
+    if (matrixDirty) this.mesh.instanceMatrix.needsUpdate = true;
   }
 
   clearRow(row: number): void {
