@@ -69,6 +69,10 @@ function sprout(height: number): SproutEvent {
     event.dataUri = demoNftImage(event.launcherId); // same launcher → same art
     event.mediaKind = "image";
     if (Math.random() < 0.25) event.mint = true;
+    // exercise the content filter offline: ~12% sensitive (blur), ~6% blocked (hidden)
+    const filterRoll = Math.random();
+    if (filterRoll < 0.06) event.mediaFilter = "blocked";
+    else if (filterRoll < 0.18) event.mediaFilter = "sensitive";
   }
   return event;
 }

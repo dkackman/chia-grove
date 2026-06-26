@@ -1,7 +1,7 @@
 import type { SproutEvent } from "@grove/shared";
 import type { CardMeta } from "../themes/types.js";
 import { mojosToXch, mojosToCAT, shortHex } from "./format.js";
-import { escalateMediaKind, mediaSrc, type MediaKind } from "./media.js";
+import { escalateMediaKind, resolveMedia, type MediaKind } from "./media.js";
 
 const KIND_LABELS: Record<SproutEvent["kind"], string> = {
   xch: "XCH spend",
@@ -97,8 +97,17 @@ export function showCard(event: CardMeta): void {
     img.className = "cat-icon";
     card.appendChild(img);
   } else {
-    const src = mediaSrc(event);
-    if (src) card.appendChild(nftMediaEl(src, event.mediaKind ?? "image"));
+    const media = resolveMedia(event);
+    if (media.render === "art") {
+      card.appendChild(nftMediaEl(media.src, media.kind));
+    } else if (media.render === "blur") {
+      const node = nftMediaEl(media.src, media.kind);
+      node.classList.add("sensitive");
+      card.appendChild(node);
+      card.appendChild(el("div", "media-note", "sensitive content"));
+    } else if (media.render === "placeholder") {
+      card.appendChild(el("div", "media-note", "media unavailable"));
+    }
   }
 
   const amountLabel =

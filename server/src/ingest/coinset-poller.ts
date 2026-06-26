@@ -105,7 +105,7 @@ export class CoinsetPoller implements ChainSource {
 
       if (info.timestamp !== null) {
         const spends = await this.rpc.getSpends(info.headerHash);
-        this.handlers.onBlock({
+        await this.handlers.onBlock({
           height,
           headerHash: info.headerHash,
           timestamp: Number(info.timestamp),

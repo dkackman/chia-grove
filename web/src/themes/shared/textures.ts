@@ -93,3 +93,31 @@ export function furrowTexture(lines: number): THREE.CanvasTexture {
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
 }
+
+let placeholderTex: THREE.CanvasTexture | null = null;
+
+/**
+ * Neutral "content hidden" tile shown in WebGL frames (gallery walls, mine
+ * paintings) in place of blocked/sensitive NFT art. A single shared instance —
+ * the real art is never fetched for filtered NFTs.
+ */
+export function sensitivePlaceholderTexture(): THREE.CanvasTexture {
+  if (placeholderTex) return placeholderTex;
+  const size = 64;
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = size;
+  const ctx = canvas.getContext("2d")!;
+  ctx.fillStyle = "#1b2230";
+  ctx.fillRect(0, 0, size, size);
+  ctx.strokeStyle = "rgba(159, 182, 201, 0.22)";
+  ctx.lineWidth = 4;
+  for (let i = -size; i < size; i += 12) {
+    ctx.beginPath();
+    ctx.moveTo(i, 0);
+    ctx.lineTo(i + size, size);
+    ctx.stroke();
+  }
+  placeholderTex = new THREE.CanvasTexture(canvas);
+  placeholderTex.colorSpace = THREE.SRGBColorSpace;
+  return placeholderTex;
+}
