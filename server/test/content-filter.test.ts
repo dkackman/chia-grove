@@ -2,6 +2,7 @@ import { expect, test } from "vitest";
 import { mapMintgarden } from "../src/classify/content-filter.js";
 import { ContentFilter } from "../src/classify/content-filter.js";
 import { MediaIndex } from "../src/web/media-index.js";
+import { buildDenylistMap } from "../src/classify/denylist.js";
 import type { GroveEvent, SproutEvent } from "@grove/shared";
 
 test("is_blocked true → blocked", () => {
@@ -68,6 +69,53 @@ test("missing fields / non-object → ok", () => {
   expect(mapMintgarden(null)).toBe("ok");
   expect(mapMintgarden("nope")).toBe("ok");
   expect(mapMintgarden({ collection: null, data: null, creator: null })).toBe("ok");
+});
+
+test("lexicon hit in nft name → sensitive", () => {
+  expect(mapMintgarden({ name: "Hardcore #1" })).toBe("sensitive");
+});
+
+test("lexicon hit in collection name → sensitive", () => {
+  expect(mapMintgarden({ collection: { name: "XXX Club" } })).toBe("sensitive");
+});
+
+test("lexicon hit in metadata description → sensitive", () => {
+  expect(mapMintgarden({ data: { metadata_json: { description: "explicit content" } } })).toBe(
+    "sensitive"
+  );
+});
+
+test("benign name with embedded substring does not match (word boundary)", () => {
+  expect(mapMintgarden({ name: "Sussex Coastline", collection: { name: "Analysis" } })).toBe("ok");
+});
+
+test("denylisted collection returns its declared disposition", () => {
+  const denylist = buildDenylistMap([{ collectionId: "col_bad", disposition: "blocked" }]);
+  expect(mapMintgarden({ collection: { id: "col_bad" } }, { denylist })).toBe("blocked");
+});
+
+test("denylist sensitive entry → sensitive", () => {
+  const denylist = buildDenylistMap([{ collectionId: "col_nsfw", disposition: "sensitive" }]);
+  expect(mapMintgarden({ collection: { id: "col_nsfw" } }, { denylist })).toBe("sensitive");
+});
+
+test("denylist blocked overrides a co-occurring text sensitive hit", () => {
+  const denylist = buildDenylistMap([{ collectionId: "col_bad", disposition: "blocked" }]);
+  expect(
+    mapMintgarden({ name: "nude study", collection: { id: "col_bad" } }, { denylist })
+  ).toBe("blocked");
+});
+
+test("MintGarden blocked flag still wins over a text sensitive hit", () => {
+  expect(mapMintgarden({ is_blocked: true, name: "nude study" })).toBe("blocked");
+});
+
+test("custom lexicon via opts is honored", () => {
+  expect(mapMintgarden({ name: "contains widget" }, { lexicon: ["widget"] })).toBe("sensitive");
+});
+
+test("non-denylisted collection with default (empty) denylist → ok", () => {
+  expect(mapMintgarden({ collection: { id: "col_unknown" } })).toBe("ok");
 });
 
 const nftEvent = (over: Partial<SproutEvent> = {}): SproutEvent => ({
