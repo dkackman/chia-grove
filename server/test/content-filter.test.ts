@@ -85,6 +85,10 @@ test("lexicon hit in metadata description → sensitive", () => {
   );
 });
 
+test("lexicon hit in metadata name → sensitive", () => {
+  expect(mapMintgarden({ data: { metadata_json: { name: "XXX Drop" } } })).toBe("sensitive");
+});
+
 test("benign name with embedded substring does not match (word boundary)", () => {
   expect(mapMintgarden({ name: "Sussex Coastline", collection: { name: "Analysis" } })).toBe("ok");
 });
