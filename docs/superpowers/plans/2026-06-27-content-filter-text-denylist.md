@@ -22,10 +22,12 @@
 ### Task 1: Lexicon module
 
 **Files:**
+
 - Create: `server/src/classify/lexicon.ts`
 - Test: `server/test/lexicon.test.ts`
 
 **Interfaces:**
+
 - Consumes: nothing.
 - Produces:
   - `export const LEXICON: string[]` — starter adult terms.
@@ -139,10 +141,12 @@ git commit -m "feat: lexicon module for adult-term text matching"
 ### Task 2: Denylist module
 
 **Files:**
+
 - Create: `server/src/classify/denylist.ts`
 - Test: `server/test/denylist.test.ts`
 
 **Interfaces:**
+
 - Consumes: `import type { Disposition } from "./content-filter.js"` (type-only; no runtime cycle).
 - Produces:
   - `export interface DenylistEntry { collectionId: string; disposition: "blocked" | "sensitive"; note?: string }`
@@ -250,10 +254,12 @@ git commit -m "feat: empty collection denylist module with id lookup"
 ### Task 3: Fold text + denylist signals into mapMintgarden
 
 **Files:**
+
 - Modify: `server/src/classify/content-filter.ts` (the `mapMintgarden` function and its imports)
 - Test: `server/test/content-filter.test.ts` (add cases)
 
 **Interfaces:**
+
 - Consumes: `LEXICON`, `matchesLexicon` from Task 1; `DENYLIST_MAP`, `dispositionForCollection`, `buildDenylistMap` from Task 2.
 - Produces (changed signature, backward compatible):
   - `export interface MapMintgardenOpts { lexicon?: string[]; denylist?: Map<string, Disposition> }`
@@ -296,9 +302,9 @@ test("denylist sensitive entry → sensitive", () => {
 
 test("denylist blocked overrides a co-occurring text sensitive hit", () => {
   const denylist = buildDenylistMap([{ collectionId: "col_bad", disposition: "blocked" }]);
-  expect(
-    mapMintgarden({ name: "nude study", collection: { id: "col_bad" } }, { denylist })
-  ).toBe("blocked");
+  expect(mapMintgarden({ name: "nude study", collection: { id: "col_bad" } }, { denylist })).toBe(
+    "blocked"
+  );
 });
 
 test("MintGarden blocked flag still wins over a text sensitive hit", () => {
@@ -363,8 +369,7 @@ export function mapMintgarden(json: unknown, opts: MapMintgardenOpts = {}): Disp
     collection.blocked_content === true ||
     creator.verification_state === 2
       ? "blocked"
-      : isSensitiveFlag(collection.sensitive_content) ||
-          isSensitiveFlag(metadata.sensitive_content)
+      : isSensitiveFlag(collection.sensitive_content) || isSensitiveFlag(metadata.sensitive_content)
         ? "sensitive"
         : "ok";
 

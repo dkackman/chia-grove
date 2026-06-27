@@ -105,9 +105,9 @@ test("denylist sensitive entry → sensitive", () => {
 
 test("denylist blocked overrides a co-occurring text sensitive hit", () => {
   const denylist = buildDenylistMap([{ collectionId: "col_bad", disposition: "blocked" }]);
-  expect(
-    mapMintgarden({ name: "nude study", collection: { id: "col_bad" } }, { denylist })
-  ).toBe("blocked");
+  expect(mapMintgarden({ name: "nude study", collection: { id: "col_bad" } }, { denylist })).toBe(
+    "blocked"
+  );
 });
 
 test("MintGarden blocked flag still wins over a text sensitive hit", () => {

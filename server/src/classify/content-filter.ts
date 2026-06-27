@@ -57,8 +57,7 @@ export function mapMintgarden(json: unknown, opts: MapMintgardenOpts = {}): Disp
     collection.blocked_content === true ||
     creator.verification_state === 2
       ? "blocked"
-      : isSensitiveFlag(collection.sensitive_content) ||
-          isSensitiveFlag(metadata.sensitive_content)
+      : isSensitiveFlag(collection.sensitive_content) || isSensitiveFlag(metadata.sensitive_content)
         ? "sensitive"
         : "ok";
 
