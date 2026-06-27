@@ -1,5 +1,7 @@
 import type { GroveEvent, SproutEvent } from "@grove/shared";
 import type { MediaIndex } from "../web/media-index.js";
+import { LEXICON, matchesLexicon } from "./lexicon.js";
+import { DENYLIST_MAP, dispositionForCollection } from "./denylist.js";
 
 export type Disposition = "blocked" | "sensitive" | "ok";
 
@@ -20,31 +22,56 @@ const isSensitiveFlag = (v: unknown): boolean => {
   return Array.isArray(v) && v.length > 0;
 };
 
+const RANK: Record<Disposition, number> = { ok: 0, sensitive: 1, blocked: 2 };
+
+/** Strongest disposition under `blocked > sensitive > ok`. */
+const strongest = (...ds: Disposition[]): Disposition =>
+  ds.reduce((a, b) => (RANK[b] > RANK[a] ? b : a), "ok");
+
+export interface MapMintgardenOpts {
+  /** Override the adult-term lexicon (test injection). Defaults to LEXICON. */
+  lexicon?: string[];
+  /** Override the collection denylist map (test injection). Defaults to DENYLIST_MAP. */
+  denylist?: Map<string, Disposition>;
+}
+
 /**
- * Collapse a MintGarden GET /nfts/:id response object into one disposition.
+ * Collapse a MintGarden GET /nfts/:id response object into one disposition,
+ * combining three signals: MintGarden structured flags, a curated collection
+ * denylist, and a text-keyword heuristic over name/description fields.
  * Blocked (hard takedown) wins over sensitive (NSFW). Anything unrecognized or
  * malformed maps to "ok" (permissive) — the filter only acts on positive flags.
  */
-export function mapMintgarden(json: unknown): Disposition {
+export function mapMintgarden(json: unknown, opts: MapMintgardenOpts = {}): Disposition {
+  const lexicon = opts.lexicon ?? LEXICON;
+  const denylist = opts.denylist ?? DENYLIST_MAP;
+
   const nft = asRecord(json);
   const collection = asRecord(nft.collection);
   const creator = asRecord(nft.creator);
   const metadata = asRecord(asRecord(nft.data).metadata_json);
 
-  if (
+  // 1. existing MintGarden structured flags (unchanged precedence)
+  const flagVerdict: Disposition =
     nft.is_blocked === true ||
     collection.blocked_content === true ||
     creator.verification_state === 2
-  ) {
-    return "blocked";
-  }
-  if (
-    isSensitiveFlag(collection.sensitive_content) ||
-    isSensitiveFlag(metadata.sensitive_content)
-  ) {
-    return "sensitive";
-  }
-  return "ok";
+      ? "blocked"
+      : isSensitiveFlag(collection.sensitive_content) || isSensitiveFlag(metadata.sensitive_content)
+        ? "sensitive"
+        : "ok";
+
+  // 2. curated collection denylist, keyed by MintGarden collection id
+  const collectionId = typeof collection.id === "string" ? collection.id : undefined;
+  const denyVerdict = dispositionForCollection(denylist, collectionId) ?? "ok";
+
+  // 3. text-keyword heuristic over name / collection name / description
+  const text = [nft.name, metadata.name, collection.name, metadata.description]
+    .filter((s): s is string => typeof s === "string")
+    .join(" ");
+  const textVerdict: Disposition = matchesLexicon(text, lexicon) ? "sensitive" : "ok";
+
+  return strongest(flagVerdict, denyVerdict, textVerdict);
 }
 
 export interface ContentFilterOptions {
