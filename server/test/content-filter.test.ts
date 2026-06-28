@@ -3,6 +3,7 @@ import { mapMintgarden, mapMintgardenSignals } from "../src/content-filter/index
 import { ContentFilter } from "../src/content-filter/index.js";
 import { MediaIndex } from "../src/web/media-index.js";
 import { buildDenylistMap } from "../src/content-filter/signals/denylist.js";
+import { ContentStore } from "../src/content-filter/store.js";
 import type { GroveEvent, SproutEvent } from "@grove/shared";
 
 test("is_blocked true → blocked", () => {
@@ -298,4 +299,26 @@ test("mapMintgardenSignals chip7 metadata sensitive_content fires chip7", () => 
 test("mapMintgardenSignals clean json fires nothing", () => {
   const v = mapMintgardenSignals({ name: "a calm landscape" });
   expect(v).toEqual({ disposition: "ok", signals: [] });
+});
+
+test("enrich uses a stored verdict and skips the MintGarden fetch", async () => {
+  const store = new ContentStore(":memory:");
+  store.putCheap("launchX", "nft1x", { disposition: "sensitive", signals: ["lexicon"] });
+  let fetched = 0;
+  const filter = new ContentFilter(new MediaIndex(10), {
+    store,
+    fetchImpl: (async () => {
+      fetched++;
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch,
+  });
+  const event: SproutEvent = {
+    type: "sprout", kind: "nft", height: 1, coinId: "c", amount: "1",
+    launcherId: "launchX", nftId: "nft1x", mediaKind: "image",
+  };
+  await filter.enrich([event]);
+  expect(fetched).toBe(0);
+  expect(event.mediaFilter).toBe("sensitive");
+  expect(event.signals).toEqual(["lexicon"]);
+  store.close();
 });

@@ -2,10 +2,12 @@ import type { GroveEvent, SproutEvent } from "@grove/shared";
 import type { MediaIndex } from "../web/media-index.js";
 import type { Disposition, Verdict } from "./types.js";
 import { mapMintgardenSignals } from "./signals/mintgarden.js";
+import type { ContentStore } from "./store.js";
 
 export type { Disposition } from "./types.js";
 export { mapMintgarden, mapMintgardenSignals } from "./signals/mintgarden.js";
 export type { MapMintgardenOpts } from "./signals/mintgarden.js";
+export type { StoredVerdict } from "./store.js";
 
 const OK: Verdict = { disposition: "ok", signals: [] };
 
@@ -21,6 +23,8 @@ export interface ContentFilterOptions {
   failTtlMs?: number;
   /** Clock injection point for testing the negative-cache TTL. */
   now?: () => number;
+  /** Persistent verdict store keyed by launcherId; a hit skips the MintGarden network fetch. */
+  store?: ContentStore;
 }
 
 /**
@@ -55,6 +59,7 @@ export class ContentFilter {
   private readonly enrichBudgetMs: number;
   private readonly failTtlMs: number;
   private readonly now: () => number;
+  private readonly store?: ContentStore;
   private active = 0;
   private readonly waiters: Array<() => void> = [];
 
@@ -70,6 +75,7 @@ export class ContentFilter {
     this.enrichBudgetMs = opts.enrichBudgetMs ?? 1500;
     this.failTtlMs = opts.failTtlMs ?? 60000;
     this.now = opts.now ?? Date.now;
+    this.store = opts.store;
   }
 
   async enrich(events: GroveEvent[]): Promise<void> {
@@ -98,10 +104,17 @@ export class ContentFilter {
   }
 
   private async apply(event: SproutEvent): Promise<void> {
-    const verdict = await this.resolve(event.nftId!);
+    const launcherId = event.launcherId;
+    const stored = launcherId ? this.store?.get(launcherId) : undefined;
+    const verdict: Verdict = stored
+      ? { disposition: stored.disposition, signals: stored.signals }
+      : await this.resolve(event.nftId!);
+
+    if (!stored && launcherId) this.store?.putCheap(launcherId, event.nftId, verdict);
+
     if (verdict.disposition === "blocked") {
       event.mediaFilter = "blocked";
-      if (event.launcherId) this.media.delete(event.launcherId);
+      if (launcherId) this.media.delete(launcherId);
     } else if (verdict.disposition === "sensitive") {
       event.mediaFilter = "sensitive";
     }
