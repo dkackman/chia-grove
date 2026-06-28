@@ -38,7 +38,9 @@ coinset.org RPC
 CoinsetPoller  (server/src/ingest/)
     ↓ BlockInput
 classifyBlock  (server/src/classify/classify.ts)
-    ↓ GroveEvent[]
+    ↓ GroveEvent[]  (NFT SproutEvents stamped with mediaFilter + signals[] by cheap signals)
+ContentFilter  (server/src/content-filter/)
+    ↓ async SafeSearch (image mints, cheap verdict ok) → ContentFlagEvent
 Hub + RingBuffer  (server/src/web/)
     ↓ WebSocket (JSON)
 GroveFeed  (web/src/net/feed.ts)
@@ -54,6 +56,7 @@ New WebSocket clients first receive a `Hello` handshake (protocol version check)
 - `classifyBlock` uses `chia-wallet-sdk`'s `Clvm` + `puzzle.parseNft/parseCat/parseDid` to classify every `CoinSpend` into a `SproutEvent`. Launcher-hash spends are skipped (they become the `mint` flag on child spends).
 - `CatRegistry` fetches the full CAT list from `api.dexie.space` on start and refreshes hourly. It enriches CAT sprout events with `catName`, `catTicker`, and `catIconUrl`.
 - NFT art is never sent to the client as a URL. `classifyBlock` records each NFT's on-chain art URL in a bounded `MediaIndex` (`server/src/web/media-index.ts`, keyed by NFT `launcherId`); the `SproutEvent` carries only a `mediaKind` hint. The `/img` proxy resolves `?nft=<launcherId>` through `MediaIndex` (404 unknown, 400 disallowed) so it can never fetch an arbitrary client-supplied URL. launcherId keys are stable across spends, so the proxy URL caches well.
+- **Content filter** (`server/src/content-filter/`) is a self-contained module (importing only `@grove/shared` types and `MediaIndex`) designed to be liftable into a separate project. It runs two tiers: (1) _cheap signals_ inline — lexicon, CHIP-7 `sensitive_content` flag, MintGarden collection/creator flags, and a curated denylist — which stamp `mediaFilter` and a `signals?: string[]` provenance array on NFT `SproutEvent`s immediately; (2) _Google Vision SafeSearch_ async/out-of-band, only for image NFT mints whose cheap verdict was `ok` — adult LIKELY/VERY_LIKELY → `sensitive`. SafeSearch never downloads image bytes; Google fetches the on-chain URI directly via `image.source.imageUri`. Verdicts persist per `launcherId` in `store.ts` (SQLite via Node's built-in `node:sqlite`), so each NFT is classified at most once across restarts. A late SafeSearch verdict is pushed to clients as a `ContentFlagEvent` riding the existing Hub→RingBuffer transport; gallery and mine themes blur already-rendered NFTs on receipt. `GOOGLE_VISION_API_KEY` unset disables SafeSearch (cheap signals still run); `CONTENT_DB_PATH` controls the SQLite path.
 - `Hub` handles backpressure: sockets above 1 MB buffered are terminated; ambient events are dropped for sockets above 64 KB.
 - The `/healthz` GET endpoint returns `{ ok, appVersion, gitSha, protocolVersion }` — used by deploy health checks.
 
@@ -94,23 +97,26 @@ New WebSocket clients first receive a `Hello` handshake (protocol version check)
 
 ### Event types (`shared/src/index.ts`)
 
-| Type           | When emitted                                         |
-| -------------- | ---------------------------------------------------- |
-| `BlockEvent`   | Every new block                                      |
-| `SproutEvent`  | Every classified coin spend                          |
-| `AmbientEvent` | Each poll cycle (mempool, netspace)                  |
-| `ReorgEvent`   | Chain reorg detected                                 |
-| `Hello`        | First message on every connection (protocol version) |
-| `Snapshot`     | Sent after `Hello` on connect (full ring buffer)     |
-| `Batch`        | Live streaming: one or more events per frame         |
+| Type               | When emitted                                            |
+| ------------------ | ------------------------------------------------------- |
+| `BlockEvent`       | Every new block                                         |
+| `SproutEvent`      | Every classified coin spend                             |
+| `AmbientEvent`     | Each poll cycle (mempool, netspace)                     |
+| `ReorgEvent`       | Chain reorg detected                                    |
+| `ContentFlagEvent` | Late SafeSearch verdict for an already-emitted NFT mint |
+| `Hello`            | First message on every connection (protocol version)    |
+| `Snapshot`         | Sent after `Hello` on connect (full ring buffer)        |
+| `Batch`            | Live streaming: one or more events per frame            |
 
 ### Environment variables (server)
 
-| Var                | Default |
-| ------------------ | ------- |
-| `PORT`             | `8080`  |
-| `POLL_INTERVAL_MS` | `3000`  |
-| `BACKFILL_BLOCKS`  | `150`   |
+| Var                     | Default                        | Notes                                                 |
+| ----------------------- | ------------------------------ | ----------------------------------------------------- |
+| `PORT`                  | `8080`                         |                                                       |
+| `POLL_INTERVAL_MS`      | `3000`                         |                                                       |
+| `BACKFILL_BLOCKS`       | `150`                          |                                                       |
+| `GOOGLE_VISION_API_KEY` | (unset)                        | Enables Vision SafeSearch; unset = cheap signals only |
+| `CONTENT_DB_PATH`       | `./data/content-filter.sqlite` | SQLite verdict store path                             |
 
 ## Deployment
 

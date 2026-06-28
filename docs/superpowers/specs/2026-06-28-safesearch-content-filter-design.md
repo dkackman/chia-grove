@@ -25,18 +25,18 @@ Constraints and goals from the requirements:
 
 ## Decisions (resolved during brainstorming)
 
-- **Architecture:** *inline cache hit, async cache miss.* Cheap signals (lexicon,
+- **Architecture:** _inline cache hit, async cache miss._ Cheap signals (lexicon,
   CHIP-7 `sensitive_content`, MintGarden collection/creator flags + blocks,
   denylist) run **inline** as today. SafeSearch runs **async, out-of-band**, only
   when the cheap verdict is `ok`. Every signal is persisted per `launcherId` in
   SQLite. `blocked` remains a distinct signal from `sensitive`.
-- **Separation:** *clean module boundary, same process.* A self-contained
+- **Separation:** _clean module boundary, same process._ A self-contained
   `server/src/content-filter/` module with a narrow public interface, its own
   SQLite store, importing only `@grove/shared` types and `MediaIndex`.
-- **SafeSearch scope:** *only when cheaper signals say `ok`*, only on `mint`
+- **SafeSearch scope:** _only when cheaper signals say `ok`_, only on `mint`
   events with `mediaKind === "image"`. Skips items the cheap signals already
   flagged (no paid second opinion on already-flagged NFTs).
-- **SQLite scope:** *unified verdict per NFT* — final disposition plus per-signal
+- **SQLite scope:** _unified verdict per NFT_ — final disposition plus per-signal
   provenance and raw SafeSearch likelihoods, keyed by `launcherId`.
 - **Async propagation:** a new lightweight `content-flag` event flows through the
   existing Hub → RingBuffer → Snapshot/Batch machinery so live viewers patch the
@@ -109,14 +109,14 @@ server/src/content-filter/
 The cheap MintGarden fetch yields up to four signals from one HTTP call, plus the
 local lexicon. SafeSearch is the fifth, async one:
 
-| SignalName          | Source                                             | Disposition it can raise |
-| ------------------- | -------------------------------------------------- | ------------------------ |
-| `chip7`             | off-chain metadata `sensitive_content` (via MG)    | sensitive                |
-| `mintgarden`        | collection `sensitive_content` / `blocked_content` | sensitive **or** blocked |
-| `mintgarden-creator`| creator `verification_state === 2`                 | blocked                  |
-| `denylist`          | curated collection-id denylist                     | sensitive or blocked     |
-| `lexicon`           | text-keyword heuristic over name/desc              | sensitive                |
-| `safesearch`        | Vision adult `LIKELY`/`VERY_LIKELY`                | sensitive                |
+| SignalName           | Source                                             | Disposition it can raise |
+| -------------------- | -------------------------------------------------- | ------------------------ |
+| `chip7`              | off-chain metadata `sensitive_content` (via MG)    | sensitive                |
+| `mintgarden`         | collection `sensitive_content` / `blocked_content` | sensitive **or** blocked |
+| `mintgarden-creator` | creator `verification_state === 2`                 | blocked                  |
+| `denylist`           | curated collection-id denylist                     | sensitive or blocked     |
+| `lexicon`            | text-keyword heuristic over name/desc              | sensitive                |
+| `safesearch`         | Vision adult `LIKELY`/`VERY_LIKELY`                | sensitive                |
 
 `verdict.ts` combines them: `disposition = strongest(...)`, and `signals[]` lists
 every signal that fired at `sensitive` or `blocked`.
@@ -157,20 +157,20 @@ CREATE TABLE IF NOT EXISTS nft (
 export interface SproutEvent {
   // ...unchanged...
   mediaFilter?: "blocked" | "sensitive";
-  signals?: string[];   // NEW: which content-filter signals fired
+  signals?: string[]; // NEW: which content-filter signals fired
 }
 
-export interface ContentFlagEvent {        // NEW
+export interface ContentFlagEvent {
+  // NEW
   type: "content-flag";
   launcherId: string;
   mediaFilter: "sensitive" | "blocked";
   signals: string[];
 }
 
-export type GroveEvent =
-  BlockEvent | SproutEvent | AmbientEvent | ReorgEvent | ContentFlagEvent;
+export type GroveEvent = BlockEvent | SproutEvent | AmbientEvent | ReorgEvent | ContentFlagEvent;
 
-export const PROTOCOL_VERSION = 4;   // was 3 — wire format changed
+export const PROTOCOL_VERSION = 4; // was 3 — wire format changed
 ```
 
 `ContentFlagEvent` rides the existing `Snapshot`/`Batch` transport (both carry
@@ -201,11 +201,11 @@ export const PROTOCOL_VERSION = 4;   // was 3 — wire format changed
 ## SafeSearch worker
 
 - **Eligibility:** `event.mint && event.mediaKind === "image" && cheapVerdict === "ok"
-  && store.safesearch_checked_at IS NULL && googleApiKey present`.
+&& store.safesearch_checked_at IS NULL && googleApiKey present`.
 - **Call:** Vision REST `POST https://vision.googleapis.com/v1/images:annotate?key=<API_KEY>`
   with body
   `{ requests: [{ image: { source: { imageUri: <on-chain data URI> } },
-     features: [{ type: "SAFE_SEARCH_DETECTION" }] }] }`.
+   features: [{ type: "SAFE_SEARCH_DETECTION" }] }] }`.
   Google fetches the URI; we never download.
 - **Mapping:** `adult ∈ {LIKELY, VERY_LIKELY}` → `sensitive`; else `ok`. The raw
   annotation (all five likelihoods) is persisted for audit.
@@ -218,10 +218,10 @@ export const PROTOCOL_VERSION = 4;   // was 3 — wire format changed
 
 ## Configuration
 
-| Var                   | Default                          | Effect                                            |
-| --------------------- | -------------------------------- | ------------------------------------------------- |
-| `GOOGLE_VISION_API_KEY` | (unset)                        | Enables SafeSearch. Unset ⇒ cheap signals only.   |
-| `CONTENT_DB_PATH`     | `./data/content-filter.sqlite`   | SQLite file path. Persists across restarts.       |
+| Var                     | Default                        | Effect                                          |
+| ----------------------- | ------------------------------ | ----------------------------------------------- |
+| `GOOGLE_VISION_API_KEY` | (unset)                        | Enables SafeSearch. Unset ⇒ cheap signals only. |
+| `CONTENT_DB_PATH`       | `./data/content-filter.sqlite` | SQLite file path. Persists across restarts.     |
 
 - `.gitignore`: ignore `data/` (or the db path). The droplet retains the file
   across deploys; systemd working dir must allow writes.
@@ -261,4 +261,7 @@ export const PROTOCOL_VERSION = 4;   // was 3 — wire format changed
 - No re-classification scheduling/backfill of historical NFTs (lazy on next mint/
   spend).
 - No second-opinion SafeSearch on already-flagged NFTs.
+
+```
+
 ```

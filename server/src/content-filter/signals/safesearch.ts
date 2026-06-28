@@ -24,7 +24,10 @@ export interface QueryOpts {
  * `sensitive`. Throws on transport / non-2xx / malformed responses so the caller
  * can leave the NFT permissive without poisoning the store.
  */
-export async function querySafeSearch(imageUri: string, opts: QueryOpts): Promise<SafeSearchResult> {
+export async function querySafeSearch(
+  imageUri: string,
+  opts: QueryOpts
+): Promise<SafeSearchResult> {
   const fetchImpl = opts.fetchImpl ?? fetch;
   const baseUrl = opts.baseUrl ?? "https://vision.googleapis.com/v1/images:annotate";
   const controller = new AbortController();
@@ -42,7 +45,10 @@ export async function querySafeSearch(imageUri: string, opts: QueryOpts): Promis
     });
     if (!res.ok) throw new Error(`vision ${res.status}`);
     const json = (await res.json()) as {
-      responses?: Array<{ safeSearchAnnotation?: { adult?: string }; error?: { message?: string } }>;
+      responses?: Array<{
+        safeSearchAnnotation?: { adult?: string };
+        error?: { message?: string };
+      }>;
     };
     const first = json.responses?.[0];
     if (first?.error) throw new Error(`vision: ${first.error.message ?? "annotation error"}`);

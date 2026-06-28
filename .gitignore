@@ -9,3 +9,6 @@ version.json
 
 # Visual brainstorming companion
 .superpowers/
+
+# content-filter SQLite store
+/data/

@@ -76,7 +76,16 @@ function sprout(height: number, dispatch?: (event: GroveEvent) => void): SproutE
     // exercise the async content-flag patch path offline
     if (event.kind === "nft" && event.launcherId && filterRoll >= 0.18 && filterRoll < 0.21) {
       const launcher = event.launcherId;
-      setTimeout(() => dispatch?.({ type: "content-flag", launcherId: launcher, mediaFilter: "sensitive", signals: ["safesearch"] }), 4000);
+      setTimeout(
+        () =>
+          dispatch?.({
+            type: "content-flag",
+            launcherId: launcher,
+            mediaFilter: "sensitive",
+            signals: ["safesearch"],
+          }),
+        4000
+      );
     }
   }
   return event;

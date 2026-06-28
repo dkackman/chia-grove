@@ -43,7 +43,9 @@ export class ContentStore {
 
   get(launcherId: string): StoredVerdict | undefined {
     const row = this.db
-      .prepare("SELECT disposition, signals_json, safesearch_checked_at FROM nft WHERE launcher_id = ?")
+      .prepare(
+        "SELECT disposition, signals_json, safesearch_checked_at FROM nft WHERE launcher_id = ?"
+      )
       .get(launcherId) as Row | undefined;
     if (!row) return undefined;
     return {
@@ -64,18 +66,30 @@ export class ContentStore {
            signals_json = excluded.signals_json,
            checked_at = excluded.checked_at`
       )
-      .run(launcherId, nftId ?? null, verdict.disposition, JSON.stringify(verdict.signals), Date.now());
+      .run(
+        launcherId,
+        nftId ?? null,
+        verdict.disposition,
+        JSON.stringify(verdict.signals),
+        Date.now()
+      );
   }
 
   putSafeSearch(
     launcherId: string,
     result: { sensitive: boolean; adult: string; raw: unknown }
   ): StoredVerdict {
-    const current = this.get(launcherId) ?? { disposition: "ok" as Disposition, signals: [] as SignalName[], safesearchChecked: false };
+    const current = this.get(launcherId) ?? {
+      disposition: "ok" as Disposition,
+      signals: [] as SignalName[],
+      safesearchChecked: false,
+    };
     const signals = result.sensitive
       ? Array.from(new Set([...current.signals, "safesearch" as SignalName]))
       : current.signals.filter((s) => s !== "safesearch");
-    const disposition = result.sensitive ? strongest(current.disposition, "sensitive") : current.disposition;
+    const disposition = result.sensitive
+      ? strongest(current.disposition, "sensitive")
+      : current.disposition;
     this.db
       .prepare(
         `INSERT INTO nft (launcher_id, disposition, signals_json, safesearch_adult, safesearch_raw_json, safesearch_checked_at, checked_at)

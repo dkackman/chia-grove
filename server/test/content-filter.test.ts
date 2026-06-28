@@ -313,8 +313,14 @@ test("enrich uses a stored verdict and skips the MintGarden fetch", async () => 
     }) as typeof fetch,
   });
   const event: SproutEvent = {
-    type: "sprout", kind: "nft", height: 1, coinId: "c", amount: "1",
-    launcherId: "launchX", nftId: "nft1x", mediaKind: "image",
+    type: "sprout",
+    kind: "nft",
+    height: 1,
+    coinId: "c",
+    amount: "1",
+    launcherId: "launchX",
+    nftId: "nft1x",
+    mediaKind: "image",
   };
   await filter.enrich([event]);
   expect(fetched).toBe(0);
@@ -334,18 +340,30 @@ test("enrich queues SafeSearch for a clean image mint and emits a flag", async (
     onFlag: (e) => flags.push(e),
     fetchImpl: (async (url: string) => {
       if (String(url).includes("images:annotate")) {
-        return new Response(JSON.stringify({ responses: [{ safeSearchAnnotation: { adult: "LIKELY" } }] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ responses: [{ safeSearchAnnotation: { adult: "LIKELY" } }] }),
+          { status: 200 }
+        );
       }
       return new Response("{}", { status: 404 }); // MintGarden unknown → ok
     }) as typeof fetch,
   });
   const event: SproutEvent = {
-    type: "sprout", kind: "nft", height: 1, coinId: "c", amount: "1",
-    mint: true, launcherId: "Lg", nftId: "nft1g", mediaKind: "image",
+    type: "sprout",
+    kind: "nft",
+    height: 1,
+    coinId: "c",
+    amount: "1",
+    mint: true,
+    launcherId: "Lg",
+    nftId: "nft1g",
+    mediaKind: "image",
   };
   await filter.enrich([event]);
   await new Promise((r) => setTimeout(r, 0));
   expect(event.mediaFilter).toBeUndefined(); // streamed permissive
-  expect(flags).toEqual([{ type: "content-flag", launcherId: "Lg", mediaFilter: "sensitive", signals: ["safesearch"] }]);
+  expect(flags).toEqual([
+    { type: "content-flag", launcherId: "Lg", mediaFilter: "sensitive", signals: ["safesearch"] },
+  ]);
   store.close();
 });

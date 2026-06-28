@@ -54,7 +54,9 @@ export class SafeSearchWorker {
     if (until !== undefined && this.now() < until) return;
 
     this.queued.add(launcherId);
-    void this.gate(() => this.run(launcherId, media.url)).finally(() => this.queued.delete(launcherId));
+    void this.gate(() => this.run(launcherId, media.url)).finally(() =>
+      this.queued.delete(launcherId)
+    );
   }
 
   private async run(launcherId: string, imageUri: string): Promise<void> {

@@ -24,6 +24,7 @@
 ## File Structure
 
 **New (`server/src/content-filter/`):**
+
 - `types.ts` — `Disposition`, `SignalName`, `Verdict`.
 - `verdict.ts` — `strongest()`, `combine()`.
 - `signals/lexicon.ts` — moved from `classify/lexicon.ts`.
@@ -35,6 +36,7 @@
 - `index.ts` — `ContentFilter` (moved from `classify/content-filter.ts`), now SQLite-backed + SafeSearch-aware.
 
 **Modified:**
+
 - `shared/src/index.ts` — `signals?` on `SproutEvent`, new `ContentFlagEvent`, `PROTOCOL_VERSION` 3→4.
 - `server/src/index.ts` — construct `ContentFilter` with `onFlag`/`googleApiKey`/`dbPath`.
 - Web: `themes/gallery/pieces.ts`, `themes/gallery/gallery.ts`, `themes/mine/structures.ts`, `themes/mine/mine.ts`, `themes/mine/index.ts`, `ui/detail-card.ts`, `net/demo.ts`.
@@ -49,12 +51,14 @@
 No behavior change. Just move three files and fix import paths so the suite stays green.
 
 **Files:**
+
 - Move: `server/src/classify/content-filter.ts` → `server/src/content-filter/index.ts`
 - Move: `server/src/classify/lexicon.ts` → `server/src/content-filter/signals/lexicon.ts`
 - Move: `server/src/classify/denylist.ts` → `server/src/content-filter/signals/denylist.ts`
 - Modify: `server/src/index.ts`, `server/test/content-filter.test.ts`, `server/test/lexicon.test.ts`, `server/test/denylist.test.ts`
 
 **Interfaces:**
+
 - Produces: same public API as today — `ContentFilter`, `mapMintgarden`, from `server/src/content-filter/index.js`; `LEXICON`/`matchesLexicon` from `signals/lexicon.js`; `DENYLIST_MAP`/`buildDenylistMap`/`dispositionForCollection`/`DenylistEntry` from `signals/denylist.js`.
 
 - [ ] **Step 1: Move the files with git**
@@ -129,6 +133,7 @@ git commit -m "refactor: relocate content filter into server/src/content-filter 
 Break the MintGarden mapping into a `Verdict { disposition, signals[] }` and stamp `signals[]` onto NFT sprout events. `blocked` stays distinct.
 
 **Files:**
+
 - Create: `server/src/content-filter/types.ts`
 - Create: `server/src/content-filter/verdict.ts`
 - Create: `server/src/content-filter/signals/mintgarden.ts`
@@ -137,6 +142,7 @@ Break the MintGarden mapping into a `Verdict { disposition, signals[] }` and sta
 - Test: `server/test/content-filter.test.ts` (extend), `server/test/verdict.test.ts` (new)
 
 **Interfaces:**
+
 - Produces:
   - `types.ts`: `type Disposition = "blocked" | "sensitive" | "ok"`; `type SignalName = "chip7" | "mintgarden" | "mintgarden-creator" | "denylist" | "lexicon" | "safesearch"`; `interface Verdict { disposition: Disposition; signals: SignalName[] }`.
   - `verdict.ts`: `strongest(...ds: Disposition[]): Disposition`; `combine(parts: Array<{ disposition: Disposition; signal: SignalName }>): Verdict`.
@@ -437,11 +443,13 @@ git commit -m "feat: report which content-filter signals fired via signals[]"
 Persist verdicts so an NFT is classified once across restarts, and so the SafeSearch path knows whether it has already run.
 
 **Files:**
+
 - Create: `server/src/content-filter/store.ts`
 - Modify: `server/src/content-filter/index.ts` (consult/write the store on the cheap path)
 - Test: `server/test/content-store.test.ts` (new)
 
 **Interfaces:**
+
 - Produces (`store.ts`):
   - `interface StoredVerdict { disposition: Disposition; signals: SignalName[]; safesearchChecked: boolean }`
   - `class ContentStore { constructor(dbPath: string); get(launcherId: string): StoredVerdict | undefined; putCheap(launcherId: string, nftId: string | undefined, verdict: Verdict): void; putSafeSearch(launcherId: string, result: { sensitive: boolean; adult: string; raw: unknown }): StoredVerdict; close(): void }`
@@ -470,7 +478,11 @@ test("putCheap then get round-trips disposition + signals, safesearch not yet ch
 test("putSafeSearch sensitive upgrades an ok row and records the check", () => {
   const store = new ContentStore(":memory:");
   store.putCheap("l", "nft1", { disposition: "ok", signals: [] });
-  const updated = store.putSafeSearch("l", { sensitive: true, adult: "VERY_LIKELY", raw: { adult: "VERY_LIKELY" } });
+  const updated = store.putSafeSearch("l", {
+    sensitive: true,
+    adult: "VERY_LIKELY",
+    raw: { adult: "VERY_LIKELY" },
+  });
   expect(updated.disposition).toBe("sensitive");
   expect(updated.signals).toEqual(["safesearch"]);
   expect(updated.safesearchChecked).toBe(true);
@@ -544,7 +556,9 @@ export class ContentStore {
 
   get(launcherId: string): StoredVerdict | undefined {
     const row = this.db
-      .prepare("SELECT disposition, signals_json, safesearch_checked_at FROM nft WHERE launcher_id = ?")
+      .prepare(
+        "SELECT disposition, signals_json, safesearch_checked_at FROM nft WHERE launcher_id = ?"
+      )
       .get(launcherId) as Row | undefined;
     if (!row) return undefined;
     return {
@@ -565,18 +579,30 @@ export class ContentStore {
            signals_json = excluded.signals_json,
            checked_at = excluded.checked_at`
       )
-      .run(launcherId, nftId ?? null, verdict.disposition, JSON.stringify(verdict.signals), Date.now());
+      .run(
+        launcherId,
+        nftId ?? null,
+        verdict.disposition,
+        JSON.stringify(verdict.signals),
+        Date.now()
+      );
   }
 
   putSafeSearch(
     launcherId: string,
     result: { sensitive: boolean; adult: string; raw: unknown }
   ): StoredVerdict {
-    const current = this.get(launcherId) ?? { disposition: "ok", signals: [], safesearchChecked: false };
+    const current = this.get(launcherId) ?? {
+      disposition: "ok",
+      signals: [],
+      safesearchChecked: false,
+    };
     const signals = result.sensitive
       ? Array.from(new Set([...current.signals, "safesearch" as SignalName]))
       : current.signals.filter((s) => s !== "safesearch");
-    const disposition = result.sensitive ? strongest(current.disposition, "sensitive") : current.disposition;
+    const disposition = result.sensitive
+      ? strongest(current.disposition, "sensitive")
+      : current.disposition;
     this.db
       .prepare(
         `INSERT INTO nft (launcher_id, disposition, signals_json, safesearch_adult, safesearch_raw_json, safesearch_checked_at, checked_at)
@@ -614,6 +640,7 @@ Expected: PASS. (If `node:sqlite` types are missing under `tsc`, confirm `@types
 - [ ] **Step 5: Wire the store into the cheap path of `ContentFilter`**
 
 In `server/src/content-filter/index.ts`:
+
 - Add `store?: ContentStore` to `ContentFilterOptions` and keep a `private readonly store?: ContentStore` from `opts.store`.
 - In `apply()`, before resolving over the network, consult the store; after a network resolve, persist it. Change `apply` to take the event (it already does) and key by `launcherId`:
 
@@ -656,8 +683,14 @@ test("enrich uses a stored verdict and skips the MintGarden fetch", async () => 
     }) as typeof fetch,
   });
   const event: SproutEvent = {
-    type: "sprout", kind: "nft", height: 1, coinId: "c", amount: "1",
-    launcherId: "launchX", nftId: "nft1x", mediaKind: "image",
+    type: "sprout",
+    kind: "nft",
+    height: 1,
+    coinId: "c",
+    amount: "1",
+    launcherId: "launchX",
+    nftId: "nft1x",
+    mediaKind: "image",
   };
   await filter.enrich([event]);
   expect(fetched).toBe(0);
@@ -686,10 +719,12 @@ git commit -m "feat: persist content-filter verdicts in a sqlite store keyed by 
 Isolated, fully testable with an injected `fetch` — no worker, no store, no network.
 
 **Files:**
+
 - Create: `server/src/content-filter/signals/safesearch.ts`
 - Test: `server/test/safesearch.test.ts` (new)
 
 **Interfaces:**
+
 - Produces:
   - `interface SafeSearchResult { sensitive: boolean; adult: string; raw: unknown }`
   - `async function querySafeSearch(imageUri: string, opts: { apiKey: string; fetchImpl?: typeof fetch; timeoutMs?: number; baseUrl?: string }): Promise<SafeSearchResult>`
@@ -718,12 +753,17 @@ test("querySafeSearch passes the imageUri by reference and maps adult likelihood
     expect(String(url)).toContain("key=test-key");
     sentBody = JSON.parse(init.body as string);
     return new Response(
-      JSON.stringify({ responses: [{ safeSearchAnnotation: { adult: "VERY_LIKELY", violence: "UNLIKELY" } }] }),
+      JSON.stringify({
+        responses: [{ safeSearchAnnotation: { adult: "VERY_LIKELY", violence: "UNLIKELY" } }],
+      }),
       { status: 200 }
     );
   }) as typeof fetch;
 
-  const result = await querySafeSearch("https://example.com/art.png", { apiKey: "test-key", fetchImpl });
+  const result = await querySafeSearch("https://example.com/art.png", {
+    apiKey: "test-key",
+    fetchImpl,
+  });
   expect(sentBody).toEqual({
     requests: [
       {
@@ -785,7 +825,10 @@ export interface QueryOpts {
  * `sensitive`. Throws on transport / non-2xx / malformed responses so the caller
  * can leave the NFT permissive without poisoning the store.
  */
-export async function querySafeSearch(imageUri: string, opts: QueryOpts): Promise<SafeSearchResult> {
+export async function querySafeSearch(
+  imageUri: string,
+  opts: QueryOpts
+): Promise<SafeSearchResult> {
   const fetchImpl = opts.fetchImpl ?? fetch;
   const baseUrl = opts.baseUrl ?? "https://vision.googleapis.com/v1/images:annotate";
   const controller = new AbortController();
@@ -803,7 +846,10 @@ export async function querySafeSearch(imageUri: string, opts: QueryOpts): Promis
     });
     if (!res.ok) throw new Error(`vision ${res.status}`);
     const json = (await res.json()) as {
-      responses?: Array<{ safeSearchAnnotation?: { adult?: string }; error?: { message?: string } }>;
+      responses?: Array<{
+        safeSearchAnnotation?: { adult?: string };
+        error?: { message?: string };
+      }>;
     };
     const first = json.responses?.[0];
     if (first?.error) throw new Error(`vision: ${first.error.message ?? "annotation error"}`);
@@ -835,6 +881,7 @@ git commit -m "feat: add Vision SafeSearch query (image-by-URI, adult likelihood
 The out-of-band path: eligible image mints get queued; on a `sensitive` result the worker writes the store and emits a `content-flag` event through the hub.
 
 **Files:**
+
 - Create: `server/src/content-filter/safesearch-worker.ts`
 - Modify: `shared/src/index.ts` (`ContentFlagEvent`, union, `PROTOCOL_VERSION` 3→4)
 - Modify: `server/src/content-filter/index.ts` (construct worker; queue from `enrich`)
@@ -842,6 +889,7 @@ The out-of-band path: eligible image mints get queued; on a `sensitive` result t
 - Test: `server/test/safesearch-worker.test.ts` (new), extend `server/test/content-filter.test.ts`
 
 **Interfaces:**
+
 - Produces:
   - `shared`: `interface ContentFlagEvent { type: "content-flag"; launcherId: string; mediaFilter: "sensitive" | "blocked"; signals: string[] }`; added to `GroveEvent`.
   - `safesearch-worker.ts`: `class SafeSearchWorker { constructor(opts: SafeSearchWorkerOpts); maybeEnqueue(event: SproutEvent): void }` with `interface SafeSearchWorkerOpts { media: MediaIndex; store: ContentStore; apiKey: string; onFlag: (e: ContentFlagEvent) => void; fetchImpl?: typeof fetch; timeoutMs?: number; concurrency?: number; failTtlMs?: number; now?: () => number }`.
@@ -859,12 +907,7 @@ export interface ContentFlagEvent {
   signals: string[]; // which signals fired, including "safesearch"
 }
 
-export type GroveEvent =
-  | BlockEvent
-  | SproutEvent
-  | AmbientEvent
-  | ReorgEvent
-  | ContentFlagEvent;
+export type GroveEvent = BlockEvent | SproutEvent | AmbientEvent | ReorgEvent | ContentFlagEvent;
 ```
 
 And change `export const PROTOCOL_VERSION = 3;` to `= 4;` (update its comment to note the `content-flag` event + `signals[]`). `Snapshot`/`Batch` already carry `GroveEvent[]`, so no transport change.
@@ -881,8 +924,16 @@ import { MediaIndex } from "../src/web/media-index.js";
 import type { ContentFlagEvent, SproutEvent } from "@grove/shared";
 
 const nftEvent = (over: Partial<SproutEvent> = {}): SproutEvent => ({
-  type: "sprout", kind: "nft", height: 1, coinId: "c", amount: "1",
-  mint: true, launcherId: "L1", nftId: "nft1", mediaKind: "image", ...over,
+  type: "sprout",
+  kind: "nft",
+  height: 1,
+  coinId: "c",
+  amount: "1",
+  mint: true,
+  launcherId: "L1",
+  nftId: "nft1",
+  mediaKind: "image",
+  ...over,
 });
 
 const flushMicrotasks = () => new Promise((r) => setTimeout(r, 0));
@@ -894,17 +945,25 @@ test("a sensitive image mint writes the store and emits a content-flag", async (
   store.putCheap("L1", "nft1", { disposition: "ok", signals: [] });
   const flags: ContentFlagEvent[] = [];
   const worker = new SafeSearchWorker({
-    media, store, apiKey: "k", onFlag: (e) => flags.push(e),
+    media,
+    store,
+    apiKey: "k",
+    onFlag: (e) => flags.push(e),
     fetchImpl: (async () =>
-      new Response(JSON.stringify({ responses: [{ safeSearchAnnotation: { adult: "VERY_LIKELY" } }] }), {
-        status: 200,
-      })) as typeof fetch,
+      new Response(
+        JSON.stringify({ responses: [{ safeSearchAnnotation: { adult: "VERY_LIKELY" } }] }),
+        {
+          status: 200,
+        }
+      )) as typeof fetch,
   });
 
   worker.maybeEnqueue(nftEvent());
   await flushMicrotasks();
 
-  expect(flags).toEqual([{ type: "content-flag", launcherId: "L1", mediaFilter: "sensitive", signals: ["safesearch"] }]);
+  expect(flags).toEqual([
+    { type: "content-flag", launcherId: "L1", mediaFilter: "sensitive", signals: ["safesearch"] },
+  ]);
   expect(store.get("L1")?.disposition).toBe("sensitive");
   expect(store.get("L1")?.safesearchChecked).toBe(true);
   store.close();
@@ -917,11 +976,17 @@ test("a clean image mint marks checked and emits no flag", async () => {
   store.putCheap("L1", "nft1", { disposition: "ok", signals: [] });
   const flags: ContentFlagEvent[] = [];
   const worker = new SafeSearchWorker({
-    media, store, apiKey: "k", onFlag: (e) => flags.push(e),
+    media,
+    store,
+    apiKey: "k",
+    onFlag: (e) => flags.push(e),
     fetchImpl: (async () =>
-      new Response(JSON.stringify({ responses: [{ safeSearchAnnotation: { adult: "UNLIKELY" } }] }), {
-        status: 200,
-      })) as typeof fetch,
+      new Response(
+        JSON.stringify({ responses: [{ safeSearchAnnotation: { adult: "UNLIKELY" } }] }),
+        {
+          status: 200,
+        }
+      )) as typeof fetch,
   });
   worker.maybeEnqueue(nftEvent());
   await flushMicrotasks();
@@ -935,12 +1000,18 @@ test("ineligible events are skipped (non-mint, non-image, already-checked, no me
   const store = new ContentStore(":memory:");
   let calls = 0;
   const worker = new SafeSearchWorker({
-    media, store, apiKey: "k", onFlag: () => {},
-    fetchImpl: (async () => { calls++; return new Response("{}", { status: 200 }); }) as typeof fetch,
+    media,
+    store,
+    apiKey: "k",
+    onFlag: () => {},
+    fetchImpl: (async () => {
+      calls++;
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch,
   });
-  worker.maybeEnqueue(nftEvent({ mint: undefined }));          // not a mint
-  worker.maybeEnqueue(nftEvent({ mediaKind: "video" }));        // not an image
-  worker.maybeEnqueue(nftEvent());                             // no media-index entry
+  worker.maybeEnqueue(nftEvent({ mint: undefined })); // not a mint
+  worker.maybeEnqueue(nftEvent({ mediaKind: "video" })); // not an image
+  worker.maybeEnqueue(nftEvent()); // no media-index entry
   await flushMicrotasks();
   expect(calls).toBe(0);
   store.close();
@@ -1011,7 +1082,9 @@ export class SafeSearchWorker {
     if (until !== undefined && this.now() < until) return;
 
     this.queued.add(launcherId);
-    void this.gate(() => this.run(launcherId, media.url)).finally(() => this.queued.delete(launcherId));
+    void this.gate(() => this.run(launcherId, media.url)).finally(() =>
+      this.queued.delete(launcherId)
+    );
   }
 
   private async run(launcherId: string, imageUri: string): Promise<void> {
@@ -1061,6 +1134,7 @@ Expected: PASS.
 - [ ] **Step 6: Construct the worker in `ContentFilter` and queue from `enrich`**
 
 In `server/src/content-filter/index.ts`:
+
 - Extend `ContentFilterOptions` with `onFlag?: (e: ContentFlagEvent) => void;` and `googleApiKey?: string;` (and keep `store?`).
 - In the constructor, if `opts.store` and `opts.googleApiKey` and `opts.onFlag` are all present, create `this.worker = new SafeSearchWorker({ media, store: opts.store, apiKey: opts.googleApiKey, onFlag: opts.onFlag, fetchImpl: opts.fetchImpl })`. Otherwise leave `this.worker` undefined (SafeSearch disabled).
 - In `apply()`, after stamping the cheap verdict, queue the async lookup only when the cheap verdict is permissive:
@@ -1087,19 +1161,31 @@ test("enrich queues SafeSearch for a clean image mint and emits a flag", async (
     onFlag: (e) => flags.push(e),
     fetchImpl: (async (url: string) => {
       if (String(url).includes("images:annotate")) {
-        return new Response(JSON.stringify({ responses: [{ safeSearchAnnotation: { adult: "LIKELY" } }] }), { status: 200 });
+        return new Response(
+          JSON.stringify({ responses: [{ safeSearchAnnotation: { adult: "LIKELY" } }] }),
+          { status: 200 }
+        );
       }
       return new Response("{}", { status: 404 }); // MintGarden unknown → ok
     }) as typeof fetch,
   });
   const event: SproutEvent = {
-    type: "sprout", kind: "nft", height: 1, coinId: "c", amount: "1",
-    mint: true, launcherId: "Lg", nftId: "nft1g", mediaKind: "image",
+    type: "sprout",
+    kind: "nft",
+    height: 1,
+    coinId: "c",
+    amount: "1",
+    mint: true,
+    launcherId: "Lg",
+    nftId: "nft1g",
+    mediaKind: "image",
   };
   await filter.enrich([event]);
   await new Promise((r) => setTimeout(r, 0));
   expect(event.mediaFilter).toBeUndefined(); // streamed permissive
-  expect(flags).toEqual([{ type: "content-flag", launcherId: "Lg", mediaFilter: "sensitive", signals: ["safesearch"] }]);
+  expect(flags).toEqual([
+    { type: "content-flag", launcherId: "Lg", mediaFilter: "sensitive", signals: ["safesearch"] },
+  ]);
   store.close();
 });
 ```
@@ -1139,6 +1225,7 @@ git commit -m "feat: async SafeSearch worker emits content-flag patches; bump pr
 Blur an already-rendered NFT when its async verdict arrives. Themes that don't render NFT art ignore it.
 
 **Files:**
+
 - Modify: `web/src/themes/gallery/pieces.ts` (add `markSensitive`)
 - Modify: `web/src/themes/gallery/gallery.ts` (handle `content-flag`)
 - Modify: `web/src/themes/mine/structures.ts` (add `markSensitive` to `Paintings`)
@@ -1149,6 +1236,7 @@ Blur an already-rendered NFT when its async verdict arrives. Themes that don't r
 - Test: `web/test/content-flag.test.ts` (new)
 
 **Interfaces:**
+
 - Produces: `Pieces.markSensitive(launcherId: string, placeholder: THREE.Texture): boolean`; `Paintings.markSensitive(launcherId: string): boolean`; `mine` runtime `setContentFlagHandler(fn: (launcherId: string) => void): void`.
 
 - [ ] **Step 1: Write a failing unit test for the gallery `markSensitive`**
@@ -1161,12 +1249,26 @@ import { contentFlagTarget } from "../src/themes/shared/content-flag.js";
 import type { ContentFlagEvent } from "@grove/shared";
 
 test("contentFlagTarget returns the launcher for a sensitive flag", () => {
-  const e: ContentFlagEvent = { type: "content-flag", launcherId: "L9", mediaFilter: "sensitive", signals: ["safesearch"] };
+  const e: ContentFlagEvent = {
+    type: "content-flag",
+    launcherId: "L9",
+    mediaFilter: "sensitive",
+    signals: ["safesearch"],
+  };
   expect(contentFlagTarget(e)).toBe("L9");
 });
 
 test("contentFlagTarget ignores a non-content-flag event", () => {
-  expect(contentFlagTarget({ type: "block", height: 1, headerHash: "h", timestamp: 0, spendCount: 0, fees: "0" })).toBeNull();
+  expect(
+    contentFlagTarget({
+      type: "block",
+      height: 1,
+      headerHash: "h",
+      timestamp: 0,
+      spendCount: 0,
+      fees: "0",
+    })
+  ).toBeNull();
 });
 ```
 
@@ -1290,7 +1392,16 @@ In `web/src/net/demo.ts`, after dispatching a sensitive-eligible NFT, schedule a
 // exercise the async content-flag patch path offline
 if (event.kind === "nft" && event.launcherId && filterRoll >= 0.18 && filterRoll < 0.21) {
   const launcher = event.launcherId;
-  setTimeout(() => dispatch({ type: "content-flag", launcherId: launcher, mediaFilter: "sensitive", signals: ["safesearch"] }), 4000);
+  setTimeout(
+    () =>
+      dispatch({
+        type: "content-flag",
+        launcherId: launcher,
+        mediaFilter: "sensitive",
+        signals: ["safesearch"],
+      }),
+    4000
+  );
 }
 ```
 
@@ -1313,6 +1424,7 @@ git commit -m "feat: apply content-flag patches in gallery and mine themes"
 ## Task 7: Config, ignore rules, docs, and full verification
 
 **Files:**
+
 - Modify: `.gitignore`
 - Modify: `CLAUDE.md`
 
@@ -1362,4 +1474,7 @@ git commit -m "docs: document SafeSearch content-filter module, env vars, and co
 - **Spec coverage:** SafeSearch adult LIKELY/VERY_LIKELY → sensitive (Task 4); image-by-URI, no download (Task 4 `image.source.imageUri`); event-stream redesign via async `content-flag` + `signals[]` (Tasks 2, 5, 6); run-once-per-mint + SQLite (Tasks 3, 5 eligibility via `safesearchChecked`); only-when-cheap-`ok` (Task 5 `apply()` queues only on permissive); unified verdict per NFT keyed by launcherId (Task 3); clean liftable module (Tasks 1–5 confined to `content-filter/`, only `@grove/shared` + `MediaIndex` imports); `blocked` kept distinct, SafeSearch only `sensitive` (Tasks 2, 4); config/docs (Task 7). All spec sections map to a task.
 - **Placeholder scan:** none — every code step carries concrete code; Task 6 Step 9 is an explicit "skip, out of scope" decision, not a TODO.
 - **Type consistency:** `Verdict`, `Disposition`, `SignalName`, `StoredVerdict`, `ContentFlagEvent`, `mapMintgardenSignals`, `querySafeSearch`/`SafeSearchResult`, `SafeSearchWorker.maybeEnqueue`, `ContentStore.{get,putCheap,putSafeSearch,close}`, `markSensitive`, `setContentFlagHandler` are used identically across the tasks that define and consume them.
+
+```
+
 ```

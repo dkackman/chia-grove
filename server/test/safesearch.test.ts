@@ -16,12 +16,17 @@ test("querySafeSearch passes the imageUri by reference and maps adult likelihood
     expect((init.headers as Record<string, string>)["X-Goog-Api-Key"]).toBe("test-key");
     sentBody = JSON.parse(init.body as string);
     return new Response(
-      JSON.stringify({ responses: [{ safeSearchAnnotation: { adult: "VERY_LIKELY", violence: "UNLIKELY" } }] }),
+      JSON.stringify({
+        responses: [{ safeSearchAnnotation: { adult: "VERY_LIKELY", violence: "UNLIKELY" } }],
+      }),
       { status: 200 }
     );
   }) as typeof fetch;
 
-  const result = await querySafeSearch("https://example.com/art.png", { apiKey: "test-key", fetchImpl });
+  const result = await querySafeSearch("https://example.com/art.png", {
+    apiKey: "test-key",
+    fetchImpl,
+  });
   expect(sentBody).toEqual({
     requests: [
       {

@@ -16,7 +16,11 @@ test("putCheap then get round-trips disposition + signals, safesearch not yet ch
 test("putSafeSearch sensitive upgrades an ok row and records the check", () => {
   const store = new ContentStore(":memory:");
   store.putCheap("l", "nft1", { disposition: "ok", signals: [] });
-  const updated = store.putSafeSearch("l", { sensitive: true, adult: "VERY_LIKELY", raw: { adult: "VERY_LIKELY" } });
+  const updated = store.putSafeSearch("l", {
+    sensitive: true,
+    adult: "VERY_LIKELY",
+    raw: { adult: "VERY_LIKELY" },
+  });
   expect(updated.disposition).toBe("sensitive");
   expect(updated.signals).toEqual(["safesearch"]);
   expect(updated.safesearchChecked).toBe(true);

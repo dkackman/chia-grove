@@ -1,6 +1,6 @@
 import type { ContentFlagEvent, GroveEvent, SproutEvent } from "@grove/shared";
 import type { MediaIndex } from "../web/media-index.js";
-import type { Disposition, Verdict } from "./types.js";
+import type { Verdict } from "./types.js";
 import { mapMintgardenSignals } from "./signals/mintgarden.js";
 import type { ContentStore } from "./store.js";
 import { SafeSearchWorker } from "./safesearch-worker.js";
