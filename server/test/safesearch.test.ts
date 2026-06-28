@@ -13,7 +13,7 @@ test("querySafeSearch passes the imageUri by reference and maps adult likelihood
   let sentBody: unknown;
   const fetchImpl = (async (url: string, init: RequestInit) => {
     expect(String(url)).toContain("images:annotate");
-    expect(String(url)).toContain("key=test-key");
+    expect((init.headers as Record<string, string>)["X-Goog-Api-Key"]).toBe("test-key");
     sentBody = JSON.parse(init.body as string);
     return new Response(
       JSON.stringify({ responses: [{ safeSearchAnnotation: { adult: "VERY_LIKELY", violence: "UNLIKELY" } }] }),

@@ -30,9 +30,9 @@ export async function querySafeSearch(imageUri: string, opts: QueryOpts): Promis
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? 8000);
   try {
-    const res = await fetchImpl(`${baseUrl}?key=${opts.apiKey}`, {
+    const res = await fetchImpl(baseUrl, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", "X-Goog-Api-Key": opts.apiKey },
       body: JSON.stringify({
         requests: [
           { image: { source: { imageUri } }, features: [{ type: "SAFE_SEARCH_DETECTION" }] },
