@@ -38,8 +38,9 @@ coinset.org RPC
 CoinsetPoller  (server/src/ingest/)
     ↓ BlockInput
 classifyBlock  (server/src/classify/classify.ts)
-    ↓ GroveEvent[]  (NFT SproutEvents stamped with mediaFilter + signals[] by cheap signals)
+    ↓ GroveEvent[]
 ContentFilter  (server/src/content-filter/)
+    ↓ cheap signals stamp NFT SproutEvents with mediaFilter + signals[] inline
     ↓ async SafeSearch (image mints, cheap verdict ok) → ContentFlagEvent
 Hub + RingBuffer  (server/src/web/)
     ↓ WebSocket (JSON)
