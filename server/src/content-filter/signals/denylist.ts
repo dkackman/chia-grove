@@ -1,4 +1,4 @@
-import type { Disposition } from "../index.js";
+import type { Disposition } from "../types.js";
 
 /** One curated denylist entry, keyed by MintGarden collection id. */
 export interface DenylistEntry {

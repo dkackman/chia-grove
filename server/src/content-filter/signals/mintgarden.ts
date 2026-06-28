@@ -1,0 +1,80 @@
+import type { Disposition, SignalName, Verdict } from "../types.js";
+import { combine } from "../verdict.js";
+import { LEXICON, matchesLexicon } from "./lexicon.js";
+import { DENYLIST_MAP, dispositionForCollection } from "./denylist.js";
+
+const asRecord = (v: unknown): Record<string, unknown> =>
+  typeof v === "object" && v !== null ? (v as Record<string, unknown>) : {};
+
+/**
+ * sensitive_content per CHIP-0007 may be boolean, a string, or a non-empty list.
+ * A bare descriptive string (e.g. "nudity") flags as sensitive too; only the
+ * explicit negatives ("" / "false") and a literal `false` are treated as clear.
+ */
+const isSensitiveFlag = (v: unknown): boolean => {
+  if (v === true) return true;
+  if (typeof v === "string") {
+    const s = v.trim().toLowerCase();
+    return s !== "" && s !== "false";
+  }
+  return Array.isArray(v) && v.length > 0;
+};
+
+export interface MapMintgardenOpts {
+  /** Override the adult-term lexicon (test injection). Defaults to LEXICON. */
+  lexicon?: string[];
+  /** Override the collection denylist map (test injection). Defaults to DENYLIST_MAP. */
+  denylist?: Map<string, Disposition>;
+}
+
+/**
+ * Collapse a MintGarden GET /nfts/:id response into a Verdict, reporting which
+ * of the cheap signals fired. Blocked (hard takedown) wins over sensitive (NSFW).
+ * Anything unrecognized or malformed contributes nothing (permissive).
+ */
+export function mapMintgardenSignals(json: unknown, opts: MapMintgardenOpts = {}): Verdict {
+  const lexicon = opts.lexicon ?? LEXICON;
+  const denylist = opts.denylist ?? DENYLIST_MAP;
+
+  const nft = asRecord(json);
+  const collection = asRecord(nft.collection);
+  const creator = asRecord(nft.creator);
+  const metadata = asRecord(asRecord(nft.data).metadata_json);
+
+  const parts: Array<{ disposition: Disposition; signal: SignalName }> = [];
+
+  // creator verification → hard block
+  if (creator.verification_state === 2) {
+    parts.push({ disposition: "blocked", signal: "mintgarden-creator" });
+  }
+
+  // MintGarden collection-level flags
+  if (nft.is_blocked === true || collection.blocked_content === true) {
+    parts.push({ disposition: "blocked", signal: "mintgarden" });
+  } else if (isSensitiveFlag(collection.sensitive_content)) {
+    parts.push({ disposition: "sensitive", signal: "mintgarden" });
+  }
+
+  // CHIP-0007 off-chain metadata sensitive_content
+  if (isSensitiveFlag(metadata.sensitive_content)) {
+    parts.push({ disposition: "sensitive", signal: "chip7" });
+  }
+
+  // curated collection denylist
+  const collectionId = typeof collection.id === "string" ? collection.id : undefined;
+  const deny = dispositionForCollection(denylist, collectionId);
+  if (deny) parts.push({ disposition: deny, signal: "denylist" });
+
+  // text-keyword heuristic over name / collection name / description
+  const text = [nft.name, metadata.name, collection.name, metadata.description]
+    .filter((s): s is string => typeof s === "string")
+    .join(" ");
+  if (matchesLexicon(text, lexicon)) parts.push({ disposition: "sensitive", signal: "lexicon" });
+
+  return combine(parts);
+}
+
+/** Disposition-only convenience (back-compat with existing call sites/tests). */
+export function mapMintgarden(json: unknown, opts: MapMintgardenOpts = {}): Disposition {
+  return mapMintgardenSignals(json, opts).disposition;
+}

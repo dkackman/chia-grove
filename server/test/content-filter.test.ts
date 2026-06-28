@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { mapMintgarden } from "../src/content-filter/index.js";
+import { mapMintgarden, mapMintgardenSignals } from "../src/content-filter/index.js";
 import { ContentFilter } from "../src/content-filter/index.js";
 import { MediaIndex } from "../src/web/media-index.js";
 import { buildDenylistMap } from "../src/content-filter/signals/denylist.js";
@@ -277,4 +277,25 @@ test("non-NFT and nftId-less events are ignored", async () => {
   const noId = nftEvent({ nftId: undefined });
   await filter.enrich([xch as GroveEvent, noId]);
   expect(calls).toBe(0);
+});
+
+test("mapMintgardenSignals reports which signals fired", () => {
+  const v = mapMintgardenSignals({
+    name: "totally nsfw piece",
+    collection: { sensitive_content: true },
+    creator: { verification_state: 2 },
+  });
+  expect(v.disposition).toBe("blocked"); // creator verification wins
+  expect(v.signals.sort()).toEqual(["lexicon", "mintgarden", "mintgarden-creator"].sort());
+});
+
+test("mapMintgardenSignals chip7 metadata sensitive_content fires chip7", () => {
+  const v = mapMintgardenSignals({ data: { metadata_json: { sensitive_content: "nudity" } } });
+  expect(v.disposition).toBe("sensitive");
+  expect(v.signals).toEqual(["chip7"]);
+});
+
+test("mapMintgardenSignals clean json fires nothing", () => {
+  const v = mapMintgardenSignals({ name: "a calm landscape" });
+  expect(v).toEqual({ disposition: "ok", signals: [] });
 });

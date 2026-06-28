@@ -43,6 +43,7 @@ export interface SproutEvent {
   dataUri?: string; // NFT only, inline data: URI for demo/offline art; live art is fetched via /img?nft=launcherId
   mediaKind?: MediaKind; // NFT only, set when proxiable art exists (URL held server-side, keyed by launcherId)
   mediaFilter?: "blocked" | "sensitive"; // NFT only; absent = ok. Set server-side from MintGarden — blocked hides art (bytes made unreachable), sensitive blurs it.
+  signals?: string[]; // which content-filter signals fired (e.g. ["lexicon","safesearch"]); provenance for mediaFilter
 }
 
 export interface AmbientEvent {
