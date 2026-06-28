@@ -227,6 +227,7 @@ export class Pieces {
     if (!piece) return false;
     piece.event = { ...piece.event, mediaFilter: "sensitive" };
     const mat = piece.image.material as THREE.MeshBasicMaterial;
+    (mat.map as THREE.Texture | null)?.dispose();
     mat.map = placeholder;
     mat.color.set(0xffffff);
     mat.needsUpdate = true;

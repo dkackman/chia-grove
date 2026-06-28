@@ -23,6 +23,8 @@ export interface SafeSearchWorkerOpts {
  * `content-flag`. Failures leave the NFT permissive and are suppressed for
  * `failTtlMs` so an outage doesn't re-spend the paid quota every block.
  */
+const FAILED_UNTIL_CAP = 10000;
+
 export class SafeSearchWorker {
   private readonly fetchImpl: typeof fetch;
   private readonly timeoutMs: number;
@@ -67,6 +69,8 @@ export class SafeSearchWorker {
         timeoutMs: this.timeoutMs,
       });
       const updated = this.opts.store.putSafeSearch(launcherId, result);
+      // on success, clear any prior failure suppression for this launcher
+      this.failedUntil.delete(launcherId);
       if (result.sensitive) {
         this.opts.onFlag({
           type: "content-flag",
@@ -77,6 +81,11 @@ export class SafeSearchWorker {
       }
     } catch {
       this.failedUntil.set(launcherId, this.now() + this.failTtlMs);
+      // evict oldest entry if the map has grown too large
+      if (this.failedUntil.size > FAILED_UNTIL_CAP) {
+        const oldest = this.failedUntil.keys().next().value;
+        if (oldest !== undefined) this.failedUntil.delete(oldest);
+      }
     }
   }
 

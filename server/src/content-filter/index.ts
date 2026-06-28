@@ -120,12 +120,25 @@ export class ContentFilter {
 
   private async apply(event: SproutEvent): Promise<void> {
     const launcherId = event.launcherId;
-    const stored = launcherId ? this.store?.get(launcherId) : undefined;
+    let stored = launcherId ? (() => {
+      try {
+        return this.store?.get(launcherId);
+      } catch (err) {
+        console.warn("content-filter store.get failed (cache miss):", err);
+        return undefined;
+      }
+    })() : undefined;
     const verdict: Verdict = stored
       ? { disposition: stored.disposition, signals: stored.signals }
       : await this.resolve(event.nftId!);
 
-    if (!stored && launcherId) this.store?.putCheap(launcherId, event.nftId, verdict);
+    if (!stored && launcherId) {
+      try {
+        this.store?.putCheap(launcherId, event.nftId, verdict);
+      } catch (err) {
+        console.warn("content-filter store.putCheap failed (verdict not persisted):", err);
+      }
+    }
 
     if (verdict.disposition === "ok") this.worker?.maybeEnqueue(event);
 

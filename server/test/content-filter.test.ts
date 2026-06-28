@@ -367,3 +367,51 @@ test("enrich queues SafeSearch for a clean image mint and emits a flag", async (
   ]);
   store.close();
 });
+
+test("enrich does not throw and still stamps verdict when store.get throws", async () => {
+  // construct a fake store whose get() and putCheap() both throw to simulate
+  // an SQLite IO failure; the filter should degrade gracefully (cache miss path)
+  const throwingStore = {
+    get: (_launcherId: string) => {
+      throw new Error("sqlite disk error");
+    },
+    putCheap: (_launcherId: string, _nftId: string | undefined, _verdict: unknown) => {
+      throw new Error("sqlite disk error");
+    },
+  } as unknown as import("../src/content-filter/store.js").ContentStore;
+
+  const filter = new ContentFilter(new MediaIndex(10), {
+    store: throwingStore,
+    // fetchImpl returns a 404 → "ok" verdict from the network path
+    fetchImpl: async () => ({ ok: false, status: 404, json: async () => ({}) }) as unknown as Response,
+  });
+  const event = nftEvent();
+  // must resolve without throwing
+  await expect(filter.enrich([event])).resolves.toBeUndefined();
+  // 404 → ok, so no mediaFilter stamped
+  expect(event.mediaFilter).toBeUndefined();
+});
+
+test("enrich stamps sensitive verdict from network path when store.get throws", async () => {
+  const throwingStore = {
+    get: (_launcherId: string) => {
+      throw new Error("sqlite disk error");
+    },
+    putCheap: (_launcherId: string, _nftId: string | undefined, _verdict: unknown) => {
+      throw new Error("sqlite disk error");
+    },
+  } as unknown as import("../src/content-filter/store.js").ContentStore;
+
+  const filter = new ContentFilter(new MediaIndex(10), {
+    store: throwingStore,
+    fetchImpl: async () =>
+      ({
+        ok: true,
+        status: 200,
+        json: async () => ({ collection: { sensitive_content: true } }),
+      }) as unknown as Response,
+  });
+  const event = nftEvent();
+  await expect(filter.enrich([event])).resolves.toBeUndefined();
+  expect(event.mediaFilter).toBe("sensitive");
+});

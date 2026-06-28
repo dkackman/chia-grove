@@ -34,7 +34,12 @@ const BACKFILL_BLOCKS = Number(process.env.BACKFILL_BLOCKS ?? 150);
 const hub = new Hub(new RingBuffer<GroveEvent>(10000), readVersion().appVersion);
 const media = new MediaIndex(10000); // >= ring buffer so replayable art stays resolvable
 const CONTENT_DB_PATH = process.env.CONTENT_DB_PATH ?? "./data/content-filter.sqlite";
-const contentStore = new ContentStore(CONTENT_DB_PATH);
+let contentStore: ContentStore | undefined;
+try {
+  contentStore = new ContentStore(CONTENT_DB_PATH);
+} catch (err) {
+  console.error("content-filter store failed to open (degrading to in-memory-only):", err);
+}
 const contentFilter = new ContentFilter(media, {
   store: contentStore,
   googleApiKey: process.env.GOOGLE_VISION_API_KEY,
@@ -83,7 +88,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     poller.stop();
     cats.stop();
     await app.close();
-    contentStore.close();
+    contentStore?.close();
     process.exit(0);
   });
 }
