@@ -131,3 +131,21 @@ test("hovering lights a frame; a wrapped-out slot does not stay hovered", () => 
   // B reused A's slot but was never hovered — a stale hover pointer would light it
   expect(emissiveOf(frameB)).toBe(0);
 });
+
+test("videoFor returns the backing <video> for a video piece, null otherwise", () => {
+  const pieces = new Pieces(new THREE.Scene(), 28);
+
+  const fakeVideo = { play: vi.fn(), pause: vi.fn() };
+  const videoTex = new THREE.Texture();
+  videoTex.image = fakeVideo; // stand in for a VideoTexture's <video> element
+  pieces.add(mint(id(1)), videoTex);
+
+  pieces.add(mint(id(2)), new THREE.Texture()); // image piece — no video-like image
+
+  const forCoin = (coin: string) =>
+    pieces.pickables().find((o) => pieces.metaFor(o)?.coinId === coin)!;
+
+  expect(pieces.videoFor(forCoin(id(1)))).toBe(fakeVideo);
+  expect(pieces.videoFor(forCoin(id(2)))).toBeNull();
+  expect(pieces.videoFor(new THREE.Mesh())).toBeNull(); // unknown object
+});

@@ -9,6 +9,7 @@ import { WALL } from "./layout.js";
 import { createWall } from "./wall.js";
 import { Pieces } from "./pieces.js";
 import { Placard$ } from "./label.js";
+import { PlayButton$ } from "./play-button.js";
 import { SpendDust } from "./dust.js";
 import { netspaceLight } from "./ambience.js";
 import { shouldHang } from "./select.js";
@@ -65,6 +66,7 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
   const pieces = new Pieces(scene, reducedMotion ? 24 : 60);
   const dust = new SpendDust(scene, glowTexture(), reducedMotion ? 80 : 220);
   const placard = new Placard$();
+  const playButton = new PlayButton$();
 
   // camera state machine
   let focused: { eye: THREE.Vector3; target: THREE.Vector3 } | null = null;
@@ -174,12 +176,17 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
     focusedObject = object;
     const meta = pieces.metaFor(object);
     if (meta) placard.show(meta, pieces.eventCountFor(object));
+    // a video piece gets a manual ▶ overlay (never autoplayed); images do not
+    const video = pieces.videoFor(object);
+    if (video) playButton.show(video);
+    else playButton.hide();
   }
 
   function unfocus(): void {
     focused = null;
     focusedObject = null;
     placard.hide();
+    playButton.hide(); // pauses + resets the video to its poster still
   }
 
   // own pointer input (the shared picker is skipped via selfManagedInput)

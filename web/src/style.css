@@ -460,6 +460,41 @@ body {
   background: #ffe9c2;
 }
 
+/* play/pause button over a focused video piece. framePiece() centers the
+   focused piece on screen, so the button is simply screen-centered. Styled
+   after .label-info so it reads as part of the same gallery UI. */
+.gallery-play {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%) scale(0.9);
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 999px;
+  font-size: 26px;
+  line-height: 1;
+  color: #e8e4dc;
+  background: rgba(10, 11, 14, 0.82);
+  border: 1px solid rgba(255, 233, 194, 0.22);
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.3s ease,
+    transform 0.3s ease,
+    border-color 0.2s ease;
+}
+.gallery-play.visible {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+  pointer-events: auto;
+}
+.gallery-play:hover {
+  border-color: rgba(255, 233, 194, 0.5);
+}
+
 /* gallery legend swatches */
 .sw-canvas {
   background: linear-gradient(135deg, #6cb6ff, #c79bff);

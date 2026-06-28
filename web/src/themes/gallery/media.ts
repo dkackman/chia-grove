@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { escalateMediaKind, type MediaKind } from "../../ui/media.js";
+import { POSTER_TIME } from "./playback.js";
 
 /**
  * Load an NFT's media as a Three.js texture, mirroring the media-type handling
@@ -43,7 +44,7 @@ export function loadArtTexture(
       // when currentTime is already 0, so nudge to a small offset, clamped for
       // very short clips and guarded against a NaN/Infinity duration.
       const d = video.duration;
-      const target = Number.isFinite(d) && d > 0 ? Math.min(0.1, d / 2) : 0.1;
+      const target = Number.isFinite(d) && d > 0 ? Math.min(POSTER_TIME, d / 2) : POSTER_TIME;
       try {
         video.currentTime = target;
       } catch {

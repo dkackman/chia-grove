@@ -184,6 +184,23 @@ export class Pieces {
     return slotId === undefined ? null : (this.slots[slotId]?.event ?? null);
   }
 
+  /**
+   * The <video> element backing the piece under this object, or null when the
+   * piece is image- or placeholder-backed. Blocked/sensitive pieces hang a
+   * placeholder texture (never a video), so they return null and can never be
+   * played. Duck-types on a `play` function, matching retire()'s video handling.
+   */
+  videoFor(object: THREE.Object3D): HTMLVideoElement | null {
+    const slotId = this.byObject.get(object);
+    if (slotId === undefined) return null;
+    const piece = this.slots[slotId];
+    if (!piece) return null;
+    const img = (piece.image.material as THREE.MeshBasicMaterial).map?.image as
+      | { play?: unknown }
+      | undefined;
+    return img && typeof img.play === "function" ? (img as HTMLVideoElement) : null;
+  }
+
   /** How many events the NFT under this object has accumulated on the wall. */
   eventCountFor(object: THREE.Object3D): number {
     const slotId = this.byObject.get(object);
