@@ -5,7 +5,7 @@ import {
   buildDenylistMap,
   dispositionForCollection,
   type DenylistEntry,
-} from "../src/classify/denylist.js";
+} from "../src/content-filter/signals/denylist.js";
 
 test("DENYLIST ships empty and well-formed", () => {
   expect(Array.isArray(DENYLIST)).toBe(true);

@@ -1,7 +1,7 @@
 import type { GroveEvent, SproutEvent } from "@grove/shared";
 import type { MediaIndex } from "../web/media-index.js";
-import { LEXICON, matchesLexicon } from "./lexicon.js";
-import { DENYLIST_MAP, dispositionForCollection } from "./denylist.js";
+import { LEXICON, matchesLexicon } from "./signals/lexicon.js";
+import { DENYLIST_MAP, dispositionForCollection } from "./signals/denylist.js";
 
 export type Disposition = "blocked" | "sensitive" | "ok";
 

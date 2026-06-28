@@ -8,7 +8,7 @@ import { Hub } from "./web/hub.js";
 import { RingBuffer } from "./web/ring-buffer.js";
 import { buildServer } from "./web/server.js";
 import { MediaIndex } from "./web/media-index.js";
-import { ContentFilter } from "./classify/content-filter.js";
+import { ContentFilter } from "./content-filter/index.js";
 import { readVersion } from "./version.js";
 
 process.on("unhandledRejection", (reason) => {

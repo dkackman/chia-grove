@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { LEXICON, matchesLexicon } from "../src/classify/lexicon.js";
+import { LEXICON, matchesLexicon } from "../src/content-filter/signals/lexicon.js";
 
 test("LEXICON is a non-empty list of lowercase strings", () => {
   expect(Array.isArray(LEXICON)).toBe(true);

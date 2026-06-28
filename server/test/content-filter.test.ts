@@ -1,8 +1,8 @@
 import { expect, test } from "vitest";
-import { mapMintgarden } from "../src/classify/content-filter.js";
-import { ContentFilter } from "../src/classify/content-filter.js";
+import { mapMintgarden } from "../src/content-filter/index.js";
+import { ContentFilter } from "../src/content-filter/index.js";
 import { MediaIndex } from "../src/web/media-index.js";
-import { buildDenylistMap } from "../src/classify/denylist.js";
+import { buildDenylistMap } from "../src/content-filter/signals/denylist.js";
 import type { GroveEvent, SproutEvent } from "@grove/shared";
 
 test("is_blocked true → blocked", () => {
