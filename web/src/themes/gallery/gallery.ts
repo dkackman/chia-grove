@@ -166,6 +166,12 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
       case "reorg":
         pieces.removeRecent(event.forkHeight);
         break;
+      case "content-flag": {
+        if (pieces.markSensitive(event.launcherId, sensitivePlaceholderTexture().clone())) {
+          refreshPlacardIf(event.launcherId);
+        }
+        break;
+      }
     }
   });
 

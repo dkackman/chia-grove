@@ -210,6 +210,20 @@ export class Paintings {
   has(launcherId: string): boolean {
     return this.byLauncher.has(launcherId);
   }
+
+  /** Blur an already-hung painting after a late content-flag. */
+  markSensitive(launcherId: string): boolean {
+    const slot = this.byLauncher.get(launcherId);
+    if (slot === undefined) return false;
+    const p = this.pool[slot];
+    if (!p?.meta) return false;
+    p.meta = { ...p.meta, mediaFilter: "sensitive" };
+    const mat = p.panel.material as THREE.MeshBasicMaterial;
+    mat.map = sensitivePlaceholderTexture();
+    mat.color.set(0xffffff);
+    mat.needsUpdate = true;
+    return true;
+  }
   clearAbove(forkHeight: number): void {
     for (let i = 0; i < this.pool.length; i++) {
       const p = this.pool[i];

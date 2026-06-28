@@ -219,6 +219,20 @@ export class Pieces {
     return { center: piece.group.position.clone(), height };
   }
 
+  /** Blur an already-hung NFT after a late content-flag: hang the neutral placeholder. */
+  markSensitive(launcherId: string, placeholder: THREE.Texture): boolean {
+    const slotId = this.byLauncher.get(launcherId);
+    if (slotId === undefined) return false;
+    const piece = this.slots[slotId];
+    if (!piece) return false;
+    piece.event = { ...piece.event, mediaFilter: "sensitive" };
+    const mat = piece.image.material as THREE.MeshBasicMaterial;
+    mat.map = placeholder;
+    mat.color.set(0xffffff);
+    mat.needsUpdate = true;
+    return true;
+  }
+
   setHovered(object: THREE.Object3D | null): void {
     this.hovered = object ? (this.byObject.get(object) ?? null) : null;
   }

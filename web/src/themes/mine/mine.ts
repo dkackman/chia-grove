@@ -39,6 +39,7 @@ export function startMine(canvas: HTMLCanvasElement, feed: GroveFeed) {
   let onAmbientExtra = (_mempoolSize: number) => {};
   let onBlockExtra = (_chunk: XZ, _index: number) => {};
   let onReorgExtra = (_forkHeight: number) => {};
+  let onContentFlag = (_launcherId: string) => {};
   let extraUpdate = (_dt: number, _t: number) => {};
 
   let blockIndex = 0;
@@ -64,6 +65,9 @@ export function startMine(canvas: HTMLCanvasElement, feed: GroveFeed) {
         break;
       case "reorg":
         onReorgExtra(event.forkHeight);
+        break;
+      case "content-flag":
+        onContentFlag(event.launcherId);
         break;
     }
   });
@@ -123,6 +127,7 @@ export function startMine(canvas: HTMLCanvasElement, feed: GroveFeed) {
       setAmbientHandler: (fn: typeof onAmbientExtra) => (onAmbientExtra = fn),
       setBlockHandler: (fn: typeof onBlockExtra) => (onBlockExtra = fn),
       setReorgHandler: (fn: typeof onReorgExtra) => (onReorgExtra = fn),
+      setContentFlagHandler: (fn: typeof onContentFlag) => (onContentFlag = fn),
       setUpdateHandler: (fn: typeof extraUpdate) => (extraUpdate = fn),
       isDragging: () => orbit.isDragging(),
       reducedMotion,
