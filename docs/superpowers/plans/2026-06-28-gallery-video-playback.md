@@ -22,11 +22,13 @@
 ### Task 1: Pure playback module + media.ts single-source-of-truth
 
 **Files:**
+
 - Create: `web/src/themes/gallery/playback.ts`
 - Create (test): `web/test/gallery-playback.test.ts`
 - Modify: `web/src/themes/gallery/media.ts:45-46` (use shared `POSTER_TIME` instead of inlined `0.1`)
 
 **Interfaces:**
+
 - Consumes: nothing.
 - Produces:
   - `export interface PlayableVideo { muted: boolean; loop: boolean; currentTime: number; play(): Promise<void> | void; pause(): void; }`
@@ -156,15 +158,15 @@ import { POSTER_TIME } from "./playback.js";
 Then change the seek target (currently lines 45-46):
 
 ```ts
-      const d = video.duration;
-      const target = Number.isFinite(d) && d > 0 ? Math.min(0.1, d / 2) : 0.1;
+const d = video.duration;
+const target = Number.isFinite(d) && d > 0 ? Math.min(0.1, d / 2) : 0.1;
 ```
 
 to:
 
 ```ts
-      const d = video.duration;
-      const target = Number.isFinite(d) && d > 0 ? Math.min(POSTER_TIME, d / 2) : POSTER_TIME;
+const d = video.duration;
+const target = Number.isFinite(d) && d > 0 ? Math.min(POSTER_TIME, d / 2) : POSTER_TIME;
 ```
 
 - [ ] **Step 6: Run the existing media test + typecheck to confirm no regression**
@@ -184,10 +186,12 @@ git commit -m "feat(gallery): pure video playback helpers + shared POSTER_TIME"
 ### Task 2: `Pieces.videoFor()` accessor
 
 **Files:**
+
 - Modify: `web/src/themes/gallery/pieces.ts` (add `videoFor` method near `metaFor`, around line 182-185)
 - Test: `web/test/gallery-pieces.test.ts` (add a test; reuse existing `mint`, `id`, `Pieces` imports)
 
 **Interfaces:**
+
 - Consumes: nothing from Task 1.
 - Produces: `videoFor(object: THREE.Object3D): HTMLVideoElement | null` on `Pieces` — returns the `<video>` backing the piece under `object`, or `null` for an image/placeholder piece or an unknown/retired object. Used by Task 4.
 
@@ -260,11 +264,13 @@ git commit -m "feat(gallery): Pieces.videoFor() exposes a focused piece's <video
 ### Task 3: `PlayButton$` DOM control
 
 **Files:**
+
 - Create: `web/src/themes/gallery/play-button.ts`
 
 No unit test — this is a DOM class with no jsdom in the test env (consistent with `Placard$`, whose DOM class is untested while its pure `placardModel` is tested). Verified by `typecheck` + `lint` here and exercised manually in Task 4.
 
 **Interfaces:**
+
 - Consumes: `startPlayback`, `stopPlayback` from `./playback.js` (Task 1). `HTMLVideoElement` structurally satisfies `PlayableVideo`, so no cast is needed at the call sites.
 - Produces: `class PlayButton$` with `constructor()`, `show(video: HTMLVideoElement): void`, `hide(): void`, `dispose(): void`. Used by Task 4.
 
@@ -372,10 +378,12 @@ git commit -m "feat(gallery): PlayButton\$ DOM play/pause control for video piec
 ### Task 4: Wire into the gallery + CSS
 
 **Files:**
+
 - Modify: `web/src/themes/gallery/gallery.ts` (import `PlayButton$`; construct it; call in `focus`/`unfocus`)
 - Modify: `web/src/style.css` (add `.gallery-play`)
 
 **Interfaces:**
+
 - Consumes: `PlayButton$` (Task 3) and `Pieces.videoFor` (Task 2).
 - Produces: the user-visible feature. No new exports.
 
@@ -390,8 +398,8 @@ import { PlayButton$ } from "./play-button.js";
 Then construct it right after `const placard = new Placard$();` (line 67):
 
 ```ts
-  const placard = new Placard$();
-  const playButton = new PlayButton$();
+const placard = new Placard$();
+const playButton = new PlayButton$();
 ```
 
 - [ ] **Step 2: Show/hide the button on focus/unfocus**
@@ -399,52 +407,52 @@ Then construct it right after `const placard = new Placard$();` (line 67):
 Replace the existing `focus` function (lines 170-177):
 
 ```ts
-  function focus(object: THREE.Object3D): void {
-    const f = pieces.focusOf(object);
-    if (!f) return;
-    focused = framePiece(f.center, f.height, FOV);
-    focusedObject = object;
-    const meta = pieces.metaFor(object);
-    if (meta) placard.show(meta, pieces.eventCountFor(object));
-  }
+function focus(object: THREE.Object3D): void {
+  const f = pieces.focusOf(object);
+  if (!f) return;
+  focused = framePiece(f.center, f.height, FOV);
+  focusedObject = object;
+  const meta = pieces.metaFor(object);
+  if (meta) placard.show(meta, pieces.eventCountFor(object));
+}
 ```
 
 with:
 
 ```ts
-  function focus(object: THREE.Object3D): void {
-    const f = pieces.focusOf(object);
-    if (!f) return;
-    focused = framePiece(f.center, f.height, FOV);
-    focusedObject = object;
-    const meta = pieces.metaFor(object);
-    if (meta) placard.show(meta, pieces.eventCountFor(object));
-    // a video piece gets a manual ▶ overlay (never autoplayed); images do not
-    const video = pieces.videoFor(object);
-    if (video) playButton.show(video);
-    else playButton.hide();
-  }
+function focus(object: THREE.Object3D): void {
+  const f = pieces.focusOf(object);
+  if (!f) return;
+  focused = framePiece(f.center, f.height, FOV);
+  focusedObject = object;
+  const meta = pieces.metaFor(object);
+  if (meta) placard.show(meta, pieces.eventCountFor(object));
+  // a video piece gets a manual ▶ overlay (never autoplayed); images do not
+  const video = pieces.videoFor(object);
+  if (video) playButton.show(video);
+  else playButton.hide();
+}
 ```
 
 Replace the existing `unfocus` function (lines 179-183):
 
 ```ts
-  function unfocus(): void {
-    focused = null;
-    focusedObject = null;
-    placard.hide();
-  }
+function unfocus(): void {
+  focused = null;
+  focusedObject = null;
+  placard.hide();
+}
 ```
 
 with:
 
 ```ts
-  function unfocus(): void {
-    focused = null;
-    focusedObject = null;
-    placard.hide();
-    playButton.hide(); // pauses + resets the video to its poster still
-  }
+function unfocus(): void {
+  focused = null;
+  focusedObject = null;
+  placard.hide();
+  playButton.hide(); // pauses + resets the video to its poster still
+}
 ```
 
 (No further teardown is needed: the frame loop's existing auto-unfocus at line 276 fires when the focused piece is reorg-removed or wrapped off, and `Pieces.retire()` already pauses/releases the `<video>`, so `playButton.hide()`'s `stopPlayback` against a released element is a harmless no-op.)
@@ -498,6 +506,7 @@ Expected: all PASS — types clean, lint clean, full vitest suite green (includi
 - [ ] **Step 5: Manual verification**
 
 Run: `npm run dev:web` and open `http://localhost:5173/?theme=gallery` against a running server (or `?theme=gallery&demo=1` for synthetic events). Verify:
+
 - Tapping a still-image NFT shows the placard but **no** play button.
 - Tapping a video NFT shows a centered ▶ over the art; clicking it plays the clip on the wall (no sound) and the glyph becomes ⏸; clicking again pauses.
 - Pressing Escape / tapping empty space / tapping a different piece hides the button and the video stops (the wall returns to the poster still).
@@ -516,6 +525,7 @@ git commit -m "feat(gallery): show a manual play button on focused video NFTs"
 ## Self-Review
 
 **Spec coverage:**
+
 - Behavior (▶ on focused video, in-place wall playback, ⏸ toggle, reset on unfocus) → Tasks 2, 3, 4. ✓
 - `Pieces.videoFor` → Task 2. ✓
 - `playback.ts` (`startPlayback`/`stopPlayback`/`POSTER_TIME`) → Task 1. ✓

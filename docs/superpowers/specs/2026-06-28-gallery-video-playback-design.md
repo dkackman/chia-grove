@@ -23,11 +23,11 @@ to the still poster frame.
 
 ## Decisions
 
-| Question        | Decision                                                          |
-| --------------- | ----------------------------------------------------------------- |
-| Playback surface| Play on the wall — the existing `VideoTexture` animates in place; a custom DOM ▶/⏸ button drives it. No native `<video controls>` overlay. |
-| Sound           | Muted, always. The element is never unmuted.                      |
-| Loop            | Loop while focused. The button is a play/pause toggle; on unfocus it pauses and resets to the poster frame. |
+| Question         | Decision                                                                                                                                   |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Playback surface | Play on the wall — the existing `VideoTexture` animates in place; a custom DOM ▶/⏸ button drives it. No native `<video controls>` overlay. |
+| Sound            | Muted, always. The element is never unmuted.                                                                                               |
+| Loop             | Loop while focused. The button is a play/pause toggle; on unfocus it pauses and resets to the poster frame.                                |
 
 ## Non-goals
 
@@ -213,13 +213,13 @@ the rest of the clip on demand.
 
 ## Files
 
-| File | Change |
-| ---- | ------ |
-| `web/src/themes/gallery/playback.ts` | new — pure `startPlayback`/`stopPlayback` + `POSTER_TIME` |
-| `web/src/themes/gallery/play-button.ts` | new — `PlayButton$` DOM control |
-| `web/src/themes/gallery/pieces.ts` | add `videoFor()` |
-| `web/src/themes/gallery/media.ts` | import `POSTER_TIME` instead of inlining `0.1` |
-| `web/src/themes/gallery/gallery.ts` | construct `PlayButton$`, wire into `focus`/`unfocus` |
-| `web/src/style.css` | add `.gallery-play` |
-| `web/test/gallery-playback.test.ts` | new tests |
-| `web/test/gallery-pieces.test.ts` | extend with `videoFor` tests |
+| File                                    | Change                                                    |
+| --------------------------------------- | --------------------------------------------------------- |
+| `web/src/themes/gallery/playback.ts`    | new — pure `startPlayback`/`stopPlayback` + `POSTER_TIME` |
+| `web/src/themes/gallery/play-button.ts` | new — `PlayButton$` DOM control                           |
+| `web/src/themes/gallery/pieces.ts`      | add `videoFor()`                                          |
+| `web/src/themes/gallery/media.ts`       | import `POSTER_TIME` instead of inlining `0.1`            |
+| `web/src/themes/gallery/gallery.ts`     | construct `PlayButton$`, wire into `focus`/`unfocus`      |
+| `web/src/style.css`                     | add `.gallery-play`                                       |
+| `web/test/gallery-playback.test.ts`     | new tests                                                 |
+| `web/test/gallery-pieces.test.ts`       | extend with `videoFor` tests                              |
