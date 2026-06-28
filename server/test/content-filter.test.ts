@@ -322,3 +322,30 @@ test("enrich uses a stored verdict and skips the MintGarden fetch", async () => 
   expect(event.signals).toEqual(["lexicon"]);
   store.close();
 });
+
+test("enrich queues SafeSearch for a clean image mint and emits a flag", async () => {
+  const media = new MediaIndex(10);
+  media.set("Lg", { url: "https://e/g.png", kind: "image" });
+  const store = new ContentStore(":memory:");
+  const flags: import("@grove/shared").ContentFlagEvent[] = [];
+  const filter = new ContentFilter(media, {
+    store,
+    googleApiKey: "k",
+    onFlag: (e) => flags.push(e),
+    fetchImpl: (async (url: string) => {
+      if (String(url).includes("images:annotate")) {
+        return new Response(JSON.stringify({ responses: [{ safeSearchAnnotation: { adult: "LIKELY" } }] }), { status: 200 });
+      }
+      return new Response("{}", { status: 404 }); // MintGarden unknown → ok
+    }) as typeof fetch,
+  });
+  const event: SproutEvent = {
+    type: "sprout", kind: "nft", height: 1, coinId: "c", amount: "1",
+    mint: true, launcherId: "Lg", nftId: "nft1g", mediaKind: "image",
+  };
+  await filter.enrich([event]);
+  await new Promise((r) => setTimeout(r, 0));
+  expect(event.mediaFilter).toBeUndefined(); // streamed permissive
+  expect(flags).toEqual([{ type: "content-flag", launcherId: "Lg", mediaFilter: "sensitive", signals: ["safesearch"] }]);
+  store.close();
+});

@@ -9,6 +9,7 @@ import { RingBuffer } from "./web/ring-buffer.js";
 import { buildServer } from "./web/server.js";
 import { MediaIndex } from "./web/media-index.js";
 import { ContentFilter } from "./content-filter/index.js";
+import { ContentStore } from "./content-filter/store.js";
 import { readVersion } from "./version.js";
 
 process.on("unhandledRejection", (reason) => {
@@ -32,7 +33,13 @@ const BACKFILL_BLOCKS = Number(process.env.BACKFILL_BLOCKS ?? 150);
 // still covering the full backfill window; older events fall off the back
 const hub = new Hub(new RingBuffer<GroveEvent>(10000), readVersion().appVersion);
 const media = new MediaIndex(10000); // >= ring buffer so replayable art stays resolvable
-const contentFilter = new ContentFilter(media); // MintGarden lookups cached per nftId
+const CONTENT_DB_PATH = process.env.CONTENT_DB_PATH ?? "./data/content-filter.sqlite";
+const contentStore = new ContentStore(CONTENT_DB_PATH);
+const contentFilter = new ContentFilter(media, {
+  store: contentStore,
+  googleApiKey: process.env.GOOGLE_VISION_API_KEY,
+  onFlag: (e) => hub.publish([e]),
+}); // MintGarden lookups cached per nftId; SafeSearch async when API key set
 const cats = new CatRegistry();
 await cats.start();
 
@@ -76,6 +83,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     poller.stop();
     cats.stop();
     await app.close();
+    contentStore.close();
     process.exit(0);
   });
 }

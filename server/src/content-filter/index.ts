@@ -1,8 +1,9 @@
-import type { GroveEvent, SproutEvent } from "@grove/shared";
+import type { ContentFlagEvent, GroveEvent, SproutEvent } from "@grove/shared";
 import type { MediaIndex } from "../web/media-index.js";
 import type { Disposition, Verdict } from "./types.js";
 import { mapMintgardenSignals } from "./signals/mintgarden.js";
 import type { ContentStore } from "./store.js";
+import { SafeSearchWorker } from "./safesearch-worker.js";
 
 export type { Disposition } from "./types.js";
 export { mapMintgarden, mapMintgardenSignals } from "./signals/mintgarden.js";
@@ -25,6 +26,10 @@ export interface ContentFilterOptions {
   now?: () => number;
   /** Persistent verdict store keyed by launcherId; a hit skips the MintGarden network fetch. */
   store?: ContentStore;
+  /** Google Vision API key; enables out-of-band SafeSearch when combined with store + onFlag. */
+  googleApiKey?: string;
+  /** Called when SafeSearch promotes an NFT to sensitive/blocked after the sprout was streamed. */
+  onFlag?: (e: ContentFlagEvent) => void;
 }
 
 /**
@@ -60,6 +65,7 @@ export class ContentFilter {
   private readonly failTtlMs: number;
   private readonly now: () => number;
   private readonly store?: ContentStore;
+  private readonly worker?: SafeSearchWorker;
   private active = 0;
   private readonly waiters: Array<() => void> = [];
 
@@ -76,6 +82,15 @@ export class ContentFilter {
     this.failTtlMs = opts.failTtlMs ?? 60000;
     this.now = opts.now ?? Date.now;
     this.store = opts.store;
+    if (opts.store && opts.googleApiKey && opts.onFlag) {
+      this.worker = new SafeSearchWorker({
+        media,
+        store: opts.store,
+        apiKey: opts.googleApiKey,
+        onFlag: opts.onFlag,
+        fetchImpl: opts.fetchImpl,
+      });
+    }
   }
 
   async enrich(events: GroveEvent[]): Promise<void> {
@@ -111,6 +126,8 @@ export class ContentFilter {
       : await this.resolve(event.nftId!);
 
     if (!stored && launcherId) this.store?.putCheap(launcherId, event.nftId, verdict);
+
+    if (verdict.disposition === "ok") this.worker?.maybeEnqueue(event);
 
     if (verdict.disposition === "blocked") {
       event.mediaFilter = "blocked";
