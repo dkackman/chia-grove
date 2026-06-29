@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { mapMintgarden, mapMintgardenSignals } from "../src/content-filter/index.js";
+import { mapMintgarden, mapMintgardenSignals, extractContentHash } from "../src/content-filter/index.js";
 import { ContentFilter } from "../src/content-filter/index.js";
 import { MediaIndex } from "../src/web/media-index.js";
 import { buildDenylistMap } from "../src/content-filter/signals/denylist.js";
@@ -383,7 +383,8 @@ test("enrich does not throw and still stamps verdict when store.get throws", asy
   const filter = new ContentFilter(new MediaIndex(10), {
     store: throwingStore,
     // fetchImpl returns a 404 → "ok" verdict from the network path
-    fetchImpl: async () => ({ ok: false, status: 404, json: async () => ({}) }) as unknown as Response,
+    fetchImpl: async () =>
+      ({ ok: false, status: 404, json: async () => ({}) }) as unknown as Response,
   });
   const event = nftEvent();
   // must resolve without throwing
@@ -414,4 +415,34 @@ test("enrich stamps sensitive verdict from network path when store.get throws", 
   const event = nftEvent();
   await expect(filter.enrich([event])).resolves.toBeUndefined();
   expect(event.mediaFilter).toBe("sensitive");
+});
+
+// ── extractContentHash ──────────────────────────────────────────────────────
+
+test("extractContentHash returns lowercase hash for valid 64-char hex", () => {
+  expect(extractContentHash({ data: { data_hash: "ab".repeat(32) } })).toBe("ab".repeat(32));
+});
+
+test("extractContentHash normalizes uppercase hex to lowercase", () => {
+  expect(extractContentHash({ data: { data_hash: "AB".repeat(32) } })).toBe("ab".repeat(32));
+});
+
+test("extractContentHash returns undefined for 63-char string", () => {
+  expect(extractContentHash({ data: { data_hash: "a".repeat(63) } })).toBeUndefined();
+});
+
+test("extractContentHash returns undefined for non-hex characters", () => {
+  expect(extractContentHash({ data: { data_hash: "z".repeat(64) } })).toBeUndefined();
+});
+
+test("extractContentHash returns undefined when data_hash is null", () => {
+  expect(extractContentHash({ data: { data_hash: null } })).toBeUndefined();
+});
+
+test("extractContentHash returns undefined when data key is absent", () => {
+  expect(extractContentHash({ name: "no data key here" })).toBeUndefined();
+});
+
+test("extractContentHash returns undefined for null input", () => {
+  expect(extractContentHash(null)).toBeUndefined();
 });

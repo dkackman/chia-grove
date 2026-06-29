@@ -6,7 +6,7 @@ import type { ContentStore } from "./store.js";
 import { SafeSearchWorker } from "./safesearch-worker.js";
 
 export type { Disposition } from "./types.js";
-export { mapMintgarden, mapMintgardenSignals } from "./signals/mintgarden.js";
+export { mapMintgarden, mapMintgardenSignals, extractContentHash } from "./signals/mintgarden.js";
 export type { MapMintgardenOpts } from "./signals/mintgarden.js";
 export type { StoredVerdict } from "./store.js";
 
@@ -120,14 +120,16 @@ export class ContentFilter {
 
   private async apply(event: SproutEvent): Promise<void> {
     const launcherId = event.launcherId;
-    let stored = launcherId ? (() => {
-      try {
-        return this.store?.get(launcherId);
-      } catch (err) {
-        console.warn("content-filter store.get failed (cache miss):", err);
-        return undefined;
-      }
-    })() : undefined;
+    const stored = launcherId
+      ? (() => {
+          try {
+            return this.store?.get(launcherId);
+          } catch (err) {
+            console.warn("content-filter store.get failed (cache miss):", err);
+            return undefined;
+          }
+        })()
+      : undefined;
     const verdict: Verdict = stored
       ? { disposition: stored.disposition, signals: stored.signals }
       : await this.resolve(event.nftId!);

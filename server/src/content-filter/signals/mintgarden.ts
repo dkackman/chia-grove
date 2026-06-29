@@ -78,3 +78,15 @@ export function mapMintgardenSignals(json: unknown, opts: MapMintgardenOpts = {}
 export function mapMintgarden(json: unknown, opts: MapMintgardenOpts = {}): Disposition {
   return mapMintgardenSignals(json, opts).disposition;
 }
+
+/**
+ * Extract the SHA-256 content hash from an api.mintgarden.io /nfts/{id} response.
+ * Returns undefined for any missing, null, or malformed value so callers can
+ * skip gracefully without guarding.
+ */
+export function extractContentHash(json: unknown): string | undefined {
+  const hash = asRecord(asRecord(json).data).data_hash;
+  return typeof hash === "string" && /^[0-9a-f]{64}$/i.test(hash)
+    ? hash.toLowerCase()
+    : undefined;
+}
