@@ -2,6 +2,7 @@ import type { ContentFlagEvent, SproutEvent } from "@grove/shared";
 import type { MediaIndex } from "../web/media-index.js";
 import type { ContentStore } from "./store.js";
 import { querySafeSearch } from "./signals/safesearch.js";
+import { log } from "../logger.js";
 
 export interface SafeSearchWorkerOpts {
   media: MediaIndex;
@@ -71,7 +72,10 @@ export class SafeSearchWorker {
       // Called synchronously from ContentFilter.apply, which must never reject.
       // A store read failure means we can't honor the safesearchChecked guard,
       // so skip (don't burn paid Vision quota un-deduped) rather than throw.
-      console.warn(`[safesearch] store.get failed for ${launcherId} (skipping):`, err);
+      log.warn(
+        { launcherId, err: err instanceof Error ? err.message : String(err) },
+        "safesearch: store.get failed (skipping)"
+      );
       return;
     }
     if (stored?.safesearchChecked) return;
@@ -97,6 +101,10 @@ export class SafeSearchWorker {
       this.opts.store.putSafeSearch(launcherId, result);
       // on success, clear any prior failure suppression for this launcher
       this.failedUntil.delete(launcherId);
+      log.info(
+        { launcherId, imageUri, verdict: result.sensitive ? "sensitive" : "ok" },
+        "safesearch: verdict"
+      );
       if (result.sensitive) {
         this.opts.onFlag({
           type: "content-flag",
@@ -105,7 +113,10 @@ export class SafeSearchWorker {
         });
       }
     } catch (err) {
-      console.warn(`[safesearch] failed for ${launcherId} (${imageUri}):`, err);
+      log.warn(
+        { launcherId, imageUri, err: err instanceof Error ? err.message : String(err) },
+        "safesearch: vision api failed"
+      );
       this.failedUntil.set(launcherId, this.now() + this.failTtlMs);
       // evict oldest entry if the map has grown too large
       if (this.failedUntil.size > FAILED_UNTIL_CAP) {
