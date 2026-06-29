@@ -1,4 +1,5 @@
 import type { ChainHandlers, ChainSource, RpcView } from "./types.js";
+import { log } from "../logger.js";
 
 export interface PollerOptions {
   pollIntervalMs?: number;
@@ -53,7 +54,10 @@ export class CoinsetPoller implements ChainSource {
       this.delayMs = this.interval;
     } catch (error) {
       this.delayMs = Math.min(Math.max(this.delayMs, 500) * 2, this.maxBackoff);
-      console.warn(`poll failed (retry in ${this.delayMs}ms):`, error);
+      log.warn(
+        { retryMs: this.delayMs, err: error instanceof Error ? error.message : String(error) },
+        "poll failed"
+      );
     }
     if (!this.stopped) {
       this.timer = setTimeout(() => void this.loop(), this.delayMs);
