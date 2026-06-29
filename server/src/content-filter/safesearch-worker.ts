@@ -57,7 +57,7 @@ export class SafeSearchWorker {
   }
 
   maybeEnqueue(event: SproutEvent): void {
-    if (event.kind !== "nft" || event.mediaKind !== "image") return;
+    if (event.kind !== "nft" || event.mint !== true || event.mediaKind !== "image") return;
     const launcherId = event.launcherId;
     if (!launcherId || this.queued.has(launcherId)) return;
     const media = this.opts.media.get(launcherId);
