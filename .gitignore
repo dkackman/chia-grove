@@ -4,7 +4,6 @@ version.json
 *.log
 .superpowers/
 .env
-.env.*
 .DS_Store
 
 # Visual brainstorming companion
