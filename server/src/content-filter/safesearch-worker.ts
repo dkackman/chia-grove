@@ -14,6 +14,12 @@ export interface SafeSearchWorkerOpts {
   /** How long a failed lookup is suppressed before another attempt. */
   failTtlMs?: number;
   now?: () => number;
+  /** Base URL for the MintGarden Archive API; used for ingestion pre-check. */
+  archiveBaseUrl?: string;
+  /** Max attempts to poll Archive before giving up (each separated by archiveCheckDelayMs). */
+  archiveCheckAttempts?: number;
+  /** Milliseconds to wait between Archive poll attempts (0 = no delay). */
+  archiveCheckDelayMs?: number;
 }
 
 /**
@@ -31,6 +37,9 @@ export class SafeSearchWorker {
   private readonly concurrency: number;
   private readonly failTtlMs: number;
   private readonly now: () => number;
+  private readonly archiveBaseUrl: string;
+  private readonly archiveCheckAttempts: number;
+  private readonly archiveCheckDelayMs: number;
   private active = 0;
   private readonly waiters: Array<() => void> = [];
   private readonly queued = new Set<string>();
@@ -42,10 +51,13 @@ export class SafeSearchWorker {
     this.concurrency = opts.concurrency ?? 2;
     this.failTtlMs = opts.failTtlMs ?? 300_000;
     this.now = opts.now ?? Date.now;
+    this.archiveBaseUrl = opts.archiveBaseUrl ?? "https://archive.mintgarden.io";
+    this.archiveCheckAttempts = opts.archiveCheckAttempts ?? 3;
+    this.archiveCheckDelayMs = opts.archiveCheckDelayMs ?? 2000;
   }
 
   maybeEnqueue(event: SproutEvent): void {
-    if (event.kind !== "nft" || event.mint !== true || event.mediaKind !== "image") return;
+    if (event.kind !== "nft" || event.mediaKind !== "image") return;
     const launcherId = event.launcherId;
     if (!launcherId || this.queued.has(launcherId)) return;
     const media = this.opts.media.get(launcherId);
@@ -63,6 +75,9 @@ export class SafeSearchWorker {
 
   private async run(launcherId: string, imageUri: string): Promise<void> {
     try {
+      if (imageUri.startsWith(this.archiveBaseUrl)) {
+        await this.waitForArchive(launcherId);
+      }
       const result = await querySafeSearch(imageUri, {
         apiKey: this.opts.apiKey,
         fetchImpl: this.fetchImpl,
@@ -79,7 +94,8 @@ export class SafeSearchWorker {
           signals: updated.signals,
         });
       }
-    } catch {
+    } catch (err) {
+      console.warn(`[safesearch] failed for ${launcherId} (${imageUri}):`, err);
       this.failedUntil.set(launcherId, this.now() + this.failTtlMs);
       // evict oldest entry if the map has grown too large
       if (this.failedUntil.size > FAILED_UNTIL_CAP) {
@@ -87,6 +103,34 @@ export class SafeSearchWorker {
         if (oldest !== undefined) this.failedUntil.delete(oldest);
       }
     }
+  }
+
+  private async waitForArchive(launcherId: string): Promise<void> {
+    for (let attempt = 0; attempt < this.archiveCheckAttempts; attempt++) {
+      if (attempt > 0 && this.archiveCheckDelayMs > 0) {
+        await new Promise<void>((r) => setTimeout(r, this.archiveCheckDelayMs));
+      }
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+        let res: Response;
+        try {
+          res = await this.fetchImpl(`${this.archiveBaseUrl}/nfts/${launcherId}`, {
+            signal: controller.signal,
+          });
+        } finally {
+          clearTimeout(timer);
+        }
+        if (!res.ok) continue;
+        const json = (await res.json()) as {
+          assets?: Array<{ role: string; fetch_succeeded: boolean }>;
+        };
+        if (json.assets?.some((a) => a.role === "data" && a.fetch_succeeded === true)) return;
+      } catch {
+        // network error or abort → treat as not ready, retry
+      }
+    }
+    throw new Error(`archive not ready after ${this.archiveCheckAttempts} attempts`);
   }
 
   private gate<T>(fn: () => Promise<T>): Promise<T> {

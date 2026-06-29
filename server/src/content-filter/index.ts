@@ -28,6 +28,10 @@ export interface ContentFilterOptions {
   now?: () => number;
   /** Base URL for the MintGarden Archive CDN; used to construct stable image URLs for SafeSearch. */
   archiveBaseUrl?: string;
+  /** Max attempts to poll the Archive before giving up (each separated by archiveCheckDelayMs). */
+  archiveCheckAttempts?: number;
+  /** Milliseconds to wait between Archive poll attempts. */
+  archiveCheckDelayMs?: number;
   /** Persistent verdict store keyed by launcherId; a hit skips the MintGarden network fetch. */
   store?: ContentStore;
   /** Google Vision API key; enables out-of-band SafeSearch when combined with store + onFlag. */
@@ -95,6 +99,9 @@ export class ContentFilter {
         apiKey: opts.googleApiKey,
         onFlag: opts.onFlag,
         fetchImpl: opts.fetchImpl,
+        archiveBaseUrl: opts.archiveBaseUrl,
+        archiveCheckAttempts: opts.archiveCheckAttempts,
+        archiveCheckDelayMs: opts.archiveCheckDelayMs,
       });
     }
   }

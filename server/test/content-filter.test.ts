@@ -559,12 +559,20 @@ test("SafeSearch receives Archive CDN URL when data_hash is present", async () =
     googleApiKey: "k",
     onFlag: () => {},
     archiveBaseUrl: "https://archive.mintgarden.io",
+    archiveCheckAttempts: 1,
+    archiveCheckDelayMs: 0,
     fetchImpl: (async (url: string, init?: RequestInit) => {
       if (String(url).includes("images:annotate")) {
         const body = JSON.parse((init?.body as string) ?? "{}");
         capturedVisionUri = body.requests?.[0]?.image?.source?.imageUri;
         return new Response(
           JSON.stringify({ responses: [{ safeSearchAnnotation: { adult: "UNLIKELY" } }] }),
+          { status: 200 }
+        );
+      }
+      if (String(url).includes("archive.mintgarden.io")) {
+        return new Response(
+          JSON.stringify({ assets: [{ role: "data", fetch_succeeded: true }] }),
           { status: 200 }
         );
       }
@@ -580,5 +588,198 @@ test("SafeSearch receives Archive CDN URL when data_hash is present", async () =
   expect(capturedVisionUri).toBe(
     `https://archive.mintgarden.io/content/${CONTENT_HASH}`
   );
+  store.close();
+});
+
+// ── Archive ingestion pre-check ──────────────────────────────────────────────
+
+const ARCHIVE_BASE = "https://archive.mintgarden.io";
+const ARCHIVE_MEDIA_URL = `${ARCHIVE_BASE}/content/${"ab".repeat(32)}`;
+
+test("SafeSearch calls Archive ingestion check before Vision when imageUri is an Archive URL", async () => {
+  const media = new MediaIndex(10);
+  media.set("cd".repeat(32), { url: ARCHIVE_MEDIA_URL, kind: "image" });
+  const store = new ContentStore(":memory:");
+  let archiveCalls = 0, visionCalls = 0;
+  const filter = new ContentFilter(media, {
+    store,
+    googleApiKey: "k",
+    onFlag: () => {},
+    archiveBaseUrl: ARCHIVE_BASE,
+    archiveCheckAttempts: 3,
+    archiveCheckDelayMs: 0,
+    fetchImpl: (async (url: string) => {
+      const s = String(url);
+      if (s.includes("images:annotate")) {
+        visionCalls++;
+        return new Response(
+          JSON.stringify({ responses: [{ safeSearchAnnotation: { adult: "UNLIKELY" } }] }),
+          { status: 200 }
+        );
+      }
+      if (s.includes(`${ARCHIVE_BASE}/nfts/`)) {
+        archiveCalls++;
+        return new Response(
+          JSON.stringify({ assets: [{ role: "data", fetch_succeeded: true }] }),
+          { status: 200 }
+        );
+      }
+      return new Response("{}", { status: 404 });
+    }) as typeof fetch,
+  });
+  await filter.enrich([nftEvent({ mint: true })]);
+  await tick();
+  expect(archiveCalls).toBe(1);
+  expect(visionCalls).toBe(1);
+  store.close();
+});
+
+test("SafeSearch retries Archive check until ready then calls Vision", async () => {
+  const media = new MediaIndex(10);
+  media.set("cd".repeat(32), { url: ARCHIVE_MEDIA_URL, kind: "image" });
+  const store = new ContentStore(":memory:");
+  let archiveCalls = 0, visionCalls = 0;
+  const filter = new ContentFilter(media, {
+    store,
+    googleApiKey: "k",
+    onFlag: () => {},
+    archiveBaseUrl: ARCHIVE_BASE,
+    archiveCheckAttempts: 3,
+    archiveCheckDelayMs: 0,
+    fetchImpl: (async (url: string) => {
+      const s = String(url);
+      if (s.includes("images:annotate")) {
+        visionCalls++;
+        return new Response(
+          JSON.stringify({ responses: [{ safeSearchAnnotation: { adult: "UNLIKELY" } }] }),
+          { status: 200 }
+        );
+      }
+      if (s.includes(`${ARCHIVE_BASE}/nfts/`)) {
+        archiveCalls++;
+        const ready = archiveCalls >= 3;
+        return new Response(
+          JSON.stringify({ assets: [{ role: "data", fetch_succeeded: ready }] }),
+          { status: 200 }
+        );
+      }
+      return new Response("{}", { status: 404 });
+    }) as typeof fetch,
+  });
+  await filter.enrich([nftEvent({ mint: true })]);
+  await tick();
+  expect(archiveCalls).toBe(3);
+  expect(visionCalls).toBe(1);
+  store.close();
+});
+
+test("SafeSearch does not call Vision when Archive check is exhausted", async () => {
+  const media = new MediaIndex(10);
+  media.set("cd".repeat(32), { url: ARCHIVE_MEDIA_URL, kind: "image" });
+  const store = new ContentStore(":memory:");
+  let archiveCalls = 0, visionCalls = 0;
+  const filter = new ContentFilter(media, {
+    store,
+    googleApiKey: "k",
+    onFlag: () => {},
+    archiveBaseUrl: ARCHIVE_BASE,
+    archiveCheckAttempts: 2,
+    archiveCheckDelayMs: 0,
+    fetchImpl: (async (url: string) => {
+      const s = String(url);
+      if (s.includes("images:annotate")) {
+        visionCalls++;
+        return new Response(
+          JSON.stringify({ responses: [{ safeSearchAnnotation: { adult: "UNLIKELY" } }] }),
+          { status: 200 }
+        );
+      }
+      if (s.includes(`${ARCHIVE_BASE}/nfts/`)) {
+        archiveCalls++;
+        return new Response(
+          JSON.stringify({ assets: [{ role: "data", fetch_succeeded: false }] }),
+          { status: 200 }
+        );
+      }
+      return new Response("{}", { status: 404 });
+    }) as typeof fetch,
+  });
+  await filter.enrich([nftEvent({ mint: true })]);
+  await tick();
+  expect(archiveCalls).toBe(2);
+  expect(visionCalls).toBe(0);
+  store.close();
+});
+
+test("SafeSearch skips Archive check when imageUri is not an Archive URL", async () => {
+  const media = new MediaIndex(10);
+  media.set("cd".repeat(32), { url: "https://ipfs.mintgarden.io/ipfs/abc", kind: "image" });
+  const store = new ContentStore(":memory:");
+  let archiveCalls = 0, visionCalls = 0;
+  const filter = new ContentFilter(media, {
+    store,
+    googleApiKey: "k",
+    onFlag: () => {},
+    archiveBaseUrl: ARCHIVE_BASE,
+    archiveCheckAttempts: 3,
+    archiveCheckDelayMs: 0,
+    fetchImpl: (async (url: string) => {
+      const s = String(url);
+      if (s.includes("images:annotate")) {
+        visionCalls++;
+        return new Response(
+          JSON.stringify({ responses: [{ safeSearchAnnotation: { adult: "UNLIKELY" } }] }),
+          { status: 200 }
+        );
+      }
+      if (s.includes(`${ARCHIVE_BASE}/nfts/`)) {
+        archiveCalls++;
+        return new Response(
+          JSON.stringify({ assets: [{ role: "data", fetch_succeeded: true }] }),
+          { status: 200 }
+        );
+      }
+      return new Response("{}", { status: 404 });
+    }) as typeof fetch,
+  });
+  await filter.enrich([nftEvent({ mint: true })]);
+  await tick();
+  expect(archiveCalls).toBe(0);
+  expect(visionCalls).toBe(1);
+  store.close();
+});
+
+test("SafeSearch treats Archive network error as not-ready and retries to exhaustion", async () => {
+  const media = new MediaIndex(10);
+  media.set("cd".repeat(32), { url: ARCHIVE_MEDIA_URL, kind: "image" });
+  const store = new ContentStore(":memory:");
+  let archiveCalls = 0, visionCalls = 0;
+  const filter = new ContentFilter(media, {
+    store,
+    googleApiKey: "k",
+    onFlag: () => {},
+    archiveBaseUrl: ARCHIVE_BASE,
+    archiveCheckAttempts: 2,
+    archiveCheckDelayMs: 0,
+    fetchImpl: (async (url: string) => {
+      const s = String(url);
+      if (s.includes("images:annotate")) {
+        visionCalls++;
+        return new Response(
+          JSON.stringify({ responses: [{ safeSearchAnnotation: { adult: "UNLIKELY" } }] }),
+          { status: 200 }
+        );
+      }
+      if (s.includes(`${ARCHIVE_BASE}/nfts/`)) {
+        archiveCalls++;
+        throw new Error("network error");
+      }
+      return new Response("{}", { status: 404 });
+    }) as typeof fetch,
+  });
+  await filter.enrich([nftEvent({ mint: true })]);
+  await tick();
+  expect(archiveCalls).toBe(2);
+  expect(visionCalls).toBe(0);
   store.close();
 });
