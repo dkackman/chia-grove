@@ -23,11 +23,13 @@ export interface SafeSearchWorkerOpts {
 }
 
 /**
- * Out-of-band SafeSearch path. `maybeEnqueue` is fire-and-forget: eligible image
- * mints whose cheap verdict was `ok` get a single Vision lookup behind a bounded
- * concurrency gate. A `sensitive` result is persisted and pushed to clients as a
- * `content-flag`. Failures leave the NFT permissive and are suppressed for
- * `failTtlMs` so an outage doesn't re-spend the paid quota every block.
+ * Out-of-band SafeSearch path. `maybeEnqueue` is fire-and-forget: any image NFT
+ * spend whose cheap verdict was `ok` and that hasn't yet been SafeSearch-checked
+ * gets a single Vision lookup behind a bounded concurrency gate. Not limited to
+ * mints — re-spends of previously-unseen NFTs are covered too. A `sensitive`
+ * result is persisted and pushed to clients as a `content-flag`. Failures leave
+ * the NFT permissive and are suppressed for `failTtlMs` so an outage doesn't
+ * re-spend the paid quota every block.
  */
 const FAILED_UNTIL_CAP = 10000;
 
