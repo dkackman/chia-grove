@@ -64,7 +64,16 @@ export class SafeSearchWorker {
     if (!launcherId || this.queued.has(launcherId)) return;
     const media = this.opts.media.get(launcherId);
     if (!media || media.kind !== "image") return;
-    const stored = this.opts.store.get(launcherId);
+    let stored;
+    try {
+      stored = this.opts.store.get(launcherId);
+    } catch (err) {
+      // Called synchronously from ContentFilter.apply, which must never reject.
+      // A store read failure means we can't honor the safesearchChecked guard,
+      // so skip (don't burn paid Vision quota un-deduped) rather than throw.
+      console.warn(`[safesearch] store.get failed for ${launcherId} (skipping):`, err);
+      return;
+    }
     if (stored?.safesearchChecked) return;
     const until = this.failedUntil.get(launcherId);
     if (until !== undefined && this.now() < until) return;

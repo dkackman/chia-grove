@@ -76,6 +76,31 @@ test("a clean image mint marks checked and emits no flag", async () => {
   store.close();
 });
 
+test("a store.get failure degrades gracefully: no throw, no Vision call", async () => {
+  const media = new MediaIndex(10);
+  media.set("L1", { url: "https://e/x.png", kind: "image" });
+  let calls = 0;
+  const brokenStore = {
+    get() {
+      throw new Error("sqlite IO failure");
+    },
+  } as unknown as ContentStore;
+  const worker = new SafeSearchWorker({
+    media,
+    store: brokenStore,
+    apiKey: "k",
+    onFlag: () => {},
+    fetchImpl: (async () => {
+      calls++;
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch,
+  });
+  // apply() relies on maybeEnqueue never throwing (ContentFilter "never rejects" invariant)
+  expect(() => worker.maybeEnqueue(nftEvent())).not.toThrow();
+  await flushMicrotasks();
+  expect(calls).toBe(0);
+});
+
 test("ineligible events are skipped (non-mint, non-image, already-checked, no media)", async () => {
   const media = new MediaIndex(10);
   const store = new ContentStore(":memory:");

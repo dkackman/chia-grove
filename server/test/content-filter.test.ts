@@ -585,7 +585,7 @@ test("SafeSearch receives Archive CDN URL when data_hash is present", async () =
           { status: 200 }
         );
       }
-      if (String(url).includes("archive.mintgarden.io")) {
+      if (new URL(String(url)).hostname === "archive.mintgarden.io") {
         return new Response(JSON.stringify({ assets: [{ role: "data", fetch_succeeded: true }] }), {
           status: 200,
         });
