@@ -1,6 +1,7 @@
 import type { AmbientEvent, GroveEvent, Hello, Batch } from "@grove/shared";
 import { PROTOCOL_VERSION } from "@grove/shared";
 import type { RingBuffer } from "./ring-buffer.js";
+import { log } from "../logger.js";
 
 const SOFT_LIMIT = 64 * 1024;
 const HARD_LIMIT = 1024 * 1024;
@@ -60,6 +61,7 @@ export class Hub {
     const droppable = events.every((e) => e.type === "ambient");
     for (const socket of [...this.clients]) {
       if (socket.readyState !== OPEN || socket.bufferedAmount > HARD_LIMIT) {
+        log.warn({ clients: this.clients.size, buffered: socket.bufferedAmount }, "ws: client terminated (buffer overflow)");
         socket.terminate();
         this.clients.delete(socket);
         continue;
