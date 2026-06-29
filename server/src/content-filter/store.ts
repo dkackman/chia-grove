@@ -59,7 +59,12 @@ export class ContentStore {
     };
   }
 
-  putCheap(launcherId: string, nftId: string | undefined, verdict: Verdict, contentHash?: string): void {
+  putCheap(
+    launcherId: string,
+    nftId: string | undefined,
+    verdict: Verdict,
+    contentHash?: string
+  ): void {
     this.db
       .prepare(
         `INSERT INTO nft (launcher_id, nft_id, disposition, signals_json, content_hash, checked_at)

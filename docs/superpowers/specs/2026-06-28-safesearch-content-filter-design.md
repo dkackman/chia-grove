@@ -205,7 +205,7 @@ export const PROTOCOL_VERSION = 4; // was 3 — wire format changed
 - **Call:** Vision REST `POST https://vision.googleapis.com/v1/images:annotate?key=<API_KEY>`
   with body
   `{ requests: [{ image: { source: { imageUri: <on-chain data URI> } },
-   features: [{ type: "SAFE_SEARCH_DETECTION" }] }] }`.
+features: [{ type: "SAFE_SEARCH_DETECTION" }] }] }`.
   Google fetches the URI; we never download.
 - **Mapping:** `adult ∈ {LIKELY, VERY_LIKELY}` → `sensitive`; else `ok`. The raw
   annotation (all five likelihoods) is persisted for audit.

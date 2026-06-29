@@ -57,14 +57,14 @@ Before calling `querySafeSearch`, checks whether `imageUri.startsWith(this.archi
 
 ## Error Handling
 
-| Case | Behaviour |
-|---|---|
-| `fetch_succeeded: true` on first attempt | Proceed to Vision immediately |
-| `fetch_succeeded: false` (Archive has NFT but hasn't fetched content yet) | Retry after `archiveCheckDelayMs` |
-| 404 (Archive doesn't know NFT yet) | Retry after `archiveCheckDelayMs` |
-| Non-200 / network error during poll | Retry after `archiveCheckDelayMs` |
-| All attempts exhausted | Throw → `catch` → `failedUntil` set → SafeSearch deferred until TTL elapses |
-| `imageUri` not an Archive URL | Skip check entirely, call Vision directly |
+| Case                                                                      | Behaviour                                                                   |
+| ------------------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `fetch_succeeded: true` on first attempt                                  | Proceed to Vision immediately                                               |
+| `fetch_succeeded: false` (Archive has NFT but hasn't fetched content yet) | Retry after `archiveCheckDelayMs`                                           |
+| 404 (Archive doesn't know NFT yet)                                        | Retry after `archiveCheckDelayMs`                                           |
+| Non-200 / network error during poll                                       | Retry after `archiveCheckDelayMs`                                           |
+| All attempts exhausted                                                    | Throw → `catch` → `failedUntil` set → SafeSearch deferred until TTL elapses |
+| `imageUri` not an Archive URL                                             | Skip check entirely, call Vision directly                                   |
 
 ## Testing
 

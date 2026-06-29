@@ -11,3 +11,4 @@ version.json
 
 # content-filter SQLite store
 /data/
+server/data/content-filter.sqlite

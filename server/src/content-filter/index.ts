@@ -12,7 +12,10 @@ export type { StoredVerdict } from "./store.js";
 
 const OK: Verdict = { disposition: "ok", signals: [] };
 
-interface FetchResult { verdict: Verdict; contentHash?: string }
+interface FetchResult {
+  verdict: Verdict;
+  contentHash?: string;
+}
 
 export interface ContentFilterOptions {
   fetchImpl?: typeof fetch;

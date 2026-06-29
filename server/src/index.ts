@@ -81,6 +81,9 @@ const app = await buildServer(hub, media);
 await app.listen({ port: PORT, host: "0.0.0.0" });
 poller.start();
 console.log(`chia-grove ${readVersion().appVersion} server on :${PORT}`);
+console.log(
+  `SafeSearch: ${process.env.GOOGLE_VISION_API_KEY ? "enabled" : "disabled (no GOOGLE_VISION_API_KEY)"}`
+);
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, async () => {

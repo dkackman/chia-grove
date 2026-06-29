@@ -86,7 +86,5 @@ export function mapMintgarden(json: unknown, opts: MapMintgardenOpts = {}): Disp
  */
 export function extractContentHash(json: unknown): string | undefined {
   const hash = asRecord(asRecord(json).data).data_hash;
-  return typeof hash === "string" && /^[0-9a-f]{64}$/i.test(hash)
-    ? hash.toLowerCase()
-    : undefined;
+  return typeof hash === "string" && /^[0-9a-f]{64}$/i.test(hash) ? hash.toLowerCase() : undefined;
 }

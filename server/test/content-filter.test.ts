@@ -1,5 +1,9 @@
 import { expect, test } from "vitest";
-import { mapMintgarden, mapMintgardenSignals, extractContentHash } from "../src/content-filter/index.js";
+import {
+  mapMintgarden,
+  mapMintgardenSignals,
+  extractContentHash,
+} from "../src/content-filter/index.js";
 import { ContentFilter } from "../src/content-filter/index.js";
 import { MediaIndex } from "../src/web/media-index.js";
 import { buildDenylistMap } from "../src/content-filter/signals/denylist.js";
@@ -341,14 +345,15 @@ test("enrich upgrades MediaIndex on store-hit path when contentHash was persiste
   media.set("cd".repeat(32), { url: "https://ipfs.mintgarden.io/ipfs/old", kind: "image" });
   const filter = new ContentFilter(media, {
     store,
-    fetchImpl: async () => { fetchCalls++; return okJson({}); },
+    fetchImpl: async () => {
+      fetchCalls++;
+      return okJson({});
+    },
   });
   // enrich should take store-hit path (no network call) and still upgrade MediaIndex
   await filter.enrich([nftEvent()]);
   expect(fetchCalls).toBe(0); // confirms store-hit path taken
-  expect(media.get("cd".repeat(32))?.url).toBe(
-    `https://archive.mintgarden.io/content/${HASH}`
-  );
+  expect(media.get("cd".repeat(32))?.url).toBe(`https://archive.mintgarden.io/content/${HASH}`);
   store.close();
 });
 
@@ -426,7 +431,12 @@ test("enrich does not throw and still stamps verdict when store.get throws", asy
     get: (_launcherId: string) => {
       throw new Error("sqlite disk error");
     },
-    putCheap: (_launcherId: string, _nftId: string | undefined, _verdict: unknown, _contentHash?: string) => {
+    putCheap: (
+      _launcherId: string,
+      _nftId: string | undefined,
+      _verdict: unknown,
+      _contentHash?: string
+    ) => {
       throw new Error("sqlite disk error");
     },
   } as unknown as import("../src/content-filter/store.js").ContentStore;
@@ -449,7 +459,12 @@ test("enrich stamps sensitive verdict from network path when store.get throws", 
     get: (_launcherId: string) => {
       throw new Error("sqlite disk error");
     },
-    putCheap: (_launcherId: string, _nftId: string | undefined, _verdict: unknown, _contentHash?: string) => {
+    putCheap: (
+      _launcherId: string,
+      _nftId: string | undefined,
+      _verdict: unknown,
+      _contentHash?: string
+    ) => {
       throw new Error("sqlite disk error");
     },
   } as unknown as import("../src/content-filter/store.js").ContentStore;
@@ -571,23 +586,17 @@ test("SafeSearch receives Archive CDN URL when data_hash is present", async () =
         );
       }
       if (String(url).includes("archive.mintgarden.io")) {
-        return new Response(
-          JSON.stringify({ assets: [{ role: "data", fetch_succeeded: true }] }),
-          { status: 200 }
-        );
+        return new Response(JSON.stringify({ assets: [{ role: "data", fetch_succeeded: true }] }), {
+          status: 200,
+        });
       }
       // api.mintgarden.io response with data_hash
-      return new Response(
-        JSON.stringify({ data: { data_hash: CONTENT_HASH } }),
-        { status: 200 }
-      );
+      return new Response(JSON.stringify({ data: { data_hash: CONTENT_HASH } }), { status: 200 });
     }) as typeof fetch,
   });
   await filter.enrich([nftEvent({ mint: true })]);
   await tick();
-  expect(capturedVisionUri).toBe(
-    `https://archive.mintgarden.io/content/${CONTENT_HASH}`
-  );
+  expect(capturedVisionUri).toBe(`https://archive.mintgarden.io/content/${CONTENT_HASH}`);
   store.close();
 });
 
@@ -600,7 +609,8 @@ test("SafeSearch calls Archive ingestion check before Vision when imageUri is an
   const media = new MediaIndex(10);
   media.set("cd".repeat(32), { url: ARCHIVE_MEDIA_URL, kind: "image" });
   const store = new ContentStore(":memory:");
-  let archiveCalls = 0, visionCalls = 0;
+  let archiveCalls = 0,
+    visionCalls = 0;
   const filter = new ContentFilter(media, {
     store,
     googleApiKey: "k",
@@ -619,10 +629,9 @@ test("SafeSearch calls Archive ingestion check before Vision when imageUri is an
       }
       if (s.includes(`${ARCHIVE_BASE}/nfts/`)) {
         archiveCalls++;
-        return new Response(
-          JSON.stringify({ assets: [{ role: "data", fetch_succeeded: true }] }),
-          { status: 200 }
-        );
+        return new Response(JSON.stringify({ assets: [{ role: "data", fetch_succeeded: true }] }), {
+          status: 200,
+        });
       }
       return new Response("{}", { status: 404 });
     }) as typeof fetch,
@@ -638,7 +647,8 @@ test("SafeSearch retries Archive check until ready then calls Vision", async () 
   const media = new MediaIndex(10);
   media.set("cd".repeat(32), { url: ARCHIVE_MEDIA_URL, kind: "image" });
   const store = new ContentStore(":memory:");
-  let archiveCalls = 0, visionCalls = 0;
+  let archiveCalls = 0,
+    visionCalls = 0;
   const filter = new ContentFilter(media, {
     store,
     googleApiKey: "k",
@@ -677,7 +687,8 @@ test("SafeSearch does not call Vision when Archive check is exhausted", async ()
   const media = new MediaIndex(10);
   media.set("cd".repeat(32), { url: ARCHIVE_MEDIA_URL, kind: "image" });
   const store = new ContentStore(":memory:");
-  let archiveCalls = 0, visionCalls = 0;
+  let archiveCalls = 0,
+    visionCalls = 0;
   const filter = new ContentFilter(media, {
     store,
     googleApiKey: "k",
@@ -715,7 +726,8 @@ test("SafeSearch skips Archive check when imageUri is not an Archive URL", async
   const media = new MediaIndex(10);
   media.set("cd".repeat(32), { url: "https://ipfs.mintgarden.io/ipfs/abc", kind: "image" });
   const store = new ContentStore(":memory:");
-  let archiveCalls = 0, visionCalls = 0;
+  let archiveCalls = 0,
+    visionCalls = 0;
   const filter = new ContentFilter(media, {
     store,
     googleApiKey: "k",
@@ -734,10 +746,9 @@ test("SafeSearch skips Archive check when imageUri is not an Archive URL", async
       }
       if (s.includes(`${ARCHIVE_BASE}/nfts/`)) {
         archiveCalls++;
-        return new Response(
-          JSON.stringify({ assets: [{ role: "data", fetch_succeeded: true }] }),
-          { status: 200 }
-        );
+        return new Response(JSON.stringify({ assets: [{ role: "data", fetch_succeeded: true }] }), {
+          status: 200,
+        });
       }
       return new Response("{}", { status: 404 });
     }) as typeof fetch,
@@ -753,7 +764,8 @@ test("SafeSearch treats Archive network error as not-ready and retries to exhaus
   const media = new MediaIndex(10);
   media.set("cd".repeat(32), { url: ARCHIVE_MEDIA_URL, kind: "image" });
   const store = new ContentStore(":memory:");
-  let archiveCalls = 0, visionCalls = 0;
+  let archiveCalls = 0,
+    visionCalls = 0;
   const filter = new ContentFilter(media, {
     store,
     googleApiKey: "k",
