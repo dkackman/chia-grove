@@ -7,7 +7,6 @@ test("contentFlagTarget returns the launcher for a sensitive flag", () => {
     type: "content-flag",
     launcherId: "L9",
     mediaFilter: "sensitive",
-    signals: ["safesearch"],
   };
   expect(contentFlagTarget(e)).toBe("L9");
 });
