@@ -1,7 +1,7 @@
 import type { ContentFlagEvent, GroveEvent, SproutEvent } from "@grove/shared";
 import type { MediaIndex } from "../web/media-index.js";
 import type { Verdict } from "./types.js";
-import { mapMintgardenSignals } from "./signals/mintgarden.js";
+import { mapMintgardenSignals, extractContentHash } from "./signals/mintgarden.js";
 import type { ContentStore } from "./store.js";
 import { SafeSearchWorker } from "./safesearch-worker.js";
 
@@ -11,6 +11,8 @@ export type { MapMintgardenOpts } from "./signals/mintgarden.js";
 export type { StoredVerdict } from "./store.js";
 
 const OK: Verdict = { disposition: "ok", signals: [] };
+
+interface FetchResult { verdict: Verdict; contentHash?: string }
 
 export interface ContentFilterOptions {
   fetchImpl?: typeof fetch;
@@ -24,6 +26,8 @@ export interface ContentFilterOptions {
   failTtlMs?: number;
   /** Clock injection point for testing the negative-cache TTL. */
   now?: () => number;
+  /** Base URL for the MintGarden Archive CDN; used to construct stable image URLs for SafeSearch. */
+  archiveBaseUrl?: string;
   /** Persistent verdict store keyed by launcherId; a hit skips the MintGarden network fetch. */
   store?: ContentStore;
   /** Google Vision API key; enables out-of-band SafeSearch when combined with store + onFlag. */
@@ -55,7 +59,7 @@ export class ContentFilter {
   private readonly cache = new Map<string, Verdict>();
   /** nftId -> epoch ms until which a recent failure keeps it permissive without refetch */
   private readonly negativeUntil = new Map<string, number>();
-  private readonly inflight = new Map<string, Promise<Verdict>>();
+  private readonly inflight = new Map<string, Promise<FetchResult>>();
   private readonly fetchImpl: typeof fetch;
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
@@ -64,6 +68,7 @@ export class ContentFilter {
   private readonly enrichBudgetMs: number;
   private readonly failTtlMs: number;
   private readonly now: () => number;
+  private readonly archiveBaseUrl: string;
   private readonly store?: ContentStore;
   private readonly worker?: SafeSearchWorker;
   private active = 0;
@@ -81,6 +86,7 @@ export class ContentFilter {
     this.enrichBudgetMs = opts.enrichBudgetMs ?? 1500;
     this.failTtlMs = opts.failTtlMs ?? 60000;
     this.now = opts.now ?? Date.now;
+    this.archiveBaseUrl = opts.archiveBaseUrl ?? "https://archive.mintgarden.io";
     this.store = opts.store;
     if (opts.store && opts.googleApiKey && opts.onFlag) {
       this.worker = new SafeSearchWorker({
@@ -130,15 +136,34 @@ export class ContentFilter {
           }
         })()
       : undefined;
-    const verdict: Verdict = stored
-      ? { disposition: stored.disposition, signals: stored.signals }
-      : await this.resolve(event.nftId!);
+    let verdict: Verdict;
+    let contentHash: string | undefined;
+    if (stored) {
+      verdict = { disposition: stored.disposition, signals: stored.signals };
+    } else {
+      const result = await this.resolve(event.nftId!);
+      verdict = result.verdict;
+      contentHash = result.contentHash;
+    }
 
     if (!stored && launcherId) {
       try {
         this.store?.putCheap(launcherId, event.nftId, verdict);
       } catch (err) {
         console.warn("content-filter store.putCheap failed (verdict not persisted):", err);
+      }
+    }
+
+    // Upgrade MediaIndex from IPFS to Archive CDN URL so SafeSearch passes a
+    // reliably reachable URL to Google Vision (MintGarden's IPFS gateway is
+    // inaccessible from Google's IP ranges).
+    if (contentHash && launcherId && verdict.disposition !== "blocked") {
+      const existing = this.media.get(launcherId);
+      if (existing) {
+        this.media.set(launcherId, {
+          url: `${this.archiveBaseUrl}/content/${contentHash}`,
+          kind: existing.kind,
+        });
       }
     }
 
@@ -153,15 +178,15 @@ export class ContentFilter {
     if (verdict.signals.length > 0) event.signals = [...verdict.signals];
   }
 
-  private resolve(nftId: string): Promise<Verdict> {
+  private resolve(nftId: string): Promise<FetchResult> {
     const cached = this.cache.get(nftId);
-    if (cached !== undefined) return Promise.resolve(cached);
+    if (cached !== undefined) return Promise.resolve({ verdict: cached });
 
     const until = this.negativeUntil.get(nftId);
     if (until !== undefined) {
       // a recent failure keeps us permissive without hammering a struggling
       // MintGarden every block; once the TTL lapses we let the next lookup retry
-      if (this.now() < until) return Promise.resolve(OK);
+      if (this.now() < until) return Promise.resolve({ verdict: OK });
       this.negativeUntil.delete(nftId);
     }
 
@@ -169,15 +194,15 @@ export class ContentFilter {
     if (existing !== undefined) return existing;
 
     const promise = this.gate(() => this.fetchVerdict(nftId))
-      .then((verdict) => {
-        this.remember(nftId, verdict);
-        return verdict;
+      .then((result) => {
+        this.remember(nftId, result.verdict);
+        return result;
       })
       .catch(() => {
         // transient failure/timeout: permissive now, negatively cached briefly so
         // the same doomed lookup doesn't re-stall the next block
         this.rememberFailure(nftId);
-        return OK;
+        return { verdict: OK };
       })
       .finally(() => {
         this.inflight.delete(nftId);
@@ -187,16 +212,17 @@ export class ContentFilter {
     return promise;
   }
 
-  private async fetchVerdict(nftId: string): Promise<Verdict> {
+  private async fetchVerdict(nftId: string): Promise<FetchResult> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
       const res = await this.fetchImpl(`${this.baseUrl}/nfts/${nftId}`, {
         signal: controller.signal,
       });
-      if (res.status === 404) return { disposition: "ok", signals: [] }; // genuinely unknown to MintGarden → cacheable permissive
+      if (res.status === 404) return { verdict: { disposition: "ok", signals: [] } }; // genuinely unknown to MintGarden → cacheable permissive
       if (!res.ok) throw new Error(`mintgarden ${res.status}`); // 5xx/429/etc → transient, don't poison the cache
-      return mapMintgardenSignals(await res.json());
+      const json = await res.json();
+      return { verdict: mapMintgardenSignals(json), contentHash: extractContentHash(json) };
     } finally {
       clearTimeout(timer);
     }

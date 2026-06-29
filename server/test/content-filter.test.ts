@@ -446,3 +446,88 @@ test("extractContentHash returns undefined when data key is absent", () => {
 test("extractContentHash returns undefined for null input", () => {
   expect(extractContentHash(null)).toBeUndefined();
 });
+
+// ── Archive CDN URL upgrade ─────────────────────────────────────────────────
+
+const CONTENT_HASH = "ab".repeat(32); // valid 64-char hex
+
+test("enrich upgrades MediaIndex to Archive CDN URL when data_hash is present", async () => {
+  const media = new MediaIndex(10);
+  media.set("cd".repeat(32), { url: "https://ipfs.mintgarden.io/ipfs/abc", kind: "image" });
+  const filter = new ContentFilter(media, {
+    fetchImpl: async () => okJson({ is_blocked: false, data: { data_hash: CONTENT_HASH } }),
+  });
+  await filter.enrich([nftEvent()]);
+  expect(media.get("cd".repeat(32))?.url).toBe(
+    `https://archive.mintgarden.io/content/${CONTENT_HASH}`
+  );
+  expect(media.get("cd".repeat(32))?.kind).toBe("image");
+});
+
+test("enrich does not change MediaIndex URL when data_hash is absent", async () => {
+  const media = new MediaIndex(10);
+  const originalUrl = "https://ipfs.mintgarden.io/ipfs/abc";
+  media.set("cd".repeat(32), { url: originalUrl, kind: "image" });
+  const filter = new ContentFilter(media, {
+    fetchImpl: async () => okJson({ is_blocked: false }),
+  });
+  await filter.enrich([nftEvent()]);
+  expect(media.get("cd".repeat(32))?.url).toBe(originalUrl);
+});
+
+test("enrich deletes blocked NFT from MediaIndex even when data_hash is present", async () => {
+  const media = new MediaIndex(10);
+  media.set("cd".repeat(32), { url: "https://ipfs.mintgarden.io/ipfs/abc", kind: "image" });
+  const filter = new ContentFilter(media, {
+    fetchImpl: async () => okJson({ is_blocked: true, data: { data_hash: CONTENT_HASH } }),
+  });
+  await filter.enrich([nftEvent()]);
+  expect(media.get("cd".repeat(32))).toBeUndefined();
+});
+
+test("enrich respects archiveBaseUrl option when upgrading MediaIndex", async () => {
+  const media = new MediaIndex(10);
+  media.set("cd".repeat(32), { url: "https://ipfs/a.png", kind: "image" });
+  const filter = new ContentFilter(media, {
+    fetchImpl: async () => okJson({ data: { data_hash: CONTENT_HASH } }),
+    archiveBaseUrl: "https://test-archive.example",
+  });
+  await filter.enrich([nftEvent()]);
+  expect(media.get("cd".repeat(32))?.url).toBe(
+    `https://test-archive.example/content/${CONTENT_HASH}`
+  );
+});
+
+test("SafeSearch receives Archive CDN URL when data_hash is present", async () => {
+  const media = new MediaIndex(10);
+  media.set("cd".repeat(32), { url: "https://ipfs.mintgarden.io/ipfs/abc", kind: "image" });
+  const store = new ContentStore(":memory:");
+  let capturedVisionUri: string | undefined;
+  const filter = new ContentFilter(media, {
+    store,
+    googleApiKey: "k",
+    onFlag: () => {},
+    archiveBaseUrl: "https://archive.mintgarden.io",
+    fetchImpl: (async (url: string, init?: RequestInit) => {
+      if (String(url).includes("images:annotate")) {
+        const body = JSON.parse((init?.body as string) ?? "{}");
+        capturedVisionUri = body.requests?.[0]?.image?.source?.imageUri;
+        return new Response(
+          JSON.stringify({ responses: [{ safeSearchAnnotation: { adult: "UNLIKELY" } }] }),
+          { status: 200 }
+        );
+      }
+      // api.mintgarden.io response with data_hash
+      return new Response(
+        JSON.stringify({ data: { data_hash: CONTENT_HASH } }),
+        { status: 200 }
+      );
+    }) as typeof fetch,
+  });
+  await filter.enrich([nftEvent({ mint: true })]);
+  await tick();
+  expect(capturedVisionUri).toBe(
+    `https://archive.mintgarden.io/content/${CONTENT_HASH}`
+  );
+  store.close();
+});
