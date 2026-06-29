@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
 import fastify from "fastify";
+import pino from "pino";
 import {
   isPrivateAddress,
   registerImageProxy,
@@ -12,6 +13,8 @@ import { RingBuffer } from "../src/web/ring-buffer.js";
 import { MediaIndex } from "../src/web/media-index.js";
 import { FailureCache } from "../src/web/failure-cache.js";
 import type { GroveEvent } from "@grove/shared";
+
+const silent = pino({ level: "silent" });
 
 test("accepts public http(s) urls", () => {
   expect(validateProxyTarget("https://example.com/a.jpg")?.href).toBe("https://example.com/a.jpg");
@@ -107,7 +110,8 @@ test("safeContentType serves only media types, neutralizing html and svg", () =>
 test("GET /img with no nft param → 404", async () => {
   const app = await buildServer(
     new Hub(new RingBuffer<GroveEvent>(10), "test"),
-    new MediaIndex(10)
+    new MediaIndex(10),
+    silent
   );
   const res = await app.inject({ method: "GET", url: "/img" });
   expect(res.statusCode).toBe(404);
@@ -117,7 +121,8 @@ test("GET /img with no nft param → 404", async () => {
 test("GET /img?nft=deadbeef with no matching entry → 404", async () => {
   const app = await buildServer(
     new Hub(new RingBuffer<GroveEvent>(10), "test"),
-    new MediaIndex(10)
+    new MediaIndex(10),
+    silent
   );
   const res = await app.inject({ method: "GET", url: "/img?nft=deadbeef" });
   expect(res.statusCode).toBe(404);
@@ -127,7 +132,7 @@ test("GET /img?nft=deadbeef with no matching entry → 404", async () => {
 test("GET /img?nft=abc with a disallowed (loopback) URL → 400", async () => {
   const media = new MediaIndex(10);
   media.set("abc", { url: "http://127.0.0.1/x.png", kind: "image" });
-  const app = await buildServer(new Hub(new RingBuffer<GroveEvent>(10), "test"), media);
+  const app = await buildServer(new Hub(new RingBuffer<GroveEvent>(10), "test"), media, silent);
   const res = await app.inject({ method: "GET", url: "/img?nft=abc" });
   expect(res.statusCode).toBe(400);
   await app.close();

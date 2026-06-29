@@ -1,5 +1,5 @@
 import { RpcClient } from "chia-wallet-sdk";
-import type { GroveEvent } from "@grove/shared";
+import type { GroveEvent, SproutEvent } from "@grove/shared";
 import { classifyBlock } from "./classify/classify.js";
 import { CatRegistry } from "./classify/cats.js";
 import { CoinsetPoller } from "./ingest/coinset-poller.js";
@@ -11,14 +11,15 @@ import { MediaIndex } from "./web/media-index.js";
 import { ContentFilter } from "./content-filter/index.js";
 import { ContentStore } from "./content-filter/store.js";
 import { readVersion } from "./version.js";
+import { log } from "./logger.js";
 
 process.on("unhandledRejection", (reason) => {
-  console.error("unhandled rejection:", reason);
+  log.error({ reason }, "unhandled rejection");
 });
 process.on("uncaughtException", (error) => {
   // log and exit: a process that limps on after an uncaught exception can
   // look "up" to systemd while serving nothing — let Restart=always recover
-  console.error("uncaught exception:", error);
+  log.error({ err: error }, "uncaught exception");
   process.exit(1);
 });
 
@@ -38,7 +39,7 @@ let contentStore: ContentStore | undefined;
 try {
   contentStore = new ContentStore(CONTENT_DB_PATH);
 } catch (err) {
-  console.error("content-filter store failed to open (degrading to in-memory-only):", err);
+  log.error({ path: CONTENT_DB_PATH, err }, "content-filter store failed to open (degrading to in-memory-only)");
 }
 const contentFilter = new ContentFilter(media, {
   store: contentStore,
@@ -55,7 +56,17 @@ const poller = new CoinsetPoller(
       const events = classifyBlock(block, cats, media);
       await contentFilter.enrich(events);
       hub.publish(events);
-      console.log(`block ${block.height} (${block.spends.length} spends)`);
+      const sprouts = events.filter((e): e is SproutEvent => e.type === "sprout");
+      log.info(
+        {
+          height: block.height,
+          spends: block.spends.length,
+          nfts: sprouts.filter((e) => e.kind === "nft").length,
+          cats: sprouts.filter((e) => e.kind === "cat").length,
+          dids: sprouts.filter((e) => e.kind === "did").length,
+        },
+        "block"
+      );
     },
     onAmbient(state) {
       hub.publish([
@@ -70,24 +81,24 @@ const poller = new CoinsetPoller(
       ]);
     },
     onReorg(forkHeight) {
-      console.warn(`reorg back to ${forkHeight}`);
+      log.warn({ forkHeight }, "reorg");
       hub.publish([{ type: "reorg", forkHeight }]);
     },
   },
   { pollIntervalMs: POLL_INTERVAL_MS, backfillBlocks: BACKFILL_BLOCKS }
 );
 
-const app = await buildServer(hub, media);
+const app = await buildServer(hub, media, log);
 await app.listen({ port: PORT, host: "0.0.0.0" });
 poller.start();
-console.log(`chia-grove ${readVersion().appVersion} server on :${PORT}`);
-console.log(
-  `SafeSearch: ${process.env.GOOGLE_VISION_API_KEY ? "enabled" : "disabled (no GOOGLE_VISION_API_KEY)"}`
+log.info(
+  { port: PORT, appVersion: readVersion().appVersion, safesearch: !!process.env.GOOGLE_VISION_API_KEY },
+  "chia-grove server started"
 );
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, async () => {
-    console.log(`${signal} received, shutting down`);
+    log.info({ signal }, "shutdown signal received");
     poller.stop();
     cats.stop();
     await app.close();
