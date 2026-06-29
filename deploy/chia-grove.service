@@ -13,5 +13,14 @@ RestartSec=5
 Environment=PORT=8080
 Environment=NODE_ENV=production
 
+# Axiom logging: set AXIOM_TOKEN and AXIOM_DATASET via a systemd drop-in so
+# secrets never appear in this file. On the droplet:
+#   sudo systemctl edit chia-grove
+# Then add:
+#   [Service]
+#   Environment=AXIOM_TOKEN=your-token-here
+#   Environment=AXIOM_DATASET=chia-grove
+#   Environment=LOG_LEVEL=info
+
 [Install]
 WantedBy=multi-user.target
