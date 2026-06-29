@@ -39,7 +39,10 @@ let contentStore: ContentStore | undefined;
 try {
   contentStore = new ContentStore(CONTENT_DB_PATH);
 } catch (err) {
-  log.error({ path: CONTENT_DB_PATH, err }, "content-filter store failed to open (degrading to in-memory-only)");
+  log.error(
+    { path: CONTENT_DB_PATH, err },
+    "content-filter store failed to open (degrading to in-memory-only)"
+  );
 }
 const contentFilter = new ContentFilter(media, {
   store: contentStore,
@@ -92,7 +95,11 @@ const app = await buildServer(hub, media, log);
 await app.listen({ port: PORT, host: "0.0.0.0" });
 poller.start();
 log.info(
-  { port: PORT, appVersion: readVersion().appVersion, safesearch: !!process.env.GOOGLE_VISION_API_KEY },
+  {
+    port: PORT,
+    appVersion: readVersion().appVersion,
+    safesearch: !!process.env.GOOGLE_VISION_API_KEY,
+  },
   "chia-grove server started"
 );
 

@@ -61,7 +61,10 @@ export class Hub {
     const droppable = events.every((e) => e.type === "ambient");
     for (const socket of [...this.clients]) {
       if (socket.readyState !== OPEN || socket.bufferedAmount > HARD_LIMIT) {
-        log.warn({ clients: this.clients.size, buffered: socket.bufferedAmount }, "ws: client terminated (buffer overflow)");
+        log.warn(
+          { clients: this.clients.size, buffered: socket.bufferedAmount },
+          "ws: client terminated (buffer overflow)"
+        );
         socket.terminate();
         this.clients.delete(socket);
         continue;

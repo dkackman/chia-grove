@@ -21,15 +21,18 @@
 ### Task 1: Install `@axiomhq/pino` and create `logger.ts`
 
 **Files:**
+
 - Modify: `server/package.json`
 - Create: `server/src/logger.ts`
 
 **Interfaces:**
+
 - Produces: `log` — a `pino.Logger` instance, exported as named export from `server/src/logger.ts`
 
 - [ ] **Step 1: Install the dependencies**
 
 From the repo root (npm workspaces):
+
 ```bash
 npm install pino @axiomhq/pino --workspace=@grove/server
 ```
@@ -77,9 +80,11 @@ git commit -m "feat: add pino logger singleton with Axiom transport"
 ### Task 2: Add `Hub.size` getter
 
 **Files:**
+
 - Modify: `server/src/web/hub.ts`
 
 **Interfaces:**
+
 - Produces: `hub.size` — `number`, count of currently connected WireSocket clients
 
 - [ ] **Step 1: Add the getter to Hub**
@@ -114,10 +119,12 @@ git commit -m "feat: expose Hub.size for connection count logging"
 This task changes `buildServer`'s signature and updates its only call site in `index.ts`. Both files must be committed together to keep the build valid.
 
 **Files:**
+
 - Modify: `server/src/web/server.ts`
 - Modify: `server/src/index.ts`
 
 **Interfaces:**
+
 - Consumes: `log` from `../logger.js` (produced by Task 1); `hub.size` (produced by Task 2)
 - Produces: updated `buildServer(hub, media, logger)` — third param is `pino.Logger`
 
@@ -254,7 +261,10 @@ let contentStore: ContentStore | undefined;
 try {
   contentStore = new ContentStore(CONTENT_DB_PATH);
 } catch (err) {
-  log.error({ path: CONTENT_DB_PATH, err }, "content-filter store failed to open (degrading to in-memory-only)");
+  log.error(
+    { path: CONTENT_DB_PATH, err },
+    "content-filter store failed to open (degrading to in-memory-only)"
+  );
 }
 const contentFilter = new ContentFilter(media, {
   store: contentStore,
@@ -307,7 +317,11 @@ const app = await buildServer(hub, media, log);
 await app.listen({ port: PORT, host: "0.0.0.0" });
 poller.start();
 log.info(
-  { port: PORT, appVersion: readVersion().appVersion, safesearch: !!process.env.GOOGLE_VISION_API_KEY },
+  {
+    port: PORT,
+    appVersion: readVersion().appVersion,
+    safesearch: !!process.env.GOOGLE_VISION_API_KEY,
+  },
   "chia-grove server started"
 );
 
@@ -343,9 +357,11 @@ git commit -m "feat: wire pino logger to Fastify and replace console calls in in
 ### Task 4: Hub backpressure logging
 
 **Files:**
+
 - Modify: `server/src/web/hub.ts`
 
 **Interfaces:**
+
 - Consumes: `log` from `../logger.js` (produced by Task 1)
 
 - [ ] **Step 1: Add logger import and backpressure log to `hub.ts`**
@@ -368,7 +384,10 @@ if (socket.readyState !== OPEN || socket.bufferedAmount > HARD_LIMIT) {
 
 // after:
 if (socket.readyState !== OPEN || socket.bufferedAmount > HARD_LIMIT) {
-  log.warn({ clients: this.clients.size, buffered: socket.bufferedAmount }, "ws: client terminated (buffer overflow)");
+  log.warn(
+    { clients: this.clients.size, buffered: socket.bufferedAmount },
+    "ws: client terminated (buffer overflow)"
+  );
   socket.terminate();
   this.clients.delete(socket);
   continue;
@@ -395,9 +414,11 @@ git commit -m "feat: log hub backpressure terminations"
 ### Task 5: Replace `console.warn` in `CoinsetPoller`
 
 **Files:**
+
 - Modify: `server/src/ingest/coinset-poller.ts`
 
 **Interfaces:**
+
 - Consumes: `log` from `../logger.js` (produced by Task 1)
 
 - [ ] **Step 1: Replace the console call**
@@ -409,6 +430,7 @@ import { log } from "../logger.js";
 ```
 
 Replace line 56:
+
 ```typescript
 // before:
 console.warn(`poll failed (retry in ${this.delayMs}ms):`, error);
@@ -440,9 +462,11 @@ git commit -m "feat: structured logging in CoinsetPoller"
 ### Task 6: Replace `console.warn` in `SafeSearchWorker` and add verdict log
 
 **Files:**
+
 - Modify: `server/src/content-filter/safesearch-worker.ts`
 
 **Interfaces:**
+
 - Consumes: `log` from `../logger.js` (produced by Task 1)
 
 - [ ] **Step 1: Add import and replace all three logging calls**
@@ -454,6 +478,7 @@ import { log } from "../logger.js";
 ```
 
 Replace the `store.get` failure warn (around line 74):
+
 ```typescript
 // before:
 console.warn(`[safesearch] store.get failed for ${launcherId} (skipping):`, err);
@@ -466,6 +491,7 @@ log.warn(
 ```
 
 In the `run` method, after `this.opts.store.putSafeSearch(launcherId, result)` and `this.failedUntil.delete(launcherId)`, add the verdict log:
+
 ```typescript
 // add after failedUntil.delete:
 log.info(
@@ -475,6 +501,7 @@ log.info(
 ```
 
 Replace the Vision API failure warn (around line 108):
+
 ```typescript
 // before:
 console.warn(`[safesearch] failed for ${launcherId} (${imageUri}):`, err);
@@ -506,9 +533,11 @@ git commit -m "feat: structured logging in SafeSearchWorker"
 ### Task 7: Replace `console.warn` in `classifyBlock`
 
 **Files:**
+
 - Modify: `server/src/classify/classify.ts`
 
 **Interfaces:**
+
 - Consumes: `log` from `../logger.js` (produced by Task 1)
 
 - [ ] **Step 1: Add import and replace the console call**
@@ -520,6 +549,7 @@ import { log } from "../logger.js";
 ```
 
 Replace line 114:
+
 ```typescript
 // before:
 console.warn(`classify: puzzle parse failed for coin ${base.coinId}`, error);
@@ -551,6 +581,7 @@ git commit -m "feat: structured logging in classifyBlock"
 ### Task 8: Update `.env.example` and document prod setup
 
 **Files:**
+
 - Modify: `server/.env.example`
 - Modify: `deploy/chia-grove.service`
 

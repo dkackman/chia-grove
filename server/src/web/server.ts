@@ -22,7 +22,10 @@ export async function buildServer(
   // pino.Logger satisfies FastifyBaseLogger structurally; cast to FastifyBaseLogger
   // avoids the type-parameter narrowing that loggerInstance would propagate into
   // FastifyInstance's generic, which would conflict with the default return type.
-  const app = fastify({ loggerInstance: logger as FastifyBaseLogger, trustProxy: "127.0.0.1, ::1" });
+  const app = fastify({
+    loggerInstance: logger as FastifyBaseLogger,
+    trustProxy: "127.0.0.1, ::1",
+  });
   await app.register(websocket, {
     options: {
       // Compress the (batched) JSON wire traffic. Negotiated at the handshake;

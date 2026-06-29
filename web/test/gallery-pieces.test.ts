@@ -56,8 +56,7 @@ test("newestX advances to new columns as pieces fill", () => {
 
 const frameOf = (pieces: Pieces) =>
   pieces.pickables().find((o) => (o as THREE.Mesh).geometry instanceof THREE.BoxGeometry) as
-    | THREE.Mesh
-    | undefined;
+    THREE.Mesh | undefined;
 
 test("retiring a video piece pauses and releases its <video> element", () => {
   const pieces = new Pieces(new THREE.Scene(), 1); // cap 1 → next add retires this one

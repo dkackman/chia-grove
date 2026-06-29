@@ -52,8 +52,7 @@ export class Pieces {
     // a still image exposes width/height; a video element exposes
     // videoWidth/videoHeight (its width/height attributes are usually 0)
     const media = texture.image as
-      | { width?: number; height?: number; videoWidth?: number; videoHeight?: number }
-      | undefined;
+      { width?: number; height?: number; videoWidth?: number; videoHeight?: number } | undefined;
     const mw = media?.videoWidth || media?.width;
     const mh = media?.videoHeight || media?.height;
     const aspect = mw && mh ? mw / mh : 1;
@@ -196,8 +195,7 @@ export class Pieces {
     const piece = this.slots[slotId];
     if (!piece) return null;
     const img = (piece.image.material as THREE.MeshBasicMaterial).map?.image as
-      | { play?: unknown }
-      | undefined;
+      { play?: unknown } | undefined;
     return img && typeof img.play === "function" ? (img as HTMLVideoElement) : null;
   }
 

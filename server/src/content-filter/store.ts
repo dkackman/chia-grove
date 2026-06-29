@@ -101,7 +101,14 @@ export class ContentStore {
            safesearch_raw_json = excluded.safesearch_raw_json,
            safesearch_checked_at = excluded.safesearch_checked_at`
       )
-      .run(launcherId, disposition, result.adult, JSON.stringify(result.raw), Date.now(), Date.now());
+      .run(
+        launcherId,
+        disposition,
+        result.adult,
+        JSON.stringify(result.raw),
+        Date.now(),
+        Date.now()
+      );
     return { disposition, safesearchChecked: true };
   }
 

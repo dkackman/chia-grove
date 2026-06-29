@@ -415,9 +415,7 @@ test("enrich queues SafeSearch for a clean image mint and emits a flag", async (
   await filter.enrich([event]);
   await new Promise((r) => setTimeout(r, 0));
   expect(event.mediaFilter).toBeUndefined(); // streamed permissive
-  expect(flags).toEqual([
-    { type: "content-flag", launcherId: "Lg", mediaFilter: "sensitive" },
-  ]);
+  expect(flags).toEqual([{ type: "content-flag", launcherId: "Lg", mediaFilter: "sensitive" }]);
   store.close();
 });
 

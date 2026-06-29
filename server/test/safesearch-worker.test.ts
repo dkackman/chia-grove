@@ -42,9 +42,7 @@ test("a sensitive image mint writes the store and emits a content-flag", async (
   worker.maybeEnqueue(nftEvent());
   await flushMicrotasks();
 
-  expect(flags).toEqual([
-    { type: "content-flag", launcherId: "L1", mediaFilter: "sensitive" },
-  ]);
+  expect(flags).toEqual([{ type: "content-flag", launcherId: "L1", mediaFilter: "sensitive" }]);
   expect(store.get("L1")?.disposition).toBe("sensitive");
   expect(store.get("L1")?.safesearchChecked).toBe(true);
   store.close();

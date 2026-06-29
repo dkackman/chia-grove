@@ -16,48 +16,48 @@ Fastify receives the same pino instance at construction so HTTP request/response
 
 ## Structured Log Fields
 
-| Source | Level | Fields |
-|---|---|---|
-| Startup | `info` | `{ port, appVersion, safesearch }` |
-| Each block | `info` | `{ height, spends, nfts, cats, dids }` |
-| Reorg | `warn` | `{ forkHeight }` |
-| Poll failure | `warn` | `{ retryMs, err }` |
-| Puzzle parse fail | `warn` | `{ coinId, err }` |
-| SafeSearch verdict | `info` | `{ launcherId, imageUri, verdict }` |
-| SafeSearch failure | `warn` | `{ launcherId, imageUri, err }` |
-| Store.get failure | `warn` | `{ launcherId, err }` |
-| WS connect | `info` | `{ clients }` |
-| WS disconnect | `info` | `{ clients }` |
-| Hub termination (backpressure) | `warn` | `{ clients, buffered }` |
-| Shutdown signal | `info` | `{ signal }` |
-| Store open failure | `error` | `{ path, err }` |
+| Source                         | Level   | Fields                                 |
+| ------------------------------ | ------- | -------------------------------------- |
+| Startup                        | `info`  | `{ port, appVersion, safesearch }`     |
+| Each block                     | `info`  | `{ height, spends, nfts, cats, dids }` |
+| Reorg                          | `warn`  | `{ forkHeight }`                       |
+| Poll failure                   | `warn`  | `{ retryMs, err }`                     |
+| Puzzle parse fail              | `warn`  | `{ coinId, err }`                      |
+| SafeSearch verdict             | `info`  | `{ launcherId, imageUri, verdict }`    |
+| SafeSearch failure             | `warn`  | `{ launcherId, imageUri, err }`        |
+| Store.get failure              | `warn`  | `{ launcherId, err }`                  |
+| WS connect                     | `info`  | `{ clients }`                          |
+| WS disconnect                  | `info`  | `{ clients }`                          |
+| Hub termination (backpressure) | `warn`  | `{ clients, buffered }`                |
+| Shutdown signal                | `info`  | `{ signal }`                           |
+| Store open failure             | `error` | `{ path, err }`                        |
 
 HTTP request/response (method, url, statusCode, responseTime) come automatically from Fastify's pino integration.
 
 ## New Environment Variables
 
-| Var | Default | Notes |
-|---|---|---|
-| `AXIOM_TOKEN` | (unset) | Axiom API ingest token; unset = stdout only |
-| `AXIOM_DATASET` | (unset) | Axiom dataset name (e.g. `chia-grove`) |
-| `LOG_LEVEL` | `info` | pino log level |
+| Var             | Default | Notes                                       |
+| --------------- | ------- | ------------------------------------------- |
+| `AXIOM_TOKEN`   | (unset) | Axiom API ingest token; unset = stdout only |
+| `AXIOM_DATASET` | (unset) | Axiom dataset name (e.g. `chia-grove`)      |
+| `LOG_LEVEL`     | `info`  | pino log level                              |
 
 Both Axiom vars must be set together; either alone is treated as unset (stdout fallback).
 
 ## Files Changed
 
-| File | Change |
-|---|---|
-| `server/package.json` | add `@axiomhq/pino` dependency |
-| `server/src/logger.ts` | **new** — pino singleton with Axiom transport or stdout fallback |
-| `server/src/index.ts` | import logger, replace all `console.*`, pass logger to `buildServer` |
-| `server/src/web/server.ts` | accept logger param, wire to Fastify, log WS connect/disconnect |
-| `server/src/web/hub.ts` | import logger, add `log.warn` on backpressure termination |
-| `server/src/ingest/coinset-poller.ts` | import logger, replace `console.warn` |
-| `server/src/content-filter/safesearch-worker.ts` | import logger, replace `console.warn` ×2, add verdict `log.info` |
-| `server/src/classify/classify.ts` | import logger, replace `console.warn` |
-| `server/.env.example` | add `AXIOM_TOKEN`, `AXIOM_DATASET`, `LOG_LEVEL` |
-| `deploy/chia-grove.service` | add `AXIOM_TOKEN` and `AXIOM_DATASET` placeholders |
+| File                                             | Change                                                               |
+| ------------------------------------------------ | -------------------------------------------------------------------- |
+| `server/package.json`                            | add `@axiomhq/pino` dependency                                       |
+| `server/src/logger.ts`                           | **new** — pino singleton with Axiom transport or stdout fallback     |
+| `server/src/index.ts`                            | import logger, replace all `console.*`, pass logger to `buildServer` |
+| `server/src/web/server.ts`                       | accept logger param, wire to Fastify, log WS connect/disconnect      |
+| `server/src/web/hub.ts`                          | import logger, add `log.warn` on backpressure termination            |
+| `server/src/ingest/coinset-poller.ts`            | import logger, replace `console.warn`                                |
+| `server/src/content-filter/safesearch-worker.ts` | import logger, replace `console.warn` ×2, add verdict `log.info`     |
+| `server/src/classify/classify.ts`                | import logger, replace `console.warn`                                |
+| `server/.env.example`                            | add `AXIOM_TOKEN`, `AXIOM_DATASET`, `LOG_LEVEL`                      |
+| `deploy/chia-grove.service`                      | add `AXIOM_TOKEN` and `AXIOM_DATASET` placeholders                   |
 
 ## Testing
 
