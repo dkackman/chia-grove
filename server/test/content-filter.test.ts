@@ -301,6 +301,57 @@ test("mapMintgardenSignals clean json fires nothing", () => {
   expect(v).toEqual({ disposition: "ok", signals: [] });
 });
 
+// ── ContentStore content_hash persistence ───────────────────────────────────
+
+test("putCheap persists contentHash and get() returns it", () => {
+  const store = new ContentStore(":memory:");
+  store.putCheap("lid1", "nft1a", { disposition: "ok", signals: [] }, "ab".repeat(32));
+  const v = store.get("lid1");
+  expect(v?.contentHash).toBe("ab".repeat(32));
+  store.close();
+});
+
+test("putCheap without contentHash returns undefined from get()", () => {
+  const store = new ContentStore(":memory:");
+  store.putCheap("lid2", "nft1b", { disposition: "ok", signals: [] });
+  const v = store.get("lid2");
+  expect(v?.contentHash).toBeUndefined();
+  store.close();
+});
+
+test("putCheap COALESCE: existing hash preserved when update omits it", () => {
+  const store = new ContentStore(":memory:");
+  store.putCheap("lid3", "nft1c", { disposition: "ok", signals: [] }, "cd".repeat(32));
+  // second upsert with no hash — should not overwrite
+  store.putCheap("lid3", "nft1c", { disposition: "sensitive", signals: ["lexicon"] });
+  const v = store.get("lid3");
+  expect(v?.contentHash).toBe("cd".repeat(32));
+  expect(v?.disposition).toBe("sensitive");
+  store.close();
+});
+
+test("enrich upgrades MediaIndex on store-hit path when contentHash was persisted", async () => {
+  const HASH = "ab".repeat(32);
+  const store = new ContentStore(":memory:");
+  // pre-populate store with a verdict that includes a contentHash (simulating
+  // a prior network fetch that extracted the hash and persisted it)
+  store.putCheap("cd".repeat(32), "nft1example", { disposition: "ok", signals: [] }, HASH);
+  let fetchCalls = 0;
+  const media = new MediaIndex(10);
+  media.set("cd".repeat(32), { url: "https://ipfs.mintgarden.io/ipfs/old", kind: "image" });
+  const filter = new ContentFilter(media, {
+    store,
+    fetchImpl: async () => { fetchCalls++; return okJson({}); },
+  });
+  // enrich should take store-hit path (no network call) and still upgrade MediaIndex
+  await filter.enrich([nftEvent()]);
+  expect(fetchCalls).toBe(0); // confirms store-hit path taken
+  expect(media.get("cd".repeat(32))?.url).toBe(
+    `https://archive.mintgarden.io/content/${HASH}`
+  );
+  store.close();
+});
+
 test("enrich uses a stored verdict and skips the MintGarden fetch", async () => {
   const store = new ContentStore(":memory:");
   store.putCheap("launchX", "nft1x", { disposition: "sensitive", signals: ["lexicon"] });
@@ -375,7 +426,7 @@ test("enrich does not throw and still stamps verdict when store.get throws", asy
     get: (_launcherId: string) => {
       throw new Error("sqlite disk error");
     },
-    putCheap: (_launcherId: string, _nftId: string | undefined, _verdict: unknown) => {
+    putCheap: (_launcherId: string, _nftId: string | undefined, _verdict: unknown, _contentHash?: string) => {
       throw new Error("sqlite disk error");
     },
   } as unknown as import("../src/content-filter/store.js").ContentStore;
@@ -398,7 +449,7 @@ test("enrich stamps sensitive verdict from network path when store.get throws", 
     get: (_launcherId: string) => {
       throw new Error("sqlite disk error");
     },
-    putCheap: (_launcherId: string, _nftId: string | undefined, _verdict: unknown) => {
+    putCheap: (_launcherId: string, _nftId: string | undefined, _verdict: unknown, _contentHash?: string) => {
       throw new Error("sqlite disk error");
     },
   } as unknown as import("../src/content-filter/store.js").ContentStore;

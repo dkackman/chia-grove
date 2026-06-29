@@ -140,6 +140,7 @@ export class ContentFilter {
     let contentHash: string | undefined;
     if (stored) {
       verdict = { disposition: stored.disposition, signals: stored.signals };
+      contentHash = stored.contentHash;
     } else {
       const result = await this.resolve(event.nftId!);
       verdict = result.verdict;
@@ -148,7 +149,7 @@ export class ContentFilter {
 
     if (!stored && launcherId) {
       try {
-        this.store?.putCheap(launcherId, event.nftId, verdict);
+        this.store?.putCheap(launcherId, event.nftId, verdict, contentHash);
       } catch (err) {
         console.warn("content-filter store.putCheap failed (verdict not persisted):", err);
       }

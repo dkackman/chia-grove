@@ -8,12 +8,14 @@ export interface StoredVerdict {
   disposition: Disposition;
   signals: SignalName[];
   safesearchChecked: boolean;
+  contentHash?: string;
 }
 
 interface Row {
   disposition: string;
   signals_json: string;
   safesearch_checked_at: number | null;
+  content_hash: string | null;
 }
 
 /**
@@ -36,7 +38,8 @@ export class ContentStore {
         safesearch_adult      TEXT,
         safesearch_raw_json   TEXT,
         safesearch_checked_at INTEGER,
-        checked_at            INTEGER NOT NULL
+        checked_at            INTEGER NOT NULL,
+        content_hash          TEXT
       );
     `);
   }
@@ -44,7 +47,7 @@ export class ContentStore {
   get(launcherId: string): StoredVerdict | undefined {
     const row = this.db
       .prepare(
-        "SELECT disposition, signals_json, safesearch_checked_at FROM nft WHERE launcher_id = ?"
+        "SELECT disposition, signals_json, safesearch_checked_at, content_hash FROM nft WHERE launcher_id = ?"
       )
       .get(launcherId) as Row | undefined;
     if (!row) return undefined;
@@ -52,18 +55,20 @@ export class ContentStore {
       disposition: row.disposition as Disposition,
       signals: JSON.parse(row.signals_json) as SignalName[],
       safesearchChecked: row.safesearch_checked_at !== null,
+      contentHash: row.content_hash ?? undefined,
     };
   }
 
-  putCheap(launcherId: string, nftId: string | undefined, verdict: Verdict): void {
+  putCheap(launcherId: string, nftId: string | undefined, verdict: Verdict, contentHash?: string): void {
     this.db
       .prepare(
-        `INSERT INTO nft (launcher_id, nft_id, disposition, signals_json, checked_at)
-         VALUES (?, ?, ?, ?, ?)
+        `INSERT INTO nft (launcher_id, nft_id, disposition, signals_json, content_hash, checked_at)
+         VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT(launcher_id) DO UPDATE SET
            nft_id = excluded.nft_id,
            disposition = excluded.disposition,
            signals_json = excluded.signals_json,
+           content_hash = COALESCE(excluded.content_hash, nft.content_hash),
            checked_at = excluded.checked_at`
       )
       .run(
@@ -71,6 +76,7 @@ export class ContentStore {
         nftId ?? null,
         verdict.disposition,
         JSON.stringify(verdict.signals),
+        contentHash ?? null,
         Date.now()
       );
   }
