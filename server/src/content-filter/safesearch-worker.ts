@@ -107,6 +107,10 @@ export class SafeSearchWorker {
     }
   }
 
+  // Holds a concurrency-gate slot during inter-poll sleeps. With default settings
+  // (3 attempts, 2 s delay, concurrency 2) a not-yet-ingested NFT can occupy a slot
+  // for up to ~4 s of idle waiting. Self-healing: exhaustion releases the slot and
+  // sets failedUntil, so the queue unblocks. Acceptable given SafeSearch is out-of-band.
   private async waitForArchive(launcherId: string): Promise<void> {
     for (let attempt = 0; attempt < this.archiveCheckAttempts; attempt++) {
       if (attempt > 0 && this.archiveCheckDelayMs > 0) {

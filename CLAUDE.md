@@ -104,7 +104,7 @@ New WebSocket clients first receive a `Hello` handshake (protocol version check)
 | `SproutEvent`      | Every classified coin spend                             |
 | `AmbientEvent`     | Each poll cycle (mempool, netspace)                     |
 | `ReorgEvent`       | Chain reorg detected                                    |
-| `ContentFlagEvent` | Late SafeSearch verdict for an already-emitted NFT mint |
+| `ContentFlagEvent` | Late SafeSearch verdict for an already-emitted NFT image spend |
 | `Hello`            | First message on every connection (protocol version)    |
 | `Snapshot`         | Sent after `Hello` on connect (full ring buffer)        |
 | `Batch`            | Live streaming: one or more events per frame            |
