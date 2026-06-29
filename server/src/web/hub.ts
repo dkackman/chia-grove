@@ -42,6 +42,10 @@ export class Hub {
     this.clients.delete(socket);
   }
 
+  get size(): number {
+    return this.clients.size;
+  }
+
   publish(events: GroveEvent[]): void {
     if (events.length === 0) return;
     for (const event of events) {
