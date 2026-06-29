@@ -10,7 +10,7 @@ export { mapMintgarden, mapMintgardenSignals, extractContentHash } from "./signa
 export type { MapMintgardenOpts } from "./signals/mintgarden.js";
 export type { StoredVerdict } from "./store.js";
 
-const OK: Verdict = { disposition: "ok", signals: [] };
+const OK: Verdict = { disposition: "ok" };
 
 interface FetchResult {
   verdict: Verdict;
@@ -149,7 +149,7 @@ export class ContentFilter {
     let verdict: Verdict;
     let contentHash: string | undefined;
     if (stored) {
-      verdict = { disposition: stored.disposition, signals: stored.signals };
+      verdict = { disposition: stored.disposition };
       contentHash = stored.contentHash;
     } else {
       const result = await this.resolve(event.nftId!);
@@ -186,7 +186,6 @@ export class ContentFilter {
     } else if (verdict.disposition === "sensitive") {
       event.mediaFilter = "sensitive";
     }
-    if (verdict.signals.length > 0) event.signals = [...verdict.signals];
   }
 
   private resolve(nftId: string): Promise<FetchResult> {
@@ -230,7 +229,7 @@ export class ContentFilter {
       const res = await this.fetchImpl(`${this.baseUrl}/nfts/${nftId}`, {
         signal: controller.signal,
       });
-      if (res.status === 404) return { verdict: { disposition: "ok", signals: [] } }; // genuinely unknown to MintGarden → cacheable permissive
+      if (res.status === 404) return { verdict: { disposition: "ok" } }; // genuinely unknown to MintGarden → cacheable permissive
       if (!res.ok) throw new Error(`mintgarden ${res.status}`); // 5xx/429/etc → transient, don't poison the cache
       const json = await res.json();
       return { verdict: mapMintgardenSignals(json), contentHash: extractContentHash(json) };

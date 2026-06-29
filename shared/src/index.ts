@@ -6,7 +6,8 @@ export type MediaKind = "image" | "video" | "audio";
 // semver). The server announces it in the frozen `Hello` handshake; the client
 // reloads when its baked-in value differs. See docs/superpowers/specs.
 // v4: added ContentFlagEvent to GroveEvent union; SproutEvent gains signals[].
-export const PROTOCOL_VERSION = 4;
+// v5: removed signals[] from SproutEvent and ContentFlagEvent (never consumed by clients).
+export const PROTOCOL_VERSION = 5;
 
 const VIDEO_EXT = new Set([".mp4", ".webm", ".ogv", ".mov"]);
 const AUDIO_EXT = new Set([".mp3", ".wav", ".ogg", ".oga", ".flac", ".aac"]);
@@ -44,7 +45,6 @@ export interface SproutEvent {
   dataUri?: string; // NFT only, inline data: URI for demo/offline art; live art is fetched via /img?nft=launcherId
   mediaKind?: MediaKind; // NFT only, set when proxiable art exists (URL held server-side, keyed by launcherId)
   mediaFilter?: "blocked" | "sensitive"; // NFT only; absent = ok. Set server-side from MintGarden — blocked hides art (bytes made unreachable), sensitive blurs it.
-  signals?: string[]; // which content-filter signals fired (e.g. ["lexicon","safesearch"]); provenance for mediaFilter
 }
 
 export interface AmbientEvent {
@@ -65,7 +65,6 @@ export interface ContentFlagEvent {
   type: "content-flag";
   launcherId: string;
   mediaFilter: "sensitive" | "blocked";
-  signals: string[]; // which signals fired, including "safesearch"
 }
 
 // Frozen handshake — sent first on every connection. Its shape MUST NOT change

@@ -284,32 +284,30 @@ test("non-NFT and nftId-less events are ignored", async () => {
   expect(calls).toBe(0);
 });
 
-test("mapMintgardenSignals reports which signals fired", () => {
+test("mapMintgardenSignals returns blocked when creator verification fires", () => {
   const v = mapMintgardenSignals({
     name: "totally nsfw piece",
     collection: { sensitive_content: true },
     creator: { verification_state: 2 },
   });
-  expect(v.disposition).toBe("blocked"); // creator verification wins
-  expect(v.signals.sort()).toEqual(["lexicon", "mintgarden", "mintgarden-creator"].sort());
+  expect(v.disposition).toBe("blocked");
 });
 
-test("mapMintgardenSignals chip7 metadata sensitive_content fires chip7", () => {
+test("mapMintgardenSignals chip7 metadata sensitive_content returns sensitive", () => {
   const v = mapMintgardenSignals({ data: { metadata_json: { sensitive_content: "nudity" } } });
   expect(v.disposition).toBe("sensitive");
-  expect(v.signals).toEqual(["chip7"]);
 });
 
-test("mapMintgardenSignals clean json fires nothing", () => {
+test("mapMintgardenSignals clean json returns ok", () => {
   const v = mapMintgardenSignals({ name: "a calm landscape" });
-  expect(v).toEqual({ disposition: "ok", signals: [] });
+  expect(v).toEqual({ disposition: "ok" });
 });
 
 // ── ContentStore content_hash persistence ───────────────────────────────────
 
 test("putCheap persists contentHash and get() returns it", () => {
   const store = new ContentStore(":memory:");
-  store.putCheap("lid1", "nft1a", { disposition: "ok", signals: [] }, "ab".repeat(32));
+  store.putCheap("lid1", "nft1a", { disposition: "ok" }, "ab".repeat(32));
   const v = store.get("lid1");
   expect(v?.contentHash).toBe("ab".repeat(32));
   store.close();
@@ -317,7 +315,7 @@ test("putCheap persists contentHash and get() returns it", () => {
 
 test("putCheap without contentHash returns undefined from get()", () => {
   const store = new ContentStore(":memory:");
-  store.putCheap("lid2", "nft1b", { disposition: "ok", signals: [] });
+  store.putCheap("lid2", "nft1b", { disposition: "ok" });
   const v = store.get("lid2");
   expect(v?.contentHash).toBeUndefined();
   store.close();
@@ -325,9 +323,9 @@ test("putCheap without contentHash returns undefined from get()", () => {
 
 test("putCheap COALESCE: existing hash preserved when update omits it", () => {
   const store = new ContentStore(":memory:");
-  store.putCheap("lid3", "nft1c", { disposition: "ok", signals: [] }, "cd".repeat(32));
+  store.putCheap("lid3", "nft1c", { disposition: "ok" }, "cd".repeat(32));
   // second upsert with no hash — should not overwrite
-  store.putCheap("lid3", "nft1c", { disposition: "sensitive", signals: ["lexicon"] });
+  store.putCheap("lid3", "nft1c", { disposition: "sensitive" });
   const v = store.get("lid3");
   expect(v?.contentHash).toBe("cd".repeat(32));
   expect(v?.disposition).toBe("sensitive");
@@ -339,7 +337,7 @@ test("enrich upgrades MediaIndex on store-hit path when contentHash was persiste
   const store = new ContentStore(":memory:");
   // pre-populate store with a verdict that includes a contentHash (simulating
   // a prior network fetch that extracted the hash and persisted it)
-  store.putCheap("cd".repeat(32), "nft1example", { disposition: "ok", signals: [] }, HASH);
+  store.putCheap("cd".repeat(32), "nft1example", { disposition: "ok" }, HASH);
   let fetchCalls = 0;
   const media = new MediaIndex(10);
   media.set("cd".repeat(32), { url: "https://ipfs.mintgarden.io/ipfs/old", kind: "image" });
@@ -359,7 +357,7 @@ test("enrich upgrades MediaIndex on store-hit path when contentHash was persiste
 
 test("enrich uses a stored verdict and skips the MintGarden fetch", async () => {
   const store = new ContentStore(":memory:");
-  store.putCheap("launchX", "nft1x", { disposition: "sensitive", signals: ["lexicon"] });
+  store.putCheap("launchX", "nft1x", { disposition: "sensitive" });
   let fetched = 0;
   const filter = new ContentFilter(new MediaIndex(10), {
     store,
@@ -381,7 +379,6 @@ test("enrich uses a stored verdict and skips the MintGarden fetch", async () => 
   await filter.enrich([event]);
   expect(fetched).toBe(0);
   expect(event.mediaFilter).toBe("sensitive");
-  expect(event.signals).toEqual(["lexicon"]);
   store.close();
 });
 
@@ -419,7 +416,7 @@ test("enrich queues SafeSearch for a clean image mint and emits a flag", async (
   await new Promise((r) => setTimeout(r, 0));
   expect(event.mediaFilter).toBeUndefined(); // streamed permissive
   expect(flags).toEqual([
-    { type: "content-flag", launcherId: "Lg", mediaFilter: "sensitive", signals: ["safesearch"] },
+    { type: "content-flag", launcherId: "Lg", mediaFilter: "sensitive" },
   ]);
   store.close();
 });

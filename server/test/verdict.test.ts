@@ -8,12 +8,11 @@ test("strongest picks blocked over sensitive over ok", () => {
   expect(strongest()).toBe("ok");
 });
 
-test("combine reports disposition and only the signals that fired", () => {
+test("combine returns the strongest disposition", () => {
   const v = combine([
-    { disposition: "ok", signal: "chip7" },
-    { disposition: "sensitive", signal: "lexicon" },
-    { disposition: "blocked", signal: "denylist" },
+    { disposition: "ok" },
+    { disposition: "sensitive" },
+    { disposition: "blocked" },
   ]);
   expect(v.disposition).toBe("blocked");
-  expect(v.signals).toEqual(["lexicon", "denylist"]);
 });

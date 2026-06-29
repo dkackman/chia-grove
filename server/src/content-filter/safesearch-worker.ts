@@ -94,7 +94,7 @@ export class SafeSearchWorker {
         fetchImpl: this.fetchImpl,
         timeoutMs: this.timeoutMs,
       });
-      const updated = this.opts.store.putSafeSearch(launcherId, result);
+      this.opts.store.putSafeSearch(launcherId, result);
       // on success, clear any prior failure suppression for this launcher
       this.failedUntil.delete(launcherId);
       if (result.sensitive) {
@@ -102,7 +102,6 @@ export class SafeSearchWorker {
           type: "content-flag",
           launcherId,
           mediaFilter: "sensitive",
-          signals: updated.signals,
         });
       }
     } catch (err) {

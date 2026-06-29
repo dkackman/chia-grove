@@ -16,7 +16,7 @@ test("healthz responds ok", async () => {
     ok: true,
     appVersion: "dev",
     gitSha: "",
-    protocolVersion: 4,
+    protocolVersion: 5,
   });
   await app.close();
 });

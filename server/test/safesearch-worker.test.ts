@@ -23,7 +23,7 @@ test("a sensitive image mint writes the store and emits a content-flag", async (
   const media = new MediaIndex(10);
   media.set("L1", { url: "https://e/x.png", kind: "image" });
   const store = new ContentStore(":memory:");
-  store.putCheap("L1", "nft1", { disposition: "ok", signals: [] });
+  store.putCheap("L1", "nft1", { disposition: "ok" });
   const flags: ContentFlagEvent[] = [];
   const worker = new SafeSearchWorker({
     media,
@@ -43,7 +43,7 @@ test("a sensitive image mint writes the store and emits a content-flag", async (
   await flushMicrotasks();
 
   expect(flags).toEqual([
-    { type: "content-flag", launcherId: "L1", mediaFilter: "sensitive", signals: ["safesearch"] },
+    { type: "content-flag", launcherId: "L1", mediaFilter: "sensitive" },
   ]);
   expect(store.get("L1")?.disposition).toBe("sensitive");
   expect(store.get("L1")?.safesearchChecked).toBe(true);
@@ -54,7 +54,7 @@ test("a clean image mint marks checked and emits no flag", async () => {
   const media = new MediaIndex(10);
   media.set("L1", { url: "https://e/x.png", kind: "image" });
   const store = new ContentStore(":memory:");
-  store.putCheap("L1", "nft1", { disposition: "ok", signals: [] });
+  store.putCheap("L1", "nft1", { disposition: "ok" });
   const flags: ContentFlagEvent[] = [];
   const worker = new SafeSearchWorker({
     media,

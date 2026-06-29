@@ -1,4 +1,4 @@
-import type { Disposition, SignalName, Verdict } from "../types.js";
+import type { Disposition, Verdict } from "../types.js";
 import { combine } from "../verdict.js";
 import { LEXICON, matchesLexicon } from "./lexicon.js";
 import { DENYLIST_MAP, dispositionForCollection } from "./denylist.js";
@@ -41,35 +41,35 @@ export function mapMintgardenSignals(json: unknown, opts: MapMintgardenOpts = {}
   const creator = asRecord(nft.creator);
   const metadata = asRecord(asRecord(nft.data).metadata_json);
 
-  const parts: Array<{ disposition: Disposition; signal: SignalName }> = [];
+  const parts: Array<{ disposition: Disposition }> = [];
 
   // creator verification → hard block
   if (creator.verification_state === 2) {
-    parts.push({ disposition: "blocked", signal: "mintgarden-creator" });
+    parts.push({ disposition: "blocked" });
   }
 
   // MintGarden collection-level flags
   if (nft.is_blocked === true || collection.blocked_content === true) {
-    parts.push({ disposition: "blocked", signal: "mintgarden" });
+    parts.push({ disposition: "blocked" });
   } else if (isSensitiveFlag(collection.sensitive_content)) {
-    parts.push({ disposition: "sensitive", signal: "mintgarden" });
+    parts.push({ disposition: "sensitive" });
   }
 
   // CHIP-0007 off-chain metadata sensitive_content
   if (isSensitiveFlag(metadata.sensitive_content)) {
-    parts.push({ disposition: "sensitive", signal: "chip7" });
+    parts.push({ disposition: "sensitive" });
   }
 
   // curated collection denylist
   const collectionId = typeof collection.id === "string" ? collection.id : undefined;
   const deny = dispositionForCollection(denylist, collectionId);
-  if (deny) parts.push({ disposition: deny, signal: "denylist" });
+  if (deny) parts.push({ disposition: deny });
 
   // text-keyword heuristic over name / collection name / description
   const text = [nft.name, metadata.name, collection.name, metadata.description]
     .filter((s): s is string => typeof s === "string")
     .join(" ");
-  if (matchesLexicon(text, lexicon)) parts.push({ disposition: "sensitive", signal: "lexicon" });
+  if (matchesLexicon(text, lexicon)) parts.push({ disposition: "sensitive" });
 
   return combine(parts);
 }

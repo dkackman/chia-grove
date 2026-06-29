@@ -1,19 +1,17 @@
 import { DatabaseSync } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import type { Disposition, SignalName, Verdict } from "./types.js";
+import type { Disposition, Verdict } from "./types.js";
 import { strongest } from "./verdict.js";
 
 export interface StoredVerdict {
   disposition: Disposition;
-  signals: SignalName[];
   safesearchChecked: boolean;
   contentHash?: string;
 }
 
 interface Row {
   disposition: string;
-  signals_json: string;
   safesearch_checked_at: number | null;
   content_hash: string | null;
 }
@@ -34,7 +32,6 @@ export class ContentStore {
         launcher_id           TEXT PRIMARY KEY,
         nft_id                TEXT,
         disposition           TEXT NOT NULL,
-        signals_json          TEXT NOT NULL,
         safesearch_adult      TEXT,
         safesearch_raw_json   TEXT,
         safesearch_checked_at INTEGER,
@@ -42,18 +39,23 @@ export class ContentStore {
         content_hash          TEXT
       );
     `);
+    // Migration: drop obsolete signals_json column from pre-v5 databases.
+    try {
+      this.db.exec("ALTER TABLE nft DROP COLUMN signals_json");
+    } catch {
+      // Column doesn't exist in freshly-created databases; safe to ignore.
+    }
   }
 
   get(launcherId: string): StoredVerdict | undefined {
     const row = this.db
       .prepare(
-        "SELECT disposition, signals_json, safesearch_checked_at, content_hash FROM nft WHERE launcher_id = ?"
+        "SELECT disposition, safesearch_checked_at, content_hash FROM nft WHERE launcher_id = ?"
       )
       .get(launcherId) as Row | undefined;
     if (!row) return undefined;
     return {
       disposition: row.disposition as Disposition,
-      signals: JSON.parse(row.signals_json) as SignalName[],
       safesearchChecked: row.safesearch_checked_at !== null,
       contentHash: row.content_hash ?? undefined,
     };
@@ -67,23 +69,15 @@ export class ContentStore {
   ): void {
     this.db
       .prepare(
-        `INSERT INTO nft (launcher_id, nft_id, disposition, signals_json, content_hash, checked_at)
-         VALUES (?, ?, ?, ?, ?, ?)
+        `INSERT INTO nft (launcher_id, nft_id, disposition, content_hash, checked_at)
+         VALUES (?, ?, ?, ?, ?)
          ON CONFLICT(launcher_id) DO UPDATE SET
            nft_id = excluded.nft_id,
            disposition = excluded.disposition,
-           signals_json = excluded.signals_json,
            content_hash = COALESCE(excluded.content_hash, nft.content_hash),
            checked_at = excluded.checked_at`
       )
-      .run(
-        launcherId,
-        nftId ?? null,
-        verdict.disposition,
-        JSON.stringify(verdict.signals),
-        contentHash ?? null,
-        Date.now()
-      );
+      .run(launcherId, nftId ?? null, verdict.disposition, contentHash ?? null, Date.now());
   }
 
   putSafeSearch(
@@ -92,36 +86,23 @@ export class ContentStore {
   ): StoredVerdict {
     const current = this.get(launcherId) ?? {
       disposition: "ok" as Disposition,
-      signals: [] as SignalName[],
       safesearchChecked: false,
     };
-    const signals = result.sensitive
-      ? Array.from(new Set([...current.signals, "safesearch" as SignalName]))
-      : current.signals.filter((s) => s !== "safesearch");
     const disposition = result.sensitive
       ? strongest(current.disposition, "sensitive")
       : current.disposition;
     this.db
       .prepare(
-        `INSERT INTO nft (launcher_id, disposition, signals_json, safesearch_adult, safesearch_raw_json, safesearch_checked_at, checked_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO nft (launcher_id, disposition, safesearch_adult, safesearch_raw_json, safesearch_checked_at, checked_at)
+         VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT(launcher_id) DO UPDATE SET
            disposition = excluded.disposition,
-           signals_json = excluded.signals_json,
            safesearch_adult = excluded.safesearch_adult,
            safesearch_raw_json = excluded.safesearch_raw_json,
            safesearch_checked_at = excluded.safesearch_checked_at`
       )
-      .run(
-        launcherId,
-        disposition,
-        JSON.stringify(signals),
-        result.adult,
-        JSON.stringify(result.raw),
-        Date.now(),
-        Date.now()
-      );
-    return { disposition, signals, safesearchChecked: true };
+      .run(launcherId, disposition, result.adult, JSON.stringify(result.raw), Date.now(), Date.now());
+    return { disposition, safesearchChecked: true };
   }
 
   close(): void {

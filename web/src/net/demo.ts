@@ -82,7 +82,6 @@ function sprout(height: number, dispatch?: (event: GroveEvent) => void): SproutE
             type: "content-flag",
             launcherId: launcher,
             mediaFilter: "sensitive",
-            signals: ["safesearch"],
           }),
         4000
       );
