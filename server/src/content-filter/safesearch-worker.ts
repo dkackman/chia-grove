@@ -27,9 +27,11 @@ export interface SafeSearchWorkerOpts {
 }
 
 /**
- * Out-of-band SafeSearch path. `maybeEnqueue` is fire-and-forget: any image NFT
- * spend whose cheap verdict was `ok` and that hasn't yet been SafeSearch-checked
- * gets a single Vision lookup. Not limited to mints — re-spends of
+ * Out-of-band SafeSearch path. `maybeEnqueue` is fire-and-forget: any NFT spend
+ * whose cheap verdict was `ok` and that hasn't yet been SafeSearch-checked gets a
+ * single Vision lookup — images are classified by their art URL, videos by their
+ * static poster (best-effort; Vision can't decode video frames, and a video with
+ * no resolved thumbnail is skipped). Not limited to mints — re-spends of
  * previously-unseen NFTs are covered too. A `sensitive` result is persisted and
  * pushed to clients as a `content-flag`. Failures leave the NFT permissive and
  * are suppressed for `failTtlMs` so an outage doesn't re-spend the paid quota
@@ -73,11 +75,21 @@ export class SafeSearchWorker {
   }
 
   maybeEnqueue(event: SproutEvent): void {
-    if (event.kind !== "nft" || event.mediaKind !== "image") return;
+    if (event.kind !== "nft") return;
     const launcherId = event.launcherId;
     if (!launcherId || this.queued.has(launcherId)) return;
     const media = this.opts.media.get(launcherId);
-    if (!media || media.kind !== "image") return;
+    if (!media) return;
+    // The image Vision classifies: the art itself for images, the static poster
+    // for videos (Vision can't decode video frames). Best-effort — a video with
+    // no resolved thumbnail, or an audio NFT, has nothing to classify, so skip.
+    const imageUri =
+      media.kind === "image"
+        ? media.url
+        : media.kind === "video"
+          ? media.thumbnailUrl
+          : undefined;
+    if (!imageUri) return;
     let stored;
     try {
       stored = this.opts.store.get(launcherId);
@@ -101,7 +113,7 @@ export class SafeSearchWorker {
     this.queued.add(launcherId);
     // run() is not gated: its Archive-readiness wait is cheap polling that must
     // not occupy a Vision slot. Only the paid Vision call inside run() is gated.
-    void this.run(launcherId, media.url).finally(() => this.queued.delete(launcherId));
+    void this.run(launcherId, imageUri).finally(() => this.queued.delete(launcherId));
   }
 
   private async run(launcherId: string, imageUri: string): Promise<void> {

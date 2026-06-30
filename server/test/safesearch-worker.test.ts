@@ -99,8 +99,9 @@ test("a store.get failure degrades gracefully: no throw, no Vision call", async 
   expect(calls).toBe(0);
 });
 
-test("ineligible events are skipped (non-mint, non-image, already-checked, no media)", async () => {
+test("ineligible events are skipped (audio NFT, no media entry)", async () => {
   const media = new MediaIndex(10);
+  media.set("AUD", { url: "https://e/a.mp3", kind: "audio" });
   const store = new ContentStore(":memory:");
   let calls = 0;
   const worker = new SafeSearchWorker({
@@ -113,9 +114,8 @@ test("ineligible events are skipped (non-mint, non-image, already-checked, no me
       return new Response("{}", { status: 200 });
     }) as typeof fetch,
   });
-  worker.maybeEnqueue(nftEvent({ mint: undefined })); // not a mint
-  worker.maybeEnqueue(nftEvent({ mediaKind: "video" })); // not an image
-  worker.maybeEnqueue(nftEvent()); // no media-index entry
+  worker.maybeEnqueue(nftEvent({ launcherId: "AUD", nftId: "nfta", mediaKind: "audio" })); // nothing to classify
+  worker.maybeEnqueue(nftEvent({ launcherId: "MISSING", nftId: "nftm" })); // no media-index entry
   await flushMicrotasks();
   expect(calls).toBe(0);
   store.close();
@@ -246,5 +246,59 @@ test("maybeEnqueue drops work beyond maxPending so the in-flight set stays bound
   expect(polled.size).toBe(2); // third enqueue dropped by the cap
   release();
   await flushMicrotasks();
+  store.close();
+});
+
+// ── video NFTs: SafeSearch the poster (best-effort) ──────────────────────────
+// Vision can't decode video frames, but the MintGarden poster is a still image,
+// so we classify that. A video with no resolved thumbnail is skipped.
+
+test("a video NFT is SafeSearch-checked against its thumbnail poster, not the clip", async () => {
+  const media = new MediaIndex(10);
+  const POSTER = "https://assets.mainnet.mintgarden.io/thumbnails/abc_512.webp";
+  media.set("V1", { url: "https://ipfs/clip.mp4", kind: "video", thumbnailUrl: POSTER });
+  const store = new ContentStore(":memory:");
+  store.putCheap("V1", "nftv", { disposition: "ok" });
+  const flags: ContentFlagEvent[] = [];
+  let visionUri: string | undefined;
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    apiKey: "k",
+    onFlag: (e) => flags.push(e),
+    fetchImpl: (async (_url: string, init?: RequestInit) => {
+      visionUri = JSON.parse((init?.body as string) ?? "{}").requests?.[0]?.image?.source?.imageUri;
+      return new Response(
+        JSON.stringify({ responses: [{ safeSearchAnnotation: { adult: "VERY_LIKELY" } }] }),
+        { status: 200 }
+      );
+    }) as typeof fetch,
+  });
+  worker.maybeEnqueue(nftEvent({ launcherId: "V1", nftId: "nftv", mediaKind: "video" }));
+  await flushMicrotasks();
+  expect(visionUri).toBe(POSTER);
+  expect(flags).toEqual([{ type: "content-flag", launcherId: "V1", mediaFilter: "sensitive" }]);
+  expect(store.get("V1")?.safesearchChecked).toBe(true);
+  store.close();
+});
+
+test("a video NFT with no thumbnail is skipped (no Vision call)", async () => {
+  const media = new MediaIndex(10);
+  media.set("V2", { url: "https://ipfs/clip.mp4", kind: "video" }); // no thumbnailUrl
+  const store = new ContentStore(":memory:");
+  let calls = 0;
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    apiKey: "k",
+    onFlag: () => {},
+    fetchImpl: (async () => {
+      calls++;
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch,
+  });
+  worker.maybeEnqueue(nftEvent({ launcherId: "V2", nftId: "nftv2", mediaKind: "video" }));
+  await flushMicrotasks();
+  expect(calls).toBe(0);
   store.close();
 });
