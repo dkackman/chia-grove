@@ -12,6 +12,10 @@ export type { StoredVerdict } from "./store.js";
 
 const OK: Verdict = { disposition: "ok" };
 
+// MintGarden serves a static poster for video NFTs at its assets CDN, keyed by
+// content hash (the on-chain `data.thumbnail_uri`); the archive CDN does not.
+const THUMBNAIL_BASE_URL = "https://assets.mainnet.mintgarden.io/thumbnails";
+
 interface FetchResult {
   verdict: Verdict;
   contentHash?: string;
@@ -176,12 +180,13 @@ export class ContentFilter {
         // `existing.url` may already be the Archive URL, so don't clobber the real
         // fallback with itself — preserve the one captured on the first upgrade.
         const fallbackUrl = existing.url === archiveUrl ? existing.fallbackUrl : existing.url;
-        // Archive CDN also serves static thumbnail images for video NFTs. The
-        // gallery uses these as posters (/thumbnail?nft=) rather than trying to
-        // seek a video frame, which often gives a blank result without autoplay.
+        // MintGarden's assets CDN serves a static poster for video NFTs, keyed by
+        // content hash (the 512px webp profile). The gallery uses it as the poster
+        // (/thumbnail?nft=) rather than seeking a video frame, which often gives a
+        // blank result without autoplay.
         const thumbnailUrl =
           existing.kind === "video"
-            ? `${this.archiveBaseUrl}/thumbnails/${contentHash}`
+            ? `${THUMBNAIL_BASE_URL}/${contentHash}_512.webp`
             : existing.thumbnailUrl;
         this.media.set(launcherId, {
           url: archiveUrl,

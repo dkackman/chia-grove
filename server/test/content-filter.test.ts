@@ -790,3 +790,30 @@ test("SafeSearch treats Archive network error as not-ready and retries to exhaus
   expect(visionCalls).toBe(0);
   store.close();
 });
+
+// ── video thumbnail URL ──────────────────────────────────────────────────────
+// MintGarden serves a static poster for video NFTs at its assets CDN, keyed by
+// content hash: https://assets.mainnet.mintgarden.io/thumbnails/{hash}_512.webp
+// (the on-chain `data.thumbnail_uri`). The archive CDN does NOT serve thumbnails.
+
+test("enrich sets the MintGarden thumbnail URL for a video NFT with a data_hash", async () => {
+  const media = new MediaIndex(10);
+  media.set("cd".repeat(32), { url: "https://ipfs.mintgarden.io/ipfs/clip.mp4", kind: "video" });
+  const filter = new ContentFilter(media, {
+    fetchImpl: async () => okJson({ data: { data_hash: CONTENT_HASH } }),
+  });
+  await filter.enrich([nftEvent({ mediaKind: "video" })]);
+  expect(media.get("cd".repeat(32))?.thumbnailUrl).toBe(
+    `https://assets.mainnet.mintgarden.io/thumbnails/${CONTENT_HASH}_512.webp`
+  );
+});
+
+test("enrich leaves thumbnailUrl unset for an image NFT", async () => {
+  const media = new MediaIndex(10);
+  media.set("cd".repeat(32), { url: "https://ipfs.mintgarden.io/ipfs/a.png", kind: "image" });
+  const filter = new ContentFilter(media, {
+    fetchImpl: async () => okJson({ data: { data_hash: CONTENT_HASH } }),
+  });
+  await filter.enrich([nftEvent()]);
+  expect(media.get("cd".repeat(32))?.thumbnailUrl).toBeUndefined();
+});
