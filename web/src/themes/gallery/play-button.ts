@@ -13,6 +13,9 @@ export class PlayButton$ {
   private el: HTMLButtonElement;
   private video: HTMLVideoElement | null = null;
   private onState = (): void => this.syncGlyph();
+  // Called once on the very first play click; used to swap the static thumbnail
+  // texture for a live VideoTexture before the video starts playing.
+  private onFirstPlay?: () => void;
 
   constructor() {
     this.el = document.createElement("button");
@@ -24,10 +27,11 @@ export class PlayButton$ {
   }
 
   /** Bind a focused piece's <video> and reveal the button in its paused state. */
-  show(video: HTMLVideoElement): void {
+  show(video: HTMLVideoElement, onFirstPlay?: () => void): void {
     if (this.video === video) return;
     this.unbind();
     this.video = video;
+    this.onFirstPlay = onFirstPlay;
     video.addEventListener("play", this.onState);
     video.addEventListener("pause", this.onState);
     video.addEventListener("ended", this.onState);
@@ -51,12 +55,16 @@ export class PlayButton$ {
     v.removeEventListener("ended", this.onState);
     stopPlayback(v);
     this.video = null;
+    this.onFirstPlay = undefined;
   }
 
   private toggle(): void {
     const v = this.video;
     if (!v) return;
     if (v.paused) {
+      // Swap static thumbnail texture → live VideoTexture on the first play click
+      this.onFirstPlay?.();
+      this.onFirstPlay = undefined;
       const p = startPlayback(v);
       // a rejected gesture (autoplay policy) leaves the video paused — keep ▶
       if (p && typeof p.then === "function") p.then(undefined, () => this.syncGlyph());

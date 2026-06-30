@@ -4,7 +4,7 @@ import type { SproutEvent } from "@grove/shared";
 import type { XZ } from "../shared/util.js";
 import { cellLocal, chunkElevation } from "./layout.js";
 import { loadArtTexture } from "../gallery/media.js";
-import { resolveMedia } from "../../ui/media.js";
+import { resolveMedia, thumbnailSrc } from "../../ui/media.js";
 import { sensitivePlaceholderTexture } from "../shared/textures.js";
 import { LoadPool } from "../shared/load-pool.js";
 
@@ -169,6 +169,7 @@ export class Paintings {
     if (media.render === "art") {
       const src = media.src;
       const kind = media.kind;
+      const poster = thumbnailSrc(event) ?? undefined;
       this.loads.submit({
         // by the time a queued load reaches the front the slot may have been
         // recycled (replay churns hundreds of NFTs through it) — skip the fetch
@@ -187,7 +188,8 @@ export class Paintings {
               mat.color.set(0xffffff);
               mat.needsUpdate = true;
             },
-            done
+            done,
+            poster
           );
         },
       });

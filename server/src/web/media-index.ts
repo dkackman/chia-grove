@@ -9,6 +9,10 @@ export interface MediaEntry {
   // doesn't make the art unrenderable (which would trip the client's
   // image→video kind-escalation and show a still image as a black <video>).
   fallbackUrl?: string;
+  // Static thumbnail image served by /thumbnail?nft= for video NFTs. The gallery
+  // loads this as the poster instead of trying to decode a video frame, avoiding
+  // a blank wall before the user clicks play.
+  thumbnailUrl?: string;
 }
 
 /**

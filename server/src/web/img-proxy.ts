@@ -311,4 +311,64 @@ export function registerImageProxy(
     upstream.pipe(capped);
     return reply.send(capped);
   });
+
+  const THUMB_MAX_BYTES = 4 * 1024 * 1024; // 4 MB ceiling for thumbnail images
+
+  app.get("/thumbnail", async (request, reply) => {
+    if (rateLimited(request.ip)) return reply.code(429).send("rate limited");
+
+    const launcherId = (request.query as { nft?: string }).nft;
+    const entry = launcherId ? media.get(launcherId) : undefined;
+    if (!entry?.thumbnailUrl) return reply.code(404).send("no thumbnail");
+
+    const target = validateProxyTarget(entry.thumbnailUrl);
+    if (!target) return reply.code(400).send("disallowed thumbnail url");
+
+    if (inflight >= MAX_INFLIGHT) return reply.code(503).send("proxy busy");
+
+    inflight++;
+    let released = false;
+    const release = (): void => {
+      if (!released) {
+        released = true;
+        inflight--;
+      }
+    };
+
+    let upstream: IncomingMessage | null = null;
+    try {
+      upstream = await fetchUpstream(target, undefined);
+    } catch {
+      release();
+      return reply.code(504).send("upstream fetch failed");
+    }
+
+    if (!upstream || (upstream.statusCode ?? 0) >= 400) {
+      upstream?.resume();
+      release();
+      return reply.code(502).send("upstream unavailable");
+    }
+
+    const declared = Number(upstream.headers["content-length"]);
+    if (Number.isFinite(declared) && declared > THUMB_MAX_BYTES) {
+      upstream.destroy();
+      release();
+      return reply.code(502).send("upstream too large");
+    }
+
+    const status = upstream.statusCode ?? 502;
+    reply.code(status);
+    reply.header("access-control-allow-origin", "*");
+    if (status === 200) reply.header("cache-control", "public, max-age=86400");
+    reply.header("content-type", safeContentType(upstream.headers["content-type"]));
+    reply.header("x-content-type-options", "nosniff");
+    reply.header("content-security-policy", "sandbox; default-src 'none'");
+
+    const capped = byteCap(THUMB_MAX_BYTES);
+    capped.on("error", () => upstream!.destroy());
+    upstream.on("error", () => capped.destroy());
+    capped.on("close", release);
+    upstream.pipe(capped);
+    return reply.send(capped);
+  });
 }

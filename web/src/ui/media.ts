@@ -44,6 +44,20 @@ export type MediaDisposition =
   | { render: "placeholder" }
   | { render: "none" };
 
+/**
+ * The /thumbnail?nft= URL for a video NFT's static poster image, or null when
+ * not applicable. The server only populates /thumbnail for video NFTs whose
+ * content hash was resolved via MintGarden; a 404 from /thumbnail means the
+ * archive doesn't have a thumbnail yet (caller should fall back gracefully).
+ */
+export function thumbnailSrc(event: SproutEvent): string | null {
+  if (event.mediaFilter === "blocked") return null;
+  if (event.mediaKind !== "video") return null;
+  if (event.dataUri) return null; // demo data-URI events have no server-side thumbnail
+  if (event.launcherId) return `/thumbnail?nft=${event.launcherId}`;
+  return null;
+}
+
 export function resolveMedia(event: SproutEvent): MediaDisposition {
   if (event.mediaFilter === "blocked") return { render: "placeholder" };
   const src = mediaSrc(event);

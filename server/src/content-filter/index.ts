@@ -176,7 +176,19 @@ export class ContentFilter {
         // `existing.url` may already be the Archive URL, so don't clobber the real
         // fallback with itself — preserve the one captured on the first upgrade.
         const fallbackUrl = existing.url === archiveUrl ? existing.fallbackUrl : existing.url;
-        this.media.set(launcherId, { url: archiveUrl, kind: existing.kind, fallbackUrl });
+        // Archive CDN also serves static thumbnail images for video NFTs. The
+        // gallery uses these as posters (/thumbnail?nft=) rather than trying to
+        // seek a video frame, which often gives a blank result without autoplay.
+        const thumbnailUrl =
+          existing.kind === "video"
+            ? `${this.archiveBaseUrl}/thumbnails/${contentHash}`
+            : existing.thumbnailUrl;
+        this.media.set(launcherId, {
+          url: archiveUrl,
+          kind: existing.kind,
+          fallbackUrl,
+          thumbnailUrl,
+        });
       }
     }
 
