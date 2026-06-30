@@ -1,4 +1,8 @@
 import { expect, test } from "vitest";
+import { DatabaseSync } from "node:sqlite";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { ContentStore } from "../src/content-filter/store.js";
 
 test("putCheap then get round-trips disposition, safesearch not yet checked", () => {
@@ -51,4 +55,22 @@ test("getSafeSearchByContentHash ignores rows that are only cheap-checked", () =
   expect(store.getSafeSearchByContentHash(HASH)).toBeUndefined();
   expect(store.getSafeSearchByContentHash("ef".repeat(32))).toBeUndefined();
   store.close();
+});
+
+test("content_hash is indexed so the dedup lookup is not a full table scan", () => {
+  // open the produced db file with a fresh connection to inspect its real schema
+  const path = join(mkdtempSync(join(tmpdir(), "cstore-")), "c.sqlite");
+  new ContentStore(path).close();
+  const db = new DatabaseSync(path);
+  try {
+    const indexes = db.prepare("PRAGMA index_list(nft)").all() as Array<{ name: string }>;
+    const indexedColumns = indexes.flatMap((ix) =>
+      (db.prepare(`PRAGMA index_info('${ix.name}')`).all() as Array<{ name: string }>).map(
+        (c) => c.name
+      )
+    );
+    expect(indexedColumns).toContain("content_hash");
+  } finally {
+    db.close();
+  }
 });
