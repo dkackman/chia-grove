@@ -8,9 +8,11 @@ curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmo
 curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
 apt-get update && apt-get install -y caddy
 
-# app user + directory
+# app user + directories
 useradd --system --create-home --shell /bin/bash grove
 mkdir -p /opt/chia-grove && chown grove:grove /opt/chia-grove
+# persistent data dir (survives deploys — content filter DB lives here)
+mkdir -p /var/lib/chia-grove && chown grove:grove /var/lib/chia-grove
 
 # let the deploy script restart the service without a password prompt
 echo 'grove ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart chia-grove' > /etc/sudoers.d/chia-grove
