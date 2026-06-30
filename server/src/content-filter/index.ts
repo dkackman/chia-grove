@@ -171,10 +171,12 @@ export class ContentFilter {
     if (contentHash && launcherId && verdict.disposition !== "blocked") {
       const existing = this.media.get(launcherId);
       if (existing) {
-        this.media.set(launcherId, {
-          url: `${this.archiveBaseUrl}/content/${contentHash}`,
-          kind: existing.kind,
-        });
+        const archiveUrl = `${this.archiveBaseUrl}/content/${contentHash}`;
+        // Keep the original on-chain art URL as the proxy fallback. On a re-spend
+        // `existing.url` may already be the Archive URL, so don't clobber the real
+        // fallback with itself — preserve the one captured on the first upgrade.
+        const fallbackUrl = existing.url === archiveUrl ? existing.fallbackUrl : existing.url;
+        this.media.set(launcherId, { url: archiveUrl, kind: existing.kind, fallbackUrl });
       }
     }
 

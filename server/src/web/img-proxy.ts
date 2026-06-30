@@ -184,10 +184,17 @@ function byteCap(max: number): Transform {
  * also closes rebinding; manual redirect re-validation) and against open-proxy
  * HTML/script injection (media-only content-type + nosniff + sandbox CSP).
  */
+/** Resolves a target URL (following redirects) to a final upstream response. */
+export type UpstreamFetcher = (
+  url: URL,
+  range: string | undefined
+) => Promise<IncomingMessage | null>;
+
 export function registerImageProxy(
   app: FastifyInstance,
   media: MediaIndex,
-  failures: FailureCache = new FailureCache(FAIL_TTL_MS, FAIL_CAPACITY)
+  failures: FailureCache = new FailureCache(FAIL_TTL_MS, FAIL_CAPACITY),
+  fetchUpstream: UpstreamFetcher = fetchFollowingSafeRedirects
 ): void {
   const hits = new Map<string, number[]>(); // ip → recent request timestamps
   let inflight = 0;
@@ -226,8 +233,15 @@ export function registerImageProxy(
 
     if (inflight >= MAX_INFLIGHT) return reply.code(503).send("proxy busy");
 
-    const target = validateProxyTarget(entry.url);
-    if (!target) return reply.code(400).send("disallowed nft url");
+    // Try the primary URL, then any fallback (the original on-chain art URL kept
+    // when ContentFilter upgrades `url` to the Archive CDN). A non-2xx response —
+    // e.g. an intermittent Archive 404 — moves on to the next candidate so the
+    // client gets real bytes instead of an error body it would mis-render.
+    const candidates = [entry.url, entry.fallbackUrl]
+      .filter((u): u is string => typeof u === "string")
+      .map(validateProxyTarget)
+      .filter((u): u is URL => u !== null);
+    if (candidates.length === 0) return reply.code(400).send("disallowed nft url");
 
     inflight++;
     let released = false;
@@ -238,18 +252,30 @@ export function registerImageProxy(
       }
     };
 
-    let upstream: IncomingMessage | null;
-    try {
-      upstream = await fetchFollowingSafeRedirects(target, request.headers.range);
-    } catch {
-      release();
-      failures.mark(launcherId!);
-      return reply.code(504).send("upstream fetch failed");
+    let upstream: IncomingMessage | null = null;
+    let sawError = false;
+    for (const target of candidates) {
+      let res: IncomingMessage | null;
+      try {
+        res = await fetchUpstream(target, request.headers.range);
+      } catch {
+        sawError = true;
+        continue;
+      }
+      if (!res) continue;
+      if ((res.statusCode ?? 0) >= 400) {
+        res.resume(); // drain and release the socket before trying the fallback
+        continue;
+      }
+      upstream = res;
+      break;
     }
     if (!upstream) {
       release();
       failures.mark(launcherId!);
-      return reply.code(502).send("upstream unavailable");
+      return sawError
+        ? reply.code(504).send("upstream fetch failed")
+        : reply.code(502).send("upstream unavailable");
     }
 
     // reject obviously-oversized bodies before streaming a single byte

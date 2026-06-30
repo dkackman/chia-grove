@@ -1,4 +1,6 @@
 import { expect, test } from "vitest";
+import { PassThrough } from "node:stream";
+import type { IncomingMessage } from "node:http";
 import fastify from "fastify";
 import pino from "pino";
 import {
@@ -163,5 +165,64 @@ test("marks an nft as failed after its upstream fetch fails", async () => {
   const res = await app.inject({ method: "GET", url: "/img?nft=fail1" });
   expect(res.statusCode).toBe(504);
   expect(failures.has("fail1")).toBe(true); // future requests will short-circuit
+  await app.close();
+});
+
+// Fallback path: when the Archive CDN URL the ContentFilter stamps in is
+// intermittently unreachable (404), the proxy must serve the original IPFS URL
+// instead of a non-image error body — otherwise the browser <img> errors and the
+// detail card escalates the kind, rendering a still PNG as a black <video>.
+// A PassThrough stands in for an http(s) IncomingMessage (it streams + exposes
+// statusCode/headers), so no real network/SSRF-blocked host is involved.
+
+function fakeUpstream(status: number, contentType: string, body = "x"): IncomingMessage {
+  const s = new PassThrough() as unknown as IncomingMessage & PassThrough;
+  s.statusCode = status;
+  s.headers = { "content-type": contentType };
+  process.nextTick(() => s.end(body));
+  return s;
+}
+
+test("falls back to the original url when the primary (Archive) 404s", async () => {
+  const media = new MediaIndex(10);
+  media.set("abc", {
+    url: "https://archive.test/content/h",
+    kind: "image",
+    fallbackUrl: "https://ipfs.test/41.png",
+  });
+  const calls: string[] = [];
+  const fetcher = async (url: URL): Promise<IncomingMessage | null> => {
+    calls.push(url.href);
+    return url.href.includes("archive.test")
+      ? fakeUpstream(404, "application/json", "{}")
+      : fakeUpstream(200, "image/png", "PNGDATA");
+  };
+  const app = fastify();
+  registerImageProxy(app, media, new FailureCache(60_000, 10), fetcher);
+  const res = await app.inject({ method: "GET", url: "/img?nft=abc" });
+  expect(res.statusCode).toBe(200);
+  expect(res.headers["content-type"]).toBe("image/png");
+  expect(res.body).toBe("PNGDATA");
+  expect(calls).toEqual(["https://archive.test/content/h", "https://ipfs.test/41.png"]);
+  await app.close();
+});
+
+test("does not fetch the fallback when the primary succeeds", async () => {
+  const media = new MediaIndex(10);
+  media.set("ok1", {
+    url: "https://archive.test/content/h",
+    kind: "image",
+    fallbackUrl: "https://ipfs.test/41.png",
+  });
+  const calls: string[] = [];
+  const fetcher = async (url: URL): Promise<IncomingMessage | null> => {
+    calls.push(url.href);
+    return fakeUpstream(200, "image/png", "PNGDATA");
+  };
+  const app = fastify();
+  registerImageProxy(app, media, new FailureCache(60_000, 10), fetcher);
+  const res = await app.inject({ method: "GET", url: "/img?nft=ok1" });
+  expect(res.statusCode).toBe(200);
+  expect(calls).toEqual(["https://archive.test/content/h"]); // fallback untouched
   await app.close();
 });
