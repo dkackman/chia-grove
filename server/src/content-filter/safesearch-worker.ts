@@ -1,7 +1,7 @@
 import type { ContentFlagEvent, SproutEvent } from "@grove/shared";
 import type { MediaIndex } from "../web/media-index.js";
 import type { ContentStore } from "./store.js";
-import { querySafeSearch } from "./signals/safesearch.js";
+import { querySafeSearch, adultIsSensitive, type SafeSearchResult } from "./signals/safesearch.js";
 import { log } from "../logger.js";
 
 export interface SafeSearchWorkerOpts {
@@ -113,11 +113,28 @@ export class SafeSearchWorker {
     this.queued.add(launcherId);
     // run() is not gated: its Archive-readiness wait is cheap polling that must
     // not occupy a Vision slot. Only the paid Vision call inside run() is gated.
-    void this.run(launcherId, imageUri).finally(() => this.queued.delete(launcherId));
+    void this.run(launcherId, imageUri, stored?.contentHash).finally(() =>
+      this.queued.delete(launcherId)
+    );
   }
 
-  private async run(launcherId: string, imageUri: string): Promise<void> {
+  private async run(launcherId: string, imageUri: string, contentHash?: string): Promise<void> {
     try {
+      // Distinct NFTs can share the same bytes. If another NFT with this content
+      // hash was already SafeSearch-checked, reuse that verdict instead of paying
+      // for a second identical Vision lookup.
+      if (contentHash) {
+        const prior = this.opts.store.getSafeSearchByContentHash(contentHash);
+        if (prior) {
+          this.persistVerdict(
+            launcherId,
+            imageUri,
+            { sensitive: adultIsSensitive(prior.adult), adult: prior.adult, raw: prior.raw },
+            "reused"
+          );
+          return;
+        }
+      }
       if (imageUri.startsWith(this.archiveBaseUrl)) {
         await this.waitForArchive(launcherId);
       }
@@ -128,20 +145,7 @@ export class SafeSearchWorker {
           timeoutMs: this.timeoutMs,
         })
       );
-      this.opts.store.putSafeSearch(launcherId, result);
-      // on success, clear any prior failure suppression for this launcher
-      this.failedUntil.delete(launcherId);
-      log.info(
-        { launcherId, imageUri, verdict: result.sensitive ? "sensitive" : "ok" },
-        "safesearch: verdict"
-      );
-      if (result.sensitive) {
-        this.opts.onFlag({
-          type: "content-flag",
-          launcherId,
-          mediaFilter: "sensitive",
-        });
-      }
+      this.persistVerdict(launcherId, imageUri, result, "vision");
     } catch (err) {
       log.warn(
         { launcherId, imageUri, err: err instanceof Error ? err.message : String(err) },
@@ -153,6 +157,24 @@ export class SafeSearchWorker {
         const oldest = this.failedUntil.keys().next().value;
         if (oldest !== undefined) this.failedUntil.delete(oldest);
       }
+    }
+  }
+
+  /** Persist a SafeSearch verdict, clear failure suppression, and flag if sensitive. */
+  private persistVerdict(
+    launcherId: string,
+    imageUri: string,
+    result: SafeSearchResult,
+    source: "vision" | "reused"
+  ): void {
+    this.opts.store.putSafeSearch(launcherId, result);
+    this.failedUntil.delete(launcherId);
+    log.info(
+      { launcherId, imageUri, source, verdict: result.sensitive ? "sensitive" : "ok" },
+      "safesearch: verdict"
+    );
+    if (result.sensitive) {
+      this.opts.onFlag({ type: "content-flag", launcherId, mediaFilter: "sensitive" });
     }
   }
 

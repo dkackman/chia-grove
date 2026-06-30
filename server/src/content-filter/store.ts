@@ -112,6 +112,30 @@ export class ContentStore {
     return { disposition, safesearchChecked: true };
   }
 
+  /**
+   * The most recent SafeSearch result recorded for any NFT sharing this content
+   * hash, or undefined if none has been SafeSearch-checked yet. Lets a new NFT
+   * with identical bytes reuse the verdict instead of paying for a second lookup.
+   */
+  getSafeSearchByContentHash(
+    contentHash: string
+  ): { adult: string; raw: unknown } | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT safesearch_adult, safesearch_raw_json FROM nft
+         WHERE content_hash = ? AND safesearch_checked_at IS NOT NULL
+         ORDER BY safesearch_checked_at DESC LIMIT 1`
+      )
+      .get(contentHash) as
+      | { safesearch_adult: string | null; safesearch_raw_json: string | null }
+      | undefined;
+    if (!row) return undefined;
+    return {
+      adult: row.safesearch_adult ?? "UNKNOWN",
+      raw: row.safesearch_raw_json ? JSON.parse(row.safesearch_raw_json) : null,
+    };
+  }
+
   close(): void {
     this.db.close();
   }

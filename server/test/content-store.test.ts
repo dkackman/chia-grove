@@ -34,3 +34,21 @@ test("putSafeSearch ok marks checked without changing disposition", () => {
   expect(updated.safesearchChecked).toBe(true);
   store.close();
 });
+
+test("getSafeSearchByContentHash returns a prior checked verdict for the same hash", () => {
+  const store = new ContentStore(":memory:");
+  const HASH = "ab".repeat(32);
+  store.putCheap("L1", "nft1", { disposition: "ok" }, HASH);
+  store.putSafeSearch("L1", { sensitive: true, adult: "LIKELY", raw: { adult: "LIKELY" } });
+  expect(store.getSafeSearchByContentHash(HASH)).toEqual({ adult: "LIKELY", raw: { adult: "LIKELY" } });
+  store.close();
+});
+
+test("getSafeSearchByContentHash ignores rows that are only cheap-checked", () => {
+  const store = new ContentStore(":memory:");
+  const HASH = "cd".repeat(32);
+  store.putCheap("L1", "nft1", { disposition: "ok" }, HASH); // no SafeSearch yet
+  expect(store.getSafeSearchByContentHash(HASH)).toBeUndefined();
+  expect(store.getSafeSearchByContentHash("ef".repeat(32))).toBeUndefined();
+  store.close();
+});

@@ -302,3 +302,70 @@ test("a video NFT with no thumbnail is skipped (no Vision call)", async () => {
   expect(calls).toBe(0);
   store.close();
 });
+
+// ── content-hash dedup: reuse a prior verdict for identical bytes ─────────────
+// Distinct NFTs (different launcherIds) can share the same on-chain data. Once
+// one is SafeSearch-checked, others with the same content hash reuse that verdict
+// instead of burning a second paid Vision call.
+
+const HASH = "ab".repeat(32);
+const seededStore = (sensitive: boolean): ContentStore => {
+  const store = new ContentStore(":memory:");
+  store.putCheap("Lsrc", "nftsrc", { disposition: "ok" }, HASH);
+  store.putSafeSearch("Lsrc", {
+    sensitive,
+    adult: sensitive ? "VERY_LIKELY" : "UNLIKELY",
+    raw: { adult: sensitive ? "VERY_LIKELY" : "UNLIKELY" },
+  });
+  store.putCheap("Ldup", "nftdup", { disposition: "ok" }, HASH); // same hash, not yet checked
+  return store;
+};
+
+test("reuses a prior sensitive verdict for another NFT with the same content hash", async () => {
+  const media = new MediaIndex(10);
+  media.set("Ldup", { url: "https://e/y.png", kind: "image" });
+  const store = seededStore(true);
+  const flags: ContentFlagEvent[] = [];
+  let visionCalls = 0;
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    apiKey: "k",
+    onFlag: (e) => flags.push(e),
+    fetchImpl: (async () => {
+      visionCalls++;
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch,
+  });
+  worker.maybeEnqueue(nftEvent({ launcherId: "Ldup", nftId: "nftdup" }));
+  await flushMicrotasks();
+  expect(visionCalls).toBe(0); // reused — no paid call
+  expect(store.get("Ldup")?.disposition).toBe("sensitive");
+  expect(store.get("Ldup")?.safesearchChecked).toBe(true);
+  expect(flags).toEqual([{ type: "content-flag", launcherId: "Ldup", mediaFilter: "sensitive" }]);
+  store.close();
+});
+
+test("reuses a prior ok verdict for the same content hash and still skips Vision", async () => {
+  const media = new MediaIndex(10);
+  media.set("Ldup", { url: "https://e/y.png", kind: "image" });
+  const store = seededStore(false);
+  const flags: ContentFlagEvent[] = [];
+  let visionCalls = 0;
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    apiKey: "k",
+    onFlag: (e) => flags.push(e),
+    fetchImpl: (async () => {
+      visionCalls++;
+      return new Response("{}", { status: 200 });
+    }) as typeof fetch,
+  });
+  worker.maybeEnqueue(nftEvent({ launcherId: "Ldup", nftId: "nftdup" }));
+  await flushMicrotasks();
+  expect(visionCalls).toBe(0);
+  expect(store.get("Ldup")?.safesearchChecked).toBe(true);
+  expect(flags).toEqual([]);
+  store.close();
+});
