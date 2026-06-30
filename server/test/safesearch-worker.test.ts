@@ -120,3 +120,131 @@ test("ineligible events are skipped (non-mint, non-image, already-checked, no me
   expect(calls).toBe(0);
   store.close();
 });
+
+// ── concurrency decoupling ───────────────────────────────────────────────────
+// The Vision call is paid + rate-limited and must stay behind the gate; the
+// Archive readiness wait is cheap polling and must NOT occupy a Vision slot,
+// otherwise throughput collapses to concurrency / archiveWait.
+
+const ARCHIVE = "https://archive.mintgarden.io";
+const visionOk = (): Response =>
+  new Response(JSON.stringify({ responses: [{ safeSearchAnnotation: { adult: "UNLIKELY" } }] }), {
+    status: 200,
+  });
+const archiveReady = (): Response =>
+  new Response(JSON.stringify({ assets: [{ role: "data", fetch_succeeded: true }] }), {
+    status: 200,
+  });
+
+test("archive readiness waits run concurrently instead of serialized by the Vision gate", async () => {
+  const N = 5;
+  const media = new MediaIndex(20);
+  const store = new ContentStore(":memory:");
+  for (let i = 0; i < N; i++) media.set(`L${i}`, { url: `${ARCHIVE}/content/${i}`, kind: "image" });
+  let archiveActive = 0;
+  let archivePeak = 0;
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    apiKey: "k",
+    onFlag: () => {},
+    archiveBaseUrl: ARCHIVE,
+    archiveCheckAttempts: 1,
+    archiveCheckDelayMs: 0,
+    concurrency: 2,
+    fetchImpl: (async (url: string) => {
+      const s = String(url);
+      if (s.includes("images:annotate")) return visionOk();
+      if (s.includes(`${ARCHIVE}/nfts/`)) {
+        archiveActive++;
+        archivePeak = Math.max(archivePeak, archiveActive);
+        await held;
+        archiveActive--;
+        return archiveReady();
+      }
+      return new Response("{}", { status: 404 });
+    }) as typeof fetch,
+  });
+
+  for (let i = 0; i < N; i++) worker.maybeEnqueue(nftEvent({ launcherId: `L${i}`, nftId: `nft${i}` }));
+  await flushMicrotasks();
+  // all N poll the Archive at once — the wait is no longer capped at concurrency=2
+  expect(archivePeak).toBe(N);
+  release();
+  await flushMicrotasks();
+  store.close();
+});
+
+test("the Vision call stays bounded by concurrency even when many waits resolve at once", async () => {
+  const N = 5;
+  const concurrency = 2;
+  const media = new MediaIndex(20);
+  const store = new ContentStore(":memory:");
+  for (let i = 0; i < N; i++) media.set(`L${i}`, { url: `https://e/${i}.png`, kind: "image" });
+  let visionActive = 0;
+  let visionPeak = 0;
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    apiKey: "k",
+    onFlag: () => {},
+    concurrency,
+    fetchImpl: (async (url: string) => {
+      if (String(url).includes("images:annotate")) {
+        visionActive++;
+        visionPeak = Math.max(visionPeak, visionActive);
+        await held;
+        visionActive--;
+        return visionOk();
+      }
+      return new Response("{}", { status: 404 });
+    }) as typeof fetch,
+  });
+  for (let i = 0; i < N; i++) worker.maybeEnqueue(nftEvent({ launcherId: `L${i}`, nftId: `nft${i}` }));
+  await flushMicrotasks();
+  expect(visionPeak).toBe(concurrency);
+  release();
+  await flushMicrotasks();
+  store.close();
+});
+
+test("maybeEnqueue drops work beyond maxPending so the in-flight set stays bounded", async () => {
+  const media = new MediaIndex(20);
+  const store = new ContentStore(":memory:");
+  for (let i = 0; i < 3; i++) media.set(`L${i}`, { url: `${ARCHIVE}/content/${i}`, kind: "image" });
+  const polled = new Set<string>();
+  let release!: () => void;
+  const held = new Promise<void>((r) => (release = r));
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    apiKey: "k",
+    onFlag: () => {},
+    archiveBaseUrl: ARCHIVE,
+    archiveCheckAttempts: 1,
+    archiveCheckDelayMs: 0,
+    concurrency: 10, // high enough that only maxPending, not the gate, limits work
+    maxPending: 2,
+    fetchImpl: (async (url: string) => {
+      const s = String(url);
+      const m = s.match(/\/nfts\/(L\d+)/);
+      if (m) {
+        polled.add(m[1]);
+        await held;
+        return archiveReady();
+      }
+      if (s.includes("images:annotate")) return visionOk();
+      return new Response("{}", { status: 404 });
+    }) as typeof fetch,
+  });
+  for (let i = 0; i < 3; i++) worker.maybeEnqueue(nftEvent({ launcherId: `L${i}`, nftId: `nft${i}` }));
+  await flushMicrotasks();
+  expect(polled.size).toBe(2); // third enqueue dropped by the cap
+  release();
+  await flushMicrotasks();
+  store.close();
+});

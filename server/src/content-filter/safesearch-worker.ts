@@ -11,7 +11,10 @@ export interface SafeSearchWorkerOpts {
   onFlag: (e: ContentFlagEvent) => void;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
+  /** Max concurrent Google Vision calls (the paid, rate-limited operation). */
   concurrency?: number;
+  /** Max in-flight launchers (waiting + Vision-checking); excess enqueues are dropped. */
+  maxPending?: number;
   /** How long a failed lookup is suppressed before another attempt. */
   failTtlMs?: number;
   now?: () => number;
@@ -26,18 +29,27 @@ export interface SafeSearchWorkerOpts {
 /**
  * Out-of-band SafeSearch path. `maybeEnqueue` is fire-and-forget: any image NFT
  * spend whose cheap verdict was `ok` and that hasn't yet been SafeSearch-checked
- * gets a single Vision lookup behind a bounded concurrency gate. Not limited to
- * mints — re-spends of previously-unseen NFTs are covered too. A `sensitive`
- * result is persisted and pushed to clients as a `content-flag`. Failures leave
- * the NFT permissive and are suppressed for `failTtlMs` so an outage doesn't
- * re-spend the paid quota every block.
+ * gets a single Vision lookup. Not limited to mints — re-spends of
+ * previously-unseen NFTs are covered too. A `sensitive` result is persisted and
+ * pushed to clients as a `content-flag`. Failures leave the NFT permissive and
+ * are suppressed for `failTtlMs` so an outage doesn't re-spend the paid quota
+ * every block.
+ *
+ * Two limits, deliberately separate: the concurrency gate bounds only the paid,
+ * rate-limited Vision call, while the cheap Archive-readiness polling runs
+ * unbounded by the gate (it would otherwise occupy a Vision slot while merely
+ * sleeping, collapsing throughput to concurrency / archiveWait). `maxPending`
+ * caps total in-flight launchers — and therefore concurrent Archive polls — so a
+ * large mint drop can't grow the queue (or open sockets) without bound.
  */
 const FAILED_UNTIL_CAP = 10000;
+const DEFAULT_MAX_PENDING = 256;
 
 export class SafeSearchWorker {
   private readonly fetchImpl: typeof fetch;
   private readonly timeoutMs: number;
   private readonly concurrency: number;
+  private readonly maxPending: number;
   private readonly failTtlMs: number;
   private readonly now: () => number;
   private readonly archiveBaseUrl: string;
@@ -52,6 +64,7 @@ export class SafeSearchWorker {
     this.fetchImpl = opts.fetchImpl ?? fetch;
     this.timeoutMs = opts.timeoutMs ?? 8000;
     this.concurrency = opts.concurrency ?? 2;
+    this.maxPending = opts.maxPending ?? DEFAULT_MAX_PENDING;
     this.failTtlMs = opts.failTtlMs ?? 300_000;
     this.now = opts.now ?? Date.now;
     this.archiveBaseUrl = opts.archiveBaseUrl ?? "https://archive.mintgarden.io";
@@ -81,11 +94,14 @@ export class SafeSearchWorker {
     if (stored?.safesearchChecked) return;
     const until = this.failedUntil.get(launcherId);
     if (until !== undefined && this.now() < until) return;
+    // Bound total in-flight work. Dropped launchers are picked up on a later
+    // spend or after failedUntil lapses — acceptable for an out-of-band path.
+    if (this.queued.size >= this.maxPending) return;
 
     this.queued.add(launcherId);
-    void this.gate(() => this.run(launcherId, media.url)).finally(() =>
-      this.queued.delete(launcherId)
-    );
+    // run() is not gated: its Archive-readiness wait is cheap polling that must
+    // not occupy a Vision slot. Only the paid Vision call inside run() is gated.
+    void this.run(launcherId, media.url).finally(() => this.queued.delete(launcherId));
   }
 
   private async run(launcherId: string, imageUri: string): Promise<void> {
@@ -93,11 +109,13 @@ export class SafeSearchWorker {
       if (imageUri.startsWith(this.archiveBaseUrl)) {
         await this.waitForArchive(launcherId);
       }
-      const result = await querySafeSearch(imageUri, {
-        apiKey: this.opts.apiKey,
-        fetchImpl: this.fetchImpl,
-        timeoutMs: this.timeoutMs,
-      });
+      const result = await this.gate(() =>
+        querySafeSearch(imageUri, {
+          apiKey: this.opts.apiKey,
+          fetchImpl: this.fetchImpl,
+          timeoutMs: this.timeoutMs,
+        })
+      );
       this.opts.store.putSafeSearch(launcherId, result);
       // on success, clear any prior failure suppression for this launcher
       this.failedUntil.delete(launcherId);
@@ -126,10 +144,10 @@ export class SafeSearchWorker {
     }
   }
 
-  // Holds a concurrency-gate slot during inter-poll sleeps. With default settings
-  // (3 attempts, 2 s delay, concurrency 2) a not-yet-ingested NFT can occupy a slot
-  // for up to ~4 s of idle waiting. Self-healing: exhaustion releases the slot and
-  // sets failedUntil, so the queue unblocks. Acceptable given SafeSearch is out-of-band.
+  // Runs outside the Vision gate, so a not-yet-ingested NFT sleeps between polls
+  // without occupying a paid-call slot; many waits proceed in parallel (capped by
+  // maxPending, which bounds concurrent Archive polls too). On exhaustion it
+  // throws, and run()'s catch sets failedUntil so the next attempt backs off.
   private async waitForArchive(launcherId: string): Promise<void> {
     for (let attempt = 0; attempt < this.archiveCheckAttempts; attempt++) {
       if (attempt > 0 && this.archiveCheckDelayMs > 0) {
