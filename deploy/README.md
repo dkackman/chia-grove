@@ -63,6 +63,29 @@ The droplet stays on the manual SSH/rsync model; CI just runs the same script.
 
 5. **Delete the local private key** once stored as a secret (`rm deploy_key`).
 
+6. **Create the persistent data directory** (one-time, on the droplet — survives deploys):
+
+   ```bash
+   sudo mkdir -p /var/lib/chia-grove
+   sudo chown grove:grove /var/lib/chia-grove
+   ```
+
+7. **Set secret environment variables** via a systemd drop-in so they are never stored in the repo:
+
+   ```bash
+   sudo systemctl edit chia-grove
+   ```
+
+   Add:
+
+   ```ini
+   [Service]
+   Environment=AXIOM_TOKEN=your-token-here
+   Environment=GOOGLE_VISION_API_KEY=your-key-here
+   ```
+
+   Then reload: `sudo systemctl daemon-reload`
+
 The firewall already permits this: `ufw allow OpenSSH` opens port 22 to any
 source, so the runner's dynamic IPs can connect. Revoke access any time by
 removing the key's line from `/home/grove/.ssh/authorized_keys`. The `grove`

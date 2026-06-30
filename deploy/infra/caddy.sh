@@ -1,10 +1,16 @@
-# paste the repo's deploy/chia-grove.service:
-curl -fsSL https://raw.githubusercontent.com/dkackman/chia-grove/main/deploy/chia-grove.service \
-  -o /etc/systemd/system/chia-grove.service
+# systemd service (run from the repo root after cloning):
+cp deploy/chia-grove.service /etc/systemd/system/chia-grove.service
 systemctl daemon-reload && systemctl enable chia-grove
 
-# Caddy: replace the placeholder domain
-printf 'chia-grove.kackman.net {\n    reverse_proxy localhost:8080\n}\n' > /etc/caddy/Caddyfile
+# Set secrets via drop-in (never commit these):
+#   sudo systemctl edit chia-grove
+# Add:
+#   [Service]
+#   Environment=AXIOM_TOKEN=your-token-here
+#   Environment=GOOGLE_VISION_API_KEY=your-key-here
+
+# Caddy: install the repo's Caddyfile (includes CSP headers + kackman.net redirect)
+cp deploy/Caddyfile /etc/caddy/Caddyfile
 systemctl reload caddy
 
 

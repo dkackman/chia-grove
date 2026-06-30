@@ -12,15 +12,17 @@ Restart=always
 RestartSec=5
 Environment=PORT=8080
 Environment=NODE_ENV=production
+Environment=AXIOM_DATASET=chia-grove
+Environment=LOG_LEVEL=info
+Environment=CONTENT_DB_PATH=/var/lib/chia-grove/content-filter.sqlite
 
-# Axiom logging: set AXIOM_TOKEN and AXIOM_DATASET via a systemd drop-in so
-# secrets never appear in this file. On the droplet:
+# Secrets must NOT appear in this file. Set them via a systemd drop-in so they
+# are never committed to the repo. On the droplet run:
 #   sudo systemctl edit chia-grove
 # Then add:
 #   [Service]
 #   Environment=AXIOM_TOKEN=your-token-here
-#   Environment=AXIOM_DATASET=chia-grove
-#   Environment=LOG_LEVEL=info
+#   Environment=GOOGLE_VISION_API_KEY=your-key-here
 
 [Install]
 WantedBy=multi-user.target
