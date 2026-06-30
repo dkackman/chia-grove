@@ -226,3 +226,49 @@ test("does not fetch the fallback when the primary succeeds", async () => {
   expect(calls).toEqual(["https://archive.test/content/h"]); // fallback untouched
   await app.close();
 });
+
+// The fallback loop must only retry on availability failures (404 / 5xx) that a
+// fallback URL could fix. A 416 Range Not Satisfiable is a valid answer to a
+// range request, not a dead upstream — it must reach the client unchanged and
+// must not poison the negative cache (which would 504 even plain requests).
+
+test("passes a 416 Range Not Satisfiable through to the client instead of masking it as 502", async () => {
+  const media = new MediaIndex(10);
+  media.set("rng", { url: "https://cdn.test/clip.mp4", kind: "video" });
+  const failures = new FailureCache(60_000, 10);
+  const fetcher = async (): Promise<IncomingMessage | null> =>
+    fakeUpstream(416, "text/plain", "range not satisfiable");
+  const app = fastify();
+  registerImageProxy(app, media, failures, fetcher);
+  const res = await app.inject({
+    method: "GET",
+    url: "/img?nft=rng",
+    headers: { range: "bytes=999999999-" },
+  });
+  expect(res.statusCode).toBe(416); // forwarded, not synthesized into 502
+  expect(failures.has("rng")).toBe(false); // a range answer must not mark the nft failed
+  await app.close();
+});
+
+test("falls back to the original url when the primary 5xx-es", async () => {
+  const media = new MediaIndex(10);
+  media.set("svc", {
+    url: "https://archive.test/content/h",
+    kind: "image",
+    fallbackUrl: "https://ipfs.test/41.png",
+  });
+  const calls: string[] = [];
+  const fetcher = async (url: URL): Promise<IncomingMessage | null> => {
+    calls.push(url.href);
+    return url.href.includes("archive.test")
+      ? fakeUpstream(503, "text/plain", "busy")
+      : fakeUpstream(200, "image/png", "PNGDATA");
+  };
+  const app = fastify();
+  registerImageProxy(app, media, new FailureCache(60_000, 10), fetcher);
+  const res = await app.inject({ method: "GET", url: "/img?nft=svc" });
+  expect(res.statusCode).toBe(200);
+  expect(res.body).toBe("PNGDATA");
+  expect(calls).toEqual(["https://archive.test/content/h", "https://ipfs.test/41.png"]);
+  await app.close();
+});

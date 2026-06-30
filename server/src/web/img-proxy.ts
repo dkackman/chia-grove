@@ -263,7 +263,12 @@ export function registerImageProxy(
         continue;
       }
       if (!res) continue;
-      if ((res.statusCode ?? 0) >= 400) {
+      // Only retry on availability failures a fallback URL could fix (a missing
+      // Archive object → 404, or a transient 5xx). Other statuses — including
+      // 416 Range Not Satisfiable, a valid answer to a range request — pass
+      // through to the client unchanged rather than being masked as 502.
+      const code = res.statusCode ?? 0;
+      if (code === 404 || code >= 500) {
         res.resume(); // drain and release the socket before trying the fallback
         continue;
       }
