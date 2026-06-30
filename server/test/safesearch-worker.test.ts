@@ -168,7 +168,8 @@ test("archive readiness waits run concurrently instead of serialized by the Visi
     }) as typeof fetch,
   });
 
-  for (let i = 0; i < N; i++) worker.maybeEnqueue(nftEvent({ launcherId: `L${i}`, nftId: `nft${i}` }));
+  for (let i = 0; i < N; i++)
+    worker.maybeEnqueue(nftEvent({ launcherId: `L${i}`, nftId: `nft${i}` }));
   await flushMicrotasks();
   // all N poll the Archive at once — the wait is no longer capped at concurrency=2
   expect(archivePeak).toBe(N);
@@ -204,7 +205,8 @@ test("the Vision call stays bounded by concurrency even when many waits resolve 
       return new Response("{}", { status: 404 });
     }) as typeof fetch,
   });
-  for (let i = 0; i < N; i++) worker.maybeEnqueue(nftEvent({ launcherId: `L${i}`, nftId: `nft${i}` }));
+  for (let i = 0; i < N; i++)
+    worker.maybeEnqueue(nftEvent({ launcherId: `L${i}`, nftId: `nft${i}` }));
   await flushMicrotasks();
   expect(visionPeak).toBe(concurrency);
   release();
@@ -241,7 +243,8 @@ test("maybeEnqueue drops work beyond maxPending so the in-flight set stays bound
       return new Response("{}", { status: 404 });
     }) as typeof fetch,
   });
-  for (let i = 0; i < 3; i++) worker.maybeEnqueue(nftEvent({ launcherId: `L${i}`, nftId: `nft${i}` }));
+  for (let i = 0; i < 3; i++)
+    worker.maybeEnqueue(nftEvent({ launcherId: `L${i}`, nftId: `nft${i}` }));
   await flushMicrotasks();
   expect(polled.size).toBe(2); // third enqueue dropped by the cap
   release();

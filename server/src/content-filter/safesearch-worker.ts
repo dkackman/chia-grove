@@ -84,11 +84,7 @@ export class SafeSearchWorker {
     // for videos (Vision can't decode video frames). Best-effort — a video with
     // no resolved thumbnail, or an audio NFT, has nothing to classify, so skip.
     const imageUri =
-      media.kind === "image"
-        ? media.url
-        : media.kind === "video"
-          ? media.thumbnailUrl
-          : undefined;
+      media.kind === "image" ? media.url : media.kind === "video" ? media.thumbnailUrl : undefined;
     if (!imageUri) return;
     let stored;
     try {
