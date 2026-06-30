@@ -42,12 +42,6 @@ export class ContentStore {
     // Index the content-hash dedup lookup (getSafeSearchByContentHash); without
     // it that query full-scans a table that grows one row per NFT ever seen.
     this.db.exec("CREATE INDEX IF NOT EXISTS idx_nft_content_hash ON nft (content_hash);");
-    // Migration: drop obsolete signals_json column from pre-v5 databases.
-    try {
-      this.db.exec("ALTER TABLE nft DROP COLUMN signals_json");
-    } catch {
-      // Column doesn't exist in freshly-created databases; safe to ignore.
-    }
   }
 
   get(launcherId: string): StoredVerdict | undefined {
