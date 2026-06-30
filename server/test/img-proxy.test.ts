@@ -1,5 +1,8 @@
 import { expect, test } from "vitest";
+import { PassThrough } from "node:stream";
+import type { IncomingMessage } from "node:http";
 import fastify from "fastify";
+import pino from "pino";
 import {
   isPrivateAddress,
   registerImageProxy,
@@ -12,6 +15,8 @@ import { RingBuffer } from "../src/web/ring-buffer.js";
 import { MediaIndex } from "../src/web/media-index.js";
 import { FailureCache } from "../src/web/failure-cache.js";
 import type { GroveEvent } from "@grove/shared";
+
+const silent = pino({ level: "silent" });
 
 test("accepts public http(s) urls", () => {
   expect(validateProxyTarget("https://example.com/a.jpg")?.href).toBe("https://example.com/a.jpg");
@@ -107,7 +112,8 @@ test("safeContentType serves only media types, neutralizing html and svg", () =>
 test("GET /img with no nft param → 404", async () => {
   const app = await buildServer(
     new Hub(new RingBuffer<GroveEvent>(10), "test"),
-    new MediaIndex(10)
+    new MediaIndex(10),
+    silent
   );
   const res = await app.inject({ method: "GET", url: "/img" });
   expect(res.statusCode).toBe(404);
@@ -117,7 +123,8 @@ test("GET /img with no nft param → 404", async () => {
 test("GET /img?nft=deadbeef with no matching entry → 404", async () => {
   const app = await buildServer(
     new Hub(new RingBuffer<GroveEvent>(10), "test"),
-    new MediaIndex(10)
+    new MediaIndex(10),
+    silent
   );
   const res = await app.inject({ method: "GET", url: "/img?nft=deadbeef" });
   expect(res.statusCode).toBe(404);
@@ -127,7 +134,7 @@ test("GET /img?nft=deadbeef with no matching entry → 404", async () => {
 test("GET /img?nft=abc with a disallowed (loopback) URL → 400", async () => {
   const media = new MediaIndex(10);
   media.set("abc", { url: "http://127.0.0.1/x.png", kind: "image" });
-  const app = await buildServer(new Hub(new RingBuffer<GroveEvent>(10), "test"), media);
+  const app = await buildServer(new Hub(new RingBuffer<GroveEvent>(10), "test"), media, silent);
   const res = await app.inject({ method: "GET", url: "/img?nft=abc" });
   expect(res.statusCode).toBe(400);
   await app.close();
@@ -158,5 +165,110 @@ test("marks an nft as failed after its upstream fetch fails", async () => {
   const res = await app.inject({ method: "GET", url: "/img?nft=fail1" });
   expect(res.statusCode).toBe(504);
   expect(failures.has("fail1")).toBe(true); // future requests will short-circuit
+  await app.close();
+});
+
+// Fallback path: when the Archive CDN URL the ContentFilter stamps in is
+// intermittently unreachable (404), the proxy must serve the original IPFS URL
+// instead of a non-image error body — otherwise the browser <img> errors and the
+// detail card escalates the kind, rendering a still PNG as a black <video>.
+// A PassThrough stands in for an http(s) IncomingMessage (it streams + exposes
+// statusCode/headers), so no real network/SSRF-blocked host is involved.
+
+function fakeUpstream(status: number, contentType: string, body = "x"): IncomingMessage {
+  const s = new PassThrough() as unknown as IncomingMessage & PassThrough;
+  s.statusCode = status;
+  s.headers = { "content-type": contentType };
+  process.nextTick(() => s.end(body));
+  return s;
+}
+
+test("falls back to the original url when the primary (Archive) 404s", async () => {
+  const media = new MediaIndex(10);
+  media.set("abc", {
+    url: "https://archive.test/content/h",
+    kind: "image",
+    fallbackUrl: "https://ipfs.test/41.png",
+  });
+  const calls: string[] = [];
+  const fetcher = async (url: URL): Promise<IncomingMessage | null> => {
+    calls.push(url.href);
+    return url.href.includes("archive.test")
+      ? fakeUpstream(404, "application/json", "{}")
+      : fakeUpstream(200, "image/png", "PNGDATA");
+  };
+  const app = fastify();
+  registerImageProxy(app, media, new FailureCache(60_000, 10), fetcher);
+  const res = await app.inject({ method: "GET", url: "/img?nft=abc" });
+  expect(res.statusCode).toBe(200);
+  expect(res.headers["content-type"]).toBe("image/png");
+  expect(res.body).toBe("PNGDATA");
+  expect(calls).toEqual(["https://archive.test/content/h", "https://ipfs.test/41.png"]);
+  await app.close();
+});
+
+test("does not fetch the fallback when the primary succeeds", async () => {
+  const media = new MediaIndex(10);
+  media.set("ok1", {
+    url: "https://archive.test/content/h",
+    kind: "image",
+    fallbackUrl: "https://ipfs.test/41.png",
+  });
+  const calls: string[] = [];
+  const fetcher = async (url: URL): Promise<IncomingMessage | null> => {
+    calls.push(url.href);
+    return fakeUpstream(200, "image/png", "PNGDATA");
+  };
+  const app = fastify();
+  registerImageProxy(app, media, new FailureCache(60_000, 10), fetcher);
+  const res = await app.inject({ method: "GET", url: "/img?nft=ok1" });
+  expect(res.statusCode).toBe(200);
+  expect(calls).toEqual(["https://archive.test/content/h"]); // fallback untouched
+  await app.close();
+});
+
+// The fallback loop must only retry on availability failures (404 / 5xx) that a
+// fallback URL could fix. A 416 Range Not Satisfiable is a valid answer to a
+// range request, not a dead upstream — it must reach the client unchanged and
+// must not poison the negative cache (which would 504 even plain requests).
+
+test("passes a 416 Range Not Satisfiable through to the client instead of masking it as 502", async () => {
+  const media = new MediaIndex(10);
+  media.set("rng", { url: "https://cdn.test/clip.mp4", kind: "video" });
+  const failures = new FailureCache(60_000, 10);
+  const fetcher = async (): Promise<IncomingMessage | null> =>
+    fakeUpstream(416, "text/plain", "range not satisfiable");
+  const app = fastify();
+  registerImageProxy(app, media, failures, fetcher);
+  const res = await app.inject({
+    method: "GET",
+    url: "/img?nft=rng",
+    headers: { range: "bytes=999999999-" },
+  });
+  expect(res.statusCode).toBe(416); // forwarded, not synthesized into 502
+  expect(failures.has("rng")).toBe(false); // a range answer must not mark the nft failed
+  await app.close();
+});
+
+test("falls back to the original url when the primary 5xx-es", async () => {
+  const media = new MediaIndex(10);
+  media.set("svc", {
+    url: "https://archive.test/content/h",
+    kind: "image",
+    fallbackUrl: "https://ipfs.test/41.png",
+  });
+  const calls: string[] = [];
+  const fetcher = async (url: URL): Promise<IncomingMessage | null> => {
+    calls.push(url.href);
+    return url.href.includes("archive.test")
+      ? fakeUpstream(503, "text/plain", "busy")
+      : fakeUpstream(200, "image/png", "PNGDATA");
+  };
+  const app = fastify();
+  registerImageProxy(app, media, new FailureCache(60_000, 10), fetcher);
+  const res = await app.inject({ method: "GET", url: "/img?nft=svc" });
+  expect(res.statusCode).toBe(200);
+  expect(res.body).toBe("PNGDATA");
+  expect(calls).toEqual(["https://archive.test/content/h", "https://ipfs.test/41.png"]);
   await app.close();
 });

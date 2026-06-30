@@ -1,7 +1,8 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import fastify, { type FastifyInstance } from "fastify";
+import type { Logger } from "pino";
+import fastify, { type FastifyBaseLogger, type FastifyInstance } from "fastify";
 import websocket from "@fastify/websocket";
 import fastifyStatic from "@fastify/static";
 import type { Hub, WireSocket } from "./hub.js";
@@ -10,11 +11,21 @@ import type { MediaIndex } from "./media-index.js";
 import { readVersion } from "../version.js";
 import { PROTOCOL_VERSION } from "@grove/shared";
 
-export async function buildServer(hub: Hub, media: MediaIndex): Promise<FastifyInstance> {
+export async function buildServer(
+  hub: Hub,
+  media: MediaIndex,
+  logger: Logger
+): Promise<FastifyInstance> {
   // trust the local Caddy reverse proxy (see deploy/Caddyfile) so request.ip
   // reflects the real client via X-Forwarded-For — the image proxy rate-limits
   // per IP, which would otherwise see only the proxy's loopback address.
-  const app = fastify({ logger: false, trustProxy: "127.0.0.1, ::1" });
+  // pino.Logger satisfies FastifyBaseLogger structurally; cast to FastifyBaseLogger
+  // avoids the type-parameter narrowing that loggerInstance would propagate into
+  // FastifyInstance's generic, which would conflict with the default return type.
+  const app = fastify({
+    loggerInstance: logger as FastifyBaseLogger,
+    trustProxy: "127.0.0.1, ::1",
+  });
   await app.register(websocket, {
     options: {
       // Compress the (batched) JSON wire traffic. Negotiated at the handshake;
@@ -44,8 +55,15 @@ export async function buildServer(hub: Hub, media: MediaIndex): Promise<FastifyI
       // bufferedAmount/readyState); the double cast bridges the nominal types.
       const wire = socket as unknown as WireSocket;
       hub.add(wire);
-      socket.on("close", () => hub.remove(wire));
-      socket.on("error", () => hub.remove(wire));
+      logger.info({ clients: hub.size }, "ws: client connected");
+      socket.on("close", () => {
+        hub.remove(wire);
+        logger.info({ clients: hub.size }, "ws: client disconnected");
+      });
+      socket.on("error", () => {
+        hub.remove(wire);
+        logger.info({ clients: hub.size }, "ws: client error");
+      });
     });
   });
 

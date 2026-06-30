@@ -1,77 +1,24 @@
-import type { GroveEvent, SproutEvent } from "@grove/shared";
+import type { ContentFlagEvent, GroveEvent, SproutEvent } from "@grove/shared";
 import type { MediaIndex } from "../web/media-index.js";
-import { LEXICON, matchesLexicon } from "./lexicon.js";
-import { DENYLIST_MAP, dispositionForCollection } from "./denylist.js";
+import type { Verdict } from "./types.js";
+import { mapMintgardenSignals, extractContentHash } from "./signals/mintgarden.js";
+import type { ContentStore } from "./store.js";
+import { SafeSearchWorker } from "./safesearch-worker.js";
 
-export type Disposition = "blocked" | "sensitive" | "ok";
+export type { Disposition } from "./types.js";
+export { mapMintgarden, mapMintgardenSignals, extractContentHash } from "./signals/mintgarden.js";
+export type { MapMintgardenOpts } from "./signals/mintgarden.js";
+export type { StoredVerdict } from "./store.js";
 
-const asRecord = (v: unknown): Record<string, unknown> =>
-  typeof v === "object" && v !== null ? (v as Record<string, unknown>) : {};
+const OK: Verdict = { disposition: "ok" };
 
-/**
- * sensitive_content per CHIP-0007 may be boolean, a string, or a non-empty list.
- * A bare descriptive string (e.g. "nudity") flags as sensitive too; only the
- * explicit negatives ("" / "false") and a literal `false` are treated as clear.
- */
-const isSensitiveFlag = (v: unknown): boolean => {
-  if (v === true) return true;
-  if (typeof v === "string") {
-    const s = v.trim().toLowerCase();
-    return s !== "" && s !== "false";
-  }
-  return Array.isArray(v) && v.length > 0;
-};
+// MintGarden serves a static poster for video NFTs at its assets CDN, keyed by
+// content hash (the on-chain `data.thumbnail_uri`); the archive CDN does not.
+const THUMBNAIL_BASE_URL = "https://assets.mainnet.mintgarden.io/thumbnails";
 
-const RANK: Record<Disposition, number> = { ok: 0, sensitive: 1, blocked: 2 };
-
-/** Strongest disposition under `blocked > sensitive > ok`. */
-const strongest = (...ds: Disposition[]): Disposition =>
-  ds.reduce((a, b) => (RANK[b] > RANK[a] ? b : a), "ok");
-
-export interface MapMintgardenOpts {
-  /** Override the adult-term lexicon (test injection). Defaults to LEXICON. */
-  lexicon?: string[];
-  /** Override the collection denylist map (test injection). Defaults to DENYLIST_MAP. */
-  denylist?: Map<string, Disposition>;
-}
-
-/**
- * Collapse a MintGarden GET /nfts/:id response object into one disposition,
- * combining three signals: MintGarden structured flags, a curated collection
- * denylist, and a text-keyword heuristic over name/description fields.
- * Blocked (hard takedown) wins over sensitive (NSFW). Anything unrecognized or
- * malformed maps to "ok" (permissive) — the filter only acts on positive flags.
- */
-export function mapMintgarden(json: unknown, opts: MapMintgardenOpts = {}): Disposition {
-  const lexicon = opts.lexicon ?? LEXICON;
-  const denylist = opts.denylist ?? DENYLIST_MAP;
-
-  const nft = asRecord(json);
-  const collection = asRecord(nft.collection);
-  const creator = asRecord(nft.creator);
-  const metadata = asRecord(asRecord(nft.data).metadata_json);
-
-  // 1. existing MintGarden structured flags (unchanged precedence)
-  const flagVerdict: Disposition =
-    nft.is_blocked === true ||
-    collection.blocked_content === true ||
-    creator.verification_state === 2
-      ? "blocked"
-      : isSensitiveFlag(collection.sensitive_content) || isSensitiveFlag(metadata.sensitive_content)
-        ? "sensitive"
-        : "ok";
-
-  // 2. curated collection denylist, keyed by MintGarden collection id
-  const collectionId = typeof collection.id === "string" ? collection.id : undefined;
-  const denyVerdict = dispositionForCollection(denylist, collectionId) ?? "ok";
-
-  // 3. text-keyword heuristic over name / collection name / description
-  const text = [nft.name, metadata.name, collection.name, metadata.description]
-    .filter((s): s is string => typeof s === "string")
-    .join(" ");
-  const textVerdict: Disposition = matchesLexicon(text, lexicon) ? "sensitive" : "ok";
-
-  return strongest(flagVerdict, denyVerdict, textVerdict);
+interface FetchResult {
+  verdict: Verdict;
+  contentHash?: string;
 }
 
 export interface ContentFilterOptions {
@@ -86,6 +33,18 @@ export interface ContentFilterOptions {
   failTtlMs?: number;
   /** Clock injection point for testing the negative-cache TTL. */
   now?: () => number;
+  /** Base URL for the MintGarden Archive CDN; used to construct stable image URLs for SafeSearch. */
+  archiveBaseUrl?: string;
+  /** Max attempts to poll the Archive before giving up (each separated by archiveCheckDelayMs). */
+  archiveCheckAttempts?: number;
+  /** Milliseconds to wait between Archive poll attempts. */
+  archiveCheckDelayMs?: number;
+  /** Persistent verdict store keyed by launcherId; a hit skips the MintGarden network fetch. */
+  store?: ContentStore;
+  /** Google Vision API key; enables out-of-band SafeSearch when combined with store + onFlag. */
+  googleApiKey?: string;
+  /** Called when SafeSearch promotes an NFT to sensitive/blocked after the sprout was streamed. */
+  onFlag?: (e: ContentFlagEvent) => void;
 }
 
 /**
@@ -108,10 +67,10 @@ export interface ContentFilterOptions {
  *     rather than poisoning the cache with a permanent "ok".
  */
 export class ContentFilter {
-  private readonly cache = new Map<string, Disposition>();
+  private readonly cache = new Map<string, Verdict>();
   /** nftId -> epoch ms until which a recent failure keeps it permissive without refetch */
   private readonly negativeUntil = new Map<string, number>();
-  private readonly inflight = new Map<string, Promise<Disposition>>();
+  private readonly inflight = new Map<string, Promise<FetchResult>>();
   private readonly fetchImpl: typeof fetch;
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
@@ -120,6 +79,9 @@ export class ContentFilter {
   private readonly enrichBudgetMs: number;
   private readonly failTtlMs: number;
   private readonly now: () => number;
+  private readonly archiveBaseUrl: string;
+  private readonly store?: ContentStore;
+  private readonly worker?: SafeSearchWorker;
   private active = 0;
   private readonly waiters: Array<() => void> = [];
 
@@ -135,6 +97,20 @@ export class ContentFilter {
     this.enrichBudgetMs = opts.enrichBudgetMs ?? 1500;
     this.failTtlMs = opts.failTtlMs ?? 60000;
     this.now = opts.now ?? Date.now;
+    this.archiveBaseUrl = opts.archiveBaseUrl ?? "https://archive.mintgarden.io";
+    this.store = opts.store;
+    if (opts.store && opts.googleApiKey && opts.onFlag) {
+      this.worker = new SafeSearchWorker({
+        media,
+        store: opts.store,
+        apiKey: opts.googleApiKey,
+        onFlag: opts.onFlag,
+        fetchImpl: opts.fetchImpl,
+        archiveBaseUrl: opts.archiveBaseUrl,
+        archiveCheckAttempts: opts.archiveCheckAttempts,
+        archiveCheckDelayMs: opts.archiveCheckDelayMs,
+      });
+    }
   }
 
   async enrich(events: GroveEvent[]): Promise<void> {
@@ -163,40 +139,99 @@ export class ContentFilter {
   }
 
   private async apply(event: SproutEvent): Promise<void> {
-    const disposition = await this.resolve(event.nftId!);
-    if (disposition === "blocked") {
+    const launcherId = event.launcherId;
+    const stored = launcherId
+      ? (() => {
+          try {
+            return this.store?.get(launcherId);
+          } catch (err) {
+            console.warn("content-filter store.get failed (cache miss):", err);
+            return undefined;
+          }
+        })()
+      : undefined;
+    let verdict: Verdict;
+    let contentHash: string | undefined;
+    if (stored) {
+      verdict = { disposition: stored.disposition };
+      contentHash = stored.contentHash;
+    } else {
+      const result = await this.resolve(event.nftId!);
+      verdict = result.verdict;
+      contentHash = result.contentHash;
+    }
+
+    if (!stored && launcherId) {
+      try {
+        this.store?.putCheap(launcherId, event.nftId, verdict, contentHash);
+      } catch (err) {
+        console.warn("content-filter store.putCheap failed (verdict not persisted):", err);
+      }
+    }
+
+    // Upgrade MediaIndex from IPFS to Archive CDN URL so SafeSearch passes a
+    // reliably reachable URL to Google Vision (MintGarden's IPFS gateway is
+    // inaccessible from Google's IP ranges).
+    if (contentHash && launcherId && verdict.disposition !== "blocked") {
+      const existing = this.media.get(launcherId);
+      if (existing) {
+        const archiveUrl = `${this.archiveBaseUrl}/content/${contentHash}`;
+        // Keep the original on-chain art URL as the proxy fallback. On a re-spend
+        // `existing.url` may already be the Archive URL, so don't clobber the real
+        // fallback with itself — preserve the one captured on the first upgrade.
+        const fallbackUrl = existing.url === archiveUrl ? existing.fallbackUrl : existing.url;
+        // MintGarden's assets CDN serves a static poster for video NFTs, keyed by
+        // content hash (the 512px webp profile). The gallery uses it as the poster
+        // (/thumbnail?nft=) rather than seeking a video frame, which often gives a
+        // blank result without autoplay.
+        const thumbnailUrl =
+          existing.kind === "video"
+            ? `${THUMBNAIL_BASE_URL}/${contentHash}_512.webp`
+            : existing.thumbnailUrl;
+        this.media.set(launcherId, {
+          url: archiveUrl,
+          kind: existing.kind,
+          fallbackUrl,
+          thumbnailUrl,
+        });
+      }
+    }
+
+    if (verdict.disposition === "ok") this.worker?.maybeEnqueue(event);
+
+    if (verdict.disposition === "blocked") {
       event.mediaFilter = "blocked";
-      if (event.launcherId) this.media.delete(event.launcherId);
-    } else if (disposition === "sensitive") {
+      if (launcherId) this.media.delete(launcherId);
+    } else if (verdict.disposition === "sensitive") {
       event.mediaFilter = "sensitive";
     }
   }
 
-  private resolve(nftId: string): Promise<Disposition> {
+  private resolve(nftId: string): Promise<FetchResult> {
     const cached = this.cache.get(nftId);
-    if (cached !== undefined) return Promise.resolve(cached);
+    if (cached !== undefined) return Promise.resolve({ verdict: cached });
 
     const until = this.negativeUntil.get(nftId);
     if (until !== undefined) {
       // a recent failure keeps us permissive without hammering a struggling
       // MintGarden every block; once the TTL lapses we let the next lookup retry
-      if (this.now() < until) return Promise.resolve("ok");
+      if (this.now() < until) return Promise.resolve({ verdict: OK });
       this.negativeUntil.delete(nftId);
     }
 
     const existing = this.inflight.get(nftId);
     if (existing !== undefined) return existing;
 
-    const promise = this.gate(() => this.fetchDisposition(nftId))
-      .then((disposition) => {
-        this.remember(nftId, disposition);
-        return disposition;
+    const promise = this.gate(() => this.fetchVerdict(nftId))
+      .then((result) => {
+        this.remember(nftId, result.verdict);
+        return result;
       })
       .catch(() => {
         // transient failure/timeout: permissive now, negatively cached briefly so
         // the same doomed lookup doesn't re-stall the next block
         this.rememberFailure(nftId);
-        return "ok" as Disposition;
+        return { verdict: OK };
       })
       .finally(() => {
         this.inflight.delete(nftId);
@@ -206,24 +241,25 @@ export class ContentFilter {
     return promise;
   }
 
-  private async fetchDisposition(nftId: string): Promise<Disposition> {
+  private async fetchVerdict(nftId: string): Promise<FetchResult> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
       const res = await this.fetchImpl(`${this.baseUrl}/nfts/${nftId}`, {
         signal: controller.signal,
       });
-      if (res.status === 404) return "ok"; // genuinely unknown to MintGarden → cacheable permissive
+      if (res.status === 404) return { verdict: { disposition: "ok" } }; // genuinely unknown to MintGarden → cacheable permissive
       if (!res.ok) throw new Error(`mintgarden ${res.status}`); // 5xx/429/etc → transient, don't poison the cache
-      return mapMintgarden(await res.json());
+      const json = await res.json();
+      return { verdict: mapMintgardenSignals(json), contentHash: extractContentHash(json) };
     } finally {
       clearTimeout(timer);
     }
   }
 
-  private remember(nftId: string, disposition: Disposition): void {
+  private remember(nftId: string, verdict: Verdict): void {
     this.cache.delete(nftId);
-    this.cache.set(nftId, disposition);
+    this.cache.set(nftId, verdict);
     if (this.cache.size > this.cacheCapacity) {
       const oldest = this.cache.keys().next().value;
       if (oldest !== undefined) this.cache.delete(oldest);

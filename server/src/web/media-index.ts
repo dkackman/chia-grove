@@ -3,6 +3,16 @@ import type { MediaKind } from "@grove/shared";
 export interface MediaEntry {
   url: string;
   kind: MediaKind;
+  // Secondary URL the /img proxy falls back to when `url` fails (non-2xx or a
+  // fetch error). Set when ContentFilter upgrades `url` to the Archive CDN — it
+  // keeps the original on-chain art URL here so an intermittent Archive outage
+  // doesn't make the art unrenderable (which would trip the client's
+  // image→video kind-escalation and show a still image as a black <video>).
+  fallbackUrl?: string;
+  // Static thumbnail image served by /thumbnail?nft= for video NFTs. The gallery
+  // loads this as the poster instead of trying to decode a video frame, avoiding
+  // a blank wall before the user clicks play.
+  thumbnailUrl?: string;
 }
 
 /**

@@ -36,6 +36,11 @@ export class Pieces {
   private byLauncher = new Map<string, number>();
   private next = 0; // total pieces ever added (also the hangSlot index)
   private hovered: number | null = null;
+  // Lazily-held video elements for thumbnail-poster pieces. When a video NFT
+  // is displayed as a static thumbnail, the <video> lives here (preload=none)
+  // until the user clicks play, at which point swapToVideo() replaces the
+  // static texture with a VideoTexture and removes the entry from this map.
+  private videoBySlot = new Map<number, HTMLVideoElement>();
 
   constructor(
     private scene: THREE.Scene,
@@ -44,7 +49,7 @@ export class Pieces {
     this.slots = new Array(cap).fill(null);
   }
 
-  add(event: SproutEvent, texture: THREE.Texture): void {
+  add(event: SproutEvent, texture: THREE.Texture, video?: HTMLVideoElement): void {
     const index = this.next++;
     const slotId = index % this.cap;
     this.retire(slotId);
@@ -52,8 +57,7 @@ export class Pieces {
     // a still image exposes width/height; a video element exposes
     // videoWidth/videoHeight (its width/height attributes are usually 0)
     const media = texture.image as
-      | { width?: number; height?: number; videoWidth?: number; videoHeight?: number }
-      | undefined;
+      { width?: number; height?: number; videoWidth?: number; videoHeight?: number } | undefined;
     const mw = media?.videoWidth || media?.width;
     const mh = media?.videoHeight || media?.height;
     const aspect = mw && mh ? mw / mh : 1;
@@ -87,6 +91,7 @@ export class Pieces {
     this.byObject.set(frame, slotId);
     this.byObject.set(image, slotId);
     if (event.launcherId) this.byLauncher.set(event.launcherId, slotId);
+    if (video) this.videoBySlot.set(slotId, video);
   }
 
   /** Slot count: at most this many pieces hang before the oldest wraps off. */
@@ -129,8 +134,16 @@ export class Pieces {
     (old.frame.material as THREE.Material).dispose();
     old.image.geometry.dispose();
     const mat = old.image.material as THREE.MeshBasicMaterial;
-    // if the texture is a VideoTexture, stop and release its <video> element so
-    // a wrapped-out or reorg-removed clip doesn't keep downloading/looping
+    // Release any lazily-held video from the thumbnail-poster path
+    const lazyVideo = this.videoBySlot.get(slotId);
+    if (lazyVideo) {
+      lazyVideo.pause();
+      lazyVideo.removeAttribute("src");
+      lazyVideo.load();
+      this.videoBySlot.delete(slotId);
+    }
+    // If the texture itself wraps a <video> (VideoTexture after a swap or the
+    // legacy seek path), stop and release that too
     const media = mat.map?.image as
       | { pause?: () => void; removeAttribute?: (name: string) => void; load?: () => void }
       | undefined;
@@ -186,19 +199,44 @@ export class Pieces {
 
   /**
    * The <video> element backing the piece under this object, or null when the
-   * piece is image- or placeholder-backed. Blocked/sensitive pieces hang a
-   * placeholder texture (never a video), so they return null and can never be
-   * played. Duck-types on a `play` function, matching retire()'s video handling.
+   * piece is image- or placeholder-backed. Checks the explicit videoBySlot map
+   * first (thumbnail-poster path where the video is held lazily) then falls back
+   * to duck-typing the texture image (VideoTexture seek path). Blocked/sensitive
+   * pieces hang a placeholder texture and return null.
    */
   videoFor(object: THREE.Object3D): HTMLVideoElement | null {
     const slotId = this.byObject.get(object);
     if (slotId === undefined) return null;
+    // Explicit video registered by add() for the thumbnail-poster case
+    const explicit = this.videoBySlot.get(slotId);
+    if (explicit) return explicit;
+    // Legacy: VideoTexture whose image IS the video element
     const piece = this.slots[slotId];
     if (!piece) return null;
     const img = (piece.image.material as THREE.MeshBasicMaterial).map?.image as
-      | { play?: unknown }
-      | undefined;
+      { play?: unknown } | undefined;
     return img && typeof img.play === "function" ? (img as HTMLVideoElement) : null;
+  }
+
+  /**
+   * Replace the static thumbnail texture with a live VideoTexture so playback
+   * becomes visible on the gallery wall. Called the first time the user clicks
+   * play on a thumbnail-poster piece. The entry is removed from videoBySlot so
+   * retire() finds the video via the VideoTexture duck-type path instead.
+   */
+  swapToVideo(object: THREE.Object3D, video: HTMLVideoElement): void {
+    const slotId = this.byObject.get(object);
+    if (slotId === undefined) return;
+    const piece = this.slots[slotId];
+    if (!piece) return;
+    const mat = piece.image.material as THREE.MeshBasicMaterial;
+    if (mat.map instanceof THREE.VideoTexture) return; // already swapped
+    const old = mat.map;
+    mat.map = new THREE.VideoTexture(video);
+    mat.needsUpdate = true;
+    old?.dispose();
+    // Remove from explicit map — retire() will now find the video via duck-type
+    this.videoBySlot.delete(slotId);
   }
 
   /** How many events the NFT under this object has accumulated on the wall. */
@@ -217,6 +255,29 @@ export class Pieces {
     const geo = piece.image.geometry as THREE.PlaneGeometry;
     const height = geo.parameters.height;
     return { center: piece.group.position.clone(), height };
+  }
+
+  /** Blur an already-hung NFT after a late content-flag: hang the neutral placeholder. */
+  markSensitive(launcherId: string, placeholder: THREE.Texture): boolean {
+    const slotId = this.byLauncher.get(launcherId);
+    if (slotId === undefined) return false;
+    const piece = this.slots[slotId];
+    if (!piece) return false;
+    piece.event = { ...piece.event, mediaFilter: "sensitive" };
+    // Release any lazily-held video so it can't be played after flagging
+    const video = this.videoBySlot.get(slotId);
+    if (video) {
+      video.pause();
+      video.removeAttribute("src");
+      video.load();
+      this.videoBySlot.delete(slotId);
+    }
+    const mat = piece.image.material as THREE.MeshBasicMaterial;
+    (mat.map as THREE.Texture | null)?.dispose();
+    mat.map = placeholder;
+    mat.color.set(0xffffff);
+    mat.needsUpdate = true;
+    return true;
   }
 
   setHovered(object: THREE.Object3D | null): void {

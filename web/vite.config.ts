@@ -5,6 +5,7 @@ export default defineConfig({
     proxy: {
       "/ws": { target: "ws://localhost:8080", ws: true },
       "/img": { target: "http://localhost:8080" },
+      "/thumbnail": { target: "http://localhost:8080" },
     },
   },
 });

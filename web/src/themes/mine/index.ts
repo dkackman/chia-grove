@@ -60,6 +60,7 @@ export const mine: Visualization = {
       vfx.creeper(currentChunkRef.value, clock.t);
     });
     runtime.setAmbientHandler((mempoolSize) => vfx.setMempool(mempoolSize));
+    runtime.setContentFlagHandler((launcherId) => paintings.markSensitive(launcherId));
 
     const frameCallbacks: Array<() => void> = [];
     runtime.setUpdateHandler((dt, t) => {

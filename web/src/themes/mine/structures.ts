@@ -4,7 +4,7 @@ import type { SproutEvent } from "@grove/shared";
 import type { XZ } from "../shared/util.js";
 import { cellLocal, chunkElevation } from "./layout.js";
 import { loadArtTexture } from "../gallery/media.js";
-import { resolveMedia } from "../../ui/media.js";
+import { resolveMedia, thumbnailSrc } from "../../ui/media.js";
 import { sensitivePlaceholderTexture } from "../shared/textures.js";
 import { LoadPool } from "../shared/load-pool.js";
 
@@ -169,6 +169,7 @@ export class Paintings {
     if (media.render === "art") {
       const src = media.src;
       const kind = media.kind;
+      const poster = thumbnailSrc(event) ?? undefined;
       this.loads.submit({
         // by the time a queued load reaches the front the slot may have been
         // recycled (replay churns hundreds of NFTs through it) — skip the fetch
@@ -187,7 +188,8 @@ export class Paintings {
               mat.color.set(0xffffff);
               mat.needsUpdate = true;
             },
-            done
+            done,
+            poster
           );
         },
       });
@@ -209,6 +211,20 @@ export class Paintings {
   /** True if an NFT with this launcher id currently has a painting hung. */
   has(launcherId: string): boolean {
     return this.byLauncher.has(launcherId);
+  }
+
+  /** Blur an already-hung painting after a late content-flag. */
+  markSensitive(launcherId: string): boolean {
+    const slot = this.byLauncher.get(launcherId);
+    if (slot === undefined) return false;
+    const p = this.pool[slot];
+    if (!p?.meta) return false;
+    p.meta = { ...p.meta, mediaFilter: "sensitive" };
+    const mat = p.panel.material as THREE.MeshBasicMaterial;
+    mat.map = sensitivePlaceholderTexture();
+    mat.color.set(0xffffff);
+    mat.needsUpdate = true;
+    return true;
   }
   clearAbove(forkHeight: number): void {
     for (let i = 0; i < this.pool.length; i++) {

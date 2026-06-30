@@ -1,0 +1,90 @@
+import type { Disposition, Verdict } from "../types.js";
+import { combine } from "../verdict.js";
+import { LEXICON, matchesLexicon } from "./lexicon.js";
+import { DENYLIST_MAP, dispositionForCollection } from "./denylist.js";
+
+const asRecord = (v: unknown): Record<string, unknown> =>
+  typeof v === "object" && v !== null ? (v as Record<string, unknown>) : {};
+
+/**
+ * sensitive_content per CHIP-0007 may be boolean, a string, or a non-empty list.
+ * A bare descriptive string (e.g. "nudity") flags as sensitive too; only the
+ * explicit negatives ("" / "false") and a literal `false` are treated as clear.
+ */
+const isSensitiveFlag = (v: unknown): boolean => {
+  if (v === true) return true;
+  if (typeof v === "string") {
+    const s = v.trim().toLowerCase();
+    return s !== "" && s !== "false";
+  }
+  return Array.isArray(v) && v.length > 0;
+};
+
+export interface MapMintgardenOpts {
+  /** Override the adult-term lexicon (test injection). Defaults to LEXICON. */
+  lexicon?: string[];
+  /** Override the collection denylist map (test injection). Defaults to DENYLIST_MAP. */
+  denylist?: Map<string, Disposition>;
+}
+
+/**
+ * Collapse a MintGarden GET /nfts/:id response into a Verdict, reporting which
+ * of the cheap signals fired. Blocked (hard takedown) wins over sensitive (NSFW).
+ * Anything unrecognized or malformed contributes nothing (permissive).
+ */
+export function mapMintgardenSignals(json: unknown, opts: MapMintgardenOpts = {}): Verdict {
+  const lexicon = opts.lexicon ?? LEXICON;
+  const denylist = opts.denylist ?? DENYLIST_MAP;
+
+  const nft = asRecord(json);
+  const collection = asRecord(nft.collection);
+  const creator = asRecord(nft.creator);
+  const metadata = asRecord(asRecord(nft.data).metadata_json);
+
+  const parts: Array<{ disposition: Disposition }> = [];
+
+  // creator verification → hard block
+  if (creator.verification_state === 2) {
+    parts.push({ disposition: "blocked" });
+  }
+
+  // MintGarden collection-level flags
+  if (nft.is_blocked === true || collection.blocked_content === true) {
+    parts.push({ disposition: "blocked" });
+  } else if (isSensitiveFlag(collection.sensitive_content)) {
+    parts.push({ disposition: "sensitive" });
+  }
+
+  // CHIP-0007 off-chain metadata sensitive_content
+  if (isSensitiveFlag(metadata.sensitive_content)) {
+    parts.push({ disposition: "sensitive" });
+  }
+
+  // curated collection denylist
+  const collectionId = typeof collection.id === "string" ? collection.id : undefined;
+  const deny = dispositionForCollection(denylist, collectionId);
+  if (deny) parts.push({ disposition: deny });
+
+  // text-keyword heuristic over name / collection name / description
+  const text = [nft.name, metadata.name, collection.name, metadata.description]
+    .filter((s): s is string => typeof s === "string")
+    .join(" ");
+  if (matchesLexicon(text, lexicon)) parts.push({ disposition: "sensitive" });
+
+  return combine(parts);
+}
+
+/** Disposition-only convenience (back-compat with existing call sites/tests). */
+export function mapMintgarden(json: unknown, opts: MapMintgardenOpts = {}): Disposition {
+  return mapMintgardenSignals(json, opts).disposition;
+}
+
+/**
+ * Extract the SHA-256 content hash from an api.mintgarden.io /nfts/{id} response.
+ * Returns undefined for any missing, null, or malformed value so callers can
+ * skip gracefully without guarding.
+ */
+export function extractContentHash(json: unknown): string | undefined {
+  const hash = asRecord(asRecord(json).data).data_hash;
+  return typeof hash === "string" && /^[0-9a-f]{64}$/i.test(hash) ? hash.toLowerCase() : undefined;
+}

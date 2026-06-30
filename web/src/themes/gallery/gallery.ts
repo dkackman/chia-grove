@@ -14,7 +14,7 @@ import { SpendDust } from "./dust.js";
 import { netspaceLight } from "./ambience.js";
 import { shouldHang } from "./select.js";
 import { loadArtTexture } from "./media.js";
-import { resolveMedia } from "../../ui/media.js";
+import { resolveMedia, thumbnailSrc } from "../../ui/media.js";
 import { sensitivePlaceholderTexture } from "../shared/textures.js";
 import { framePiece } from "./camera.js";
 import { FlingTracker } from "./swipe.js";
@@ -132,6 +132,7 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
         }
         const src = media.src;
         const kind = media.kind;
+        const poster = thumbnailSrc(event) ?? undefined;
         pending.add(launcher);
         const mySeq = nftSeq++;
         artLoads.submit({
@@ -143,15 +144,16 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
             loadArtTexture(
               src,
               kind,
-              (texture) => {
+              (texture, video) => {
                 done(); // release the pool slot regardless of dedup outcome
                 pending.delete(launcher);
-                pieces.add(event, texture);
+                pieces.add(event, texture, video);
               },
               () => {
                 done();
                 pending.delete(launcher);
-              }
+              },
+              poster
             );
           },
         });
@@ -166,6 +168,12 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
       case "reorg":
         pieces.removeRecent(event.forkHeight);
         break;
+      case "content-flag": {
+        if (pieces.markSensitive(event.launcherId, sensitivePlaceholderTexture().clone())) {
+          refreshPlacardIf(event.launcherId);
+        }
+        break;
+      }
     }
   });
 
@@ -178,8 +186,11 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
     if (meta) placard.show(meta, pieces.eventCountFor(object));
     // a video piece gets a manual ▶ overlay (never autoplayed); images do not
     const video = pieces.videoFor(object);
-    if (video) playButton.show(video);
-    else playButton.hide();
+    if (video) {
+      playButton.show(video, () => pieces.swapToVideo(object, video));
+    } else {
+      playButton.hide();
+    }
   }
 
   function unfocus(): void {

@@ -3,6 +3,7 @@ import type { GroveEvent, SproutEvent } from "@grove/shared";
 import { mediaKind, type MediaKind } from "@grove/shared";
 import type { CatRegistry } from "./cats.js";
 import type { MediaIndex } from "../web/media-index.js";
+import { log } from "../logger.js";
 
 const hex = (b: Uint8Array) => Buffer.from(b).toString("hex");
 const LAUNCHER_HASH = hex(Constants.singletonLauncherHash());
@@ -111,7 +112,10 @@ function classifySpend(
     if (did) return { ...base, kind: "did", mint };
   } catch (error) {
     // parse* returns null on miss; a throw is unexpected — log and fall back
-    console.warn(`classify: puzzle parse failed for coin ${base.coinId}`, error);
+    log.warn(
+      { coinId: base.coinId, err: error instanceof Error ? error.message : String(error) },
+      "classify: puzzle parse failed"
+    );
   }
   return base;
 }

@@ -43,7 +43,7 @@ function randomKind(): SproutKind {
   return "did";
 }
 
-function sprout(height: number): SproutEvent {
+function sprout(height: number, dispatch?: (event: GroveEvent) => void): SproutEvent {
   const kind = randomKind();
   const event: SproutEvent = {
     type: "sprout",
@@ -73,11 +73,24 @@ function sprout(height: number): SproutEvent {
     const filterRoll = Math.random();
     if (filterRoll < 0.06) event.mediaFilter = "blocked";
     else if (filterRoll < 0.18) event.mediaFilter = "sensitive";
+    // exercise the async content-flag patch path offline
+    if (event.kind === "nft" && event.launcherId && filterRoll >= 0.18 && filterRoll < 0.21) {
+      const launcher = event.launcherId;
+      setTimeout(
+        () =>
+          dispatch?.({
+            type: "content-flag",
+            launcherId: launcher,
+            mediaFilter: "sensitive",
+          }),
+        4000
+      );
+    }
   }
   return event;
 }
 
-function blockWithSprouts(height: number): GroveEvent[] {
+function blockWithSprouts(height: number, dispatch?: (event: GroveEvent) => void): GroveEvent[] {
   const count = 2 + Math.floor(Math.random() * 14);
   return [
     {
@@ -88,7 +101,7 @@ function blockWithSprouts(height: number): GroveEvent[] {
       spendCount: count,
       fees: String(Math.floor(Math.random() * 1e9)),
     },
-    ...Array.from({ length: count }, () => sprout(height)),
+    ...Array.from({ length: count }, () => sprout(height, dispatch)),
   ];
 }
 
@@ -98,11 +111,11 @@ export function startDemo(dispatch: (event: GroveEvent) => void): void {
 
   // synthetic snapshot: 30 past blocks, replayed quickly
   const backlog: GroveEvent[] = [];
-  for (let i = 0; i < 30; i++) backlog.push(...blockWithSprouts(height++));
+  for (let i = 0; i < 30; i++) backlog.push(...blockWithSprouts(height++, dispatch));
   backlog.forEach((event, i) => setTimeout(() => dispatch(event), i * 12));
 
   setInterval(() => {
-    for (const event of blockWithSprouts(height++)) dispatch(event);
+    for (const event of blockWithSprouts(height++, dispatch)) dispatch(event);
   }, 8000);
 
   setInterval(() => {
