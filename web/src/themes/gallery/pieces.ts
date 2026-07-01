@@ -34,6 +34,9 @@ export class Pieces {
   private slots: Array<Piece | null>;
   private byObject = new Map<THREE.Object3D, number>();
   private byLauncher = new Map<string, number>();
+  // launcherId -> placeholder for a content-flag that arrived while the art was
+  // still loading (nothing hung yet to blur) — applied when add() lands it.
+  private pendingSensitive = new Map<string, THREE.Texture>();
   private next = 0; // total pieces ever added (also the hangSlot index)
   private hovered: number | null = null;
   // Lazily-held video elements for thumbnail-poster pieces. When a video NFT
@@ -50,6 +53,21 @@ export class Pieces {
   }
 
   add(event: SproutEvent, texture: THREE.Texture, video?: HTMLVideoElement): void {
+    // a content-flag beat the art to the wall (common for slower-loading video
+    // NFTs) — hang the remembered placeholder instead of the now-stale art
+    const flagged = event.launcherId ? this.pendingSensitive.get(event.launcherId) : undefined;
+    if (flagged) {
+      this.pendingSensitive.delete(event.launcherId!);
+      texture.dispose();
+      if (video) {
+        video.pause();
+        video.removeAttribute("src");
+        video.load();
+      }
+      event = { ...event, mediaFilter: "sensitive" };
+      texture = flagged;
+      video = undefined;
+    }
     const index = this.next++;
     const slotId = index % this.cap;
     this.retire(slotId);
@@ -257,12 +275,19 @@ export class Pieces {
     return { center: piece.group.position.clone(), height };
   }
 
-  /** Blur an already-hung NFT after a late content-flag: hang the neutral placeholder. */
+  /**
+   * Blur an already-hung NFT after a late content-flag: hang the neutral
+   * placeholder. If the NFT isn't hung yet (its art is still loading), the
+   * placeholder is remembered and applied by add() once the art lands instead.
+   */
   markSensitive(launcherId: string, placeholder: THREE.Texture): boolean {
     const slotId = this.byLauncher.get(launcherId);
-    if (slotId === undefined) return false;
-    const piece = this.slots[slotId];
-    if (!piece) return false;
+    const piece = slotId === undefined ? null : this.slots[slotId];
+    if (slotId === undefined || !piece) {
+      this.pendingSensitive.get(launcherId)?.dispose(); // drop a stale earlier flag
+      this.pendingSensitive.set(launcherId, placeholder);
+      return false;
+    }
     piece.event = { ...piece.event, mediaFilter: "sensitive" };
     // Release any lazily-held video so it can't be played after flagging
     const video = this.videoBySlot.get(slotId);

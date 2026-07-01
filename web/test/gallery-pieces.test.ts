@@ -131,6 +131,25 @@ test("hovering lights a frame; a wrapped-out slot does not stay hovered", () => 
   expect(emissiveOf(frameB)).toBe(0);
 });
 
+const imageOf = (pieces: Pieces) =>
+  pieces.pickables().find((o) => (o as THREE.Mesh).geometry instanceof THREE.PlaneGeometry) as
+    THREE.Mesh | undefined;
+
+test("a content-flag that arrives while art is still loading blurs the piece once it lands", () => {
+  const pieces = new Pieces(new THREE.Scene(), 28);
+  const placeholder = new THREE.Texture();
+  // flagged before the NFT is hung (art still in flight) — nothing to blur yet
+  expect(pieces.markSensitive(lid(1), placeholder)).toBe(false);
+
+  const realArt = new THREE.Texture();
+  pieces.add(nft(id(1), lid(1)), realArt);
+
+  const image = imageOf(pieces)!;
+  const mat = image.material as THREE.MeshBasicMaterial;
+  expect(mat.map).toBe(placeholder);
+  expect(pieces.metaFor(image)?.mediaFilter).toBe("sensitive");
+});
+
 test("videoFor returns the backing <video> for a video piece, null otherwise", () => {
   const pieces = new Pieces(new THREE.Scene(), 28);
 
