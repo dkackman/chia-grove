@@ -15,6 +15,55 @@ export function escalateMediaKind(current: MediaKind): MediaKind | null {
   return null;
 }
 
+function createMediaEl(src: string, kind: MediaKind): HTMLElement {
+  if (kind === "video") {
+    const v = document.createElement("video");
+    v.src = src;
+    v.controls = true;
+    v.muted = true;
+    v.loop = true;
+    return v;
+  }
+  if (kind === "audio") {
+    const a = document.createElement("audio");
+    a.src = src;
+    a.controls = true;
+    return a;
+  }
+  const img = document.createElement("img");
+  img.src = src;
+  img.alt = "NFT";
+  img.loading = "lazy";
+  return img;
+}
+
+// `mediaKind` is only a hint (guessed from the URL extension), so when an
+// element can't play its source retry the next element type (image → video →
+// audio) against the same cached /img URL. Fixes extensionless videos rendering
+// as a black <img>; once the chain is exhausted the broken element is removed
+// rather than shown.
+export function nftMediaEl(src: string, kind: MediaKind): HTMLElement {
+  const node = createMediaEl(src, kind);
+  node.addEventListener("error", () => {
+    // A media element reports why it failed: a transient network/abort error
+    // doesn't mean the element type is wrong, so don't downgrade the kind (a
+    // hiccuping <video> would otherwise be permanently replaced by an <audio>).
+    // Only a decode / unsupported-source error means the hint was wrong. An
+    // <img> exposes no such reason, so any error escalates — its kind is only a
+    // guess to begin with.
+    if (node instanceof HTMLMediaElement) {
+      const code = node.error?.code;
+      if (code === MediaError.MEDIA_ERR_NETWORK || code === MediaError.MEDIA_ERR_ABORTED) {
+        return;
+      }
+    }
+    const next = escalateMediaKind(kind);
+    if (next) node.replaceWith(nftMediaEl(src, next));
+    else node.remove();
+  });
+  return node;
+}
+
 /**
  * Resolve the loadable src for a sprout's art, or null if it has none. Returns
  * null for blocked NFTs so no surface can fetch the bytes. Demo/offline events
