@@ -1,5 +1,6 @@
 import type { SproutEvent } from "@grove/shared";
 import { mojosToXch, shortHex } from "../../ui/format.js";
+import { resolveMedia, type MediaDisposition } from "../../ui/media.js";
 
 export interface PlacardLink {
   label: string;
@@ -13,6 +14,7 @@ export interface Placard {
   launcher: string | null;
   activity: string | null;
   links: PlacardLink[];
+  media: MediaDisposition;
 }
 
 /**
@@ -37,6 +39,7 @@ export function placardModel(event: SproutEvent, count = 1): Placard {
     launcher: event.launcherId ? `launcher ${shortHex(event.launcherId)}` : null,
     activity: count > 1 ? `${count} events` : null,
     links,
+    media: resolveMedia(event),
   };
 }
 
