@@ -9,6 +9,9 @@ TARGET=/opt/chia-grove
 
 printf '{"appVersion":"%s","gitSha":"%s","builtAt":"%s"}\n' \
   "$VERSION" "$(git rev-parse HEAD)" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > version.json
+# version.json is git-ignored and meant to be absent locally (see version.ts) —
+# it only needs to exist transiently so rsync ships it to the droplet.
+trap 'rm -f version.json' EXIT
 
 npm run build
 
