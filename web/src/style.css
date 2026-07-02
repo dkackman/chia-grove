@@ -460,6 +460,30 @@ body {
   background: #ffe9c2;
 }
 
+.gallery-label img,
+.gallery-label video {
+  width: 100%;
+  border-radius: 6px;
+  margin: 8px 0;
+  display: block;
+}
+.gallery-label img.sensitive,
+.gallery-label video.sensitive {
+  filter: blur(24px);
+  pointer-events: none;
+}
+.gallery-label .media-note {
+  margin: 8px 0;
+  padding: 10px;
+  border-radius: 6px;
+  text-align: center;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: rgba(255, 233, 194, 0.7);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px dashed rgba(255, 233, 194, 0.3);
+}
+
 /* play/pause button over a focused video piece. framePiece() centers the
    focused piece on screen, so the button is simply screen-centered. Styled
    after .label-info so it reads as part of the same gallery UI. */
