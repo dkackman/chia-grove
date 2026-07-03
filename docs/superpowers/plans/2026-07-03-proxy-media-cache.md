@@ -407,11 +407,16 @@ Replace it with:
     const cacheable = !hasRange && status === 200 && ct.startsWith("image/");
     if (cacheable) {
       const collector = cachingCollector(CACHE_ENTRY_MAX_BYTES);
-      // Full teardown triangle: capped's own byte-cap error must destroy the
-      // upstream too (plain .pipe() does not propagate teardown to the source),
-      // else a chunked/over-cap image leaks the upstream socket.
+      // Full teardown triangle across the 3-stage pipe (upstream → capped →
+      // collector). Any stage's error must destroy the other two; plain .pipe()
+      // does not propagate a destroyed source's teardown to its destination, and
+      // destroy() with no error emits only "close" (not "error"), so each leg is
+      // wired explicitly. `release` rides on the collector's "close", so the
+      // collector MUST be torn down on every failure or the reply hangs and the
+      // inflight slot leaks.
       capped.on("error", () => upstream.destroy());
       capped.on("error", () => collector.stream.destroy());
+      upstream.on("error", () => collector.stream.destroy());
       collector.stream.on("error", () => capped.destroy());
       // `close` fires on both clean completion and client abort; result() is
       // non-null only after a clean end within the cap, so this both fills the
@@ -610,6 +615,7 @@ Update the cacheable/non-cacheable stream branches from Task 2 to settle the lea
       const collector = cachingCollector(CACHE_ENTRY_MAX_BYTES);
       capped.on("error", () => upstream.destroy()); // capped's byte-cap error must tear down upstream too
       capped.on("error", () => collector.stream.destroy());
+      upstream.on("error", () => collector.stream.destroy()); // upstream error must tear down the collector (release rides on its close)
       collector.stream.on("error", () => capped.destroy());
       // Single finalization point: `close` fires on clean completion and on
       // client abort. result() is non-null only after a clean end within the
@@ -814,6 +820,7 @@ Replace it with:
       const collector = cachingCollector(CACHE_ENTRY_MAX_BYTES);
       capped.on("error", () => upstream!.destroy()); // capped's byte-cap error must tear down upstream too
       capped.on("error", () => collector.stream.destroy());
+      upstream.on("error", () => collector.stream.destroy()); // upstream error must tear down the collector (release rides on its close)
       collector.stream.on("error", () => capped.destroy());
       collector.stream.on("close", () => {
         release();
