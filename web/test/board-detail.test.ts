@@ -80,7 +80,9 @@ test("a stale response is dropped when a newer load supersedes it before it reso
   const first = detail.load(100); // stays pending until resolveFirst() is called
   await detail.load(200); // resolves immediately, supersedes 100
   resolveFirst!({
-    events: [{ type: "block", height: 100, headerHash: "", timestamp: 1, spendCount: 0, fees: "0" }],
+    events: [
+      { type: "block", height: 100, headerHash: "", timestamp: 1, spendCount: 0, fees: "0" },
+    ],
   });
   await first;
 

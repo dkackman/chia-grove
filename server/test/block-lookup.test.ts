@@ -19,7 +19,10 @@ interface FakeBlock {
 class FakeRpc implements RpcView {
   blocks = new Map<number, FakeBlock>();
 
-  set(height: number, opts: { headerHash?: string; timestamp: bigint | null; spends?: CoinSpend[] }) {
+  set(
+    height: number,
+    opts: { headerHash?: string; timestamp: bigint | null; spends?: CoinSpend[] }
+  ) {
     this.blocks.set(height, {
       headerHash: opts.headerHash ?? `h${height}`,
       timestamp: opts.timestamp,

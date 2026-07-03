@@ -19,12 +19,14 @@
 ### Task 1: Client sends scene as a WS query param
 
 **Files:**
+
 - Create: `web/src/net/ws-url.ts`
 - Test: `web/test/ws-url.test.ts`
 - Modify: `web/src/net/feed.ts:15,35-49` (constructor + `connect()`)
 - Modify: `web/src/main.ts:14` (construct `GroveFeed` with the active theme id)
 
 **Interfaces:**
+
 - Produces: `buildWsUrl(protocol: string, host: string, scene?: string): string`, exported from `web/src/net/ws-url.ts`. `protocol` is `"ws"` or `"wss"`, `host` is `location.host` (may include a port, e.g. `localhost:5173`).
 - `GroveFeed`'s constructor signature becomes `constructor(scene?: string)`.
 
@@ -172,10 +174,12 @@ git commit -m "feat(web): send active scene id on WS connect"
 ### Task 2: Server logs the scene from the WS query param
 
 **Files:**
+
 - Modify: `server/src/web/server.ts:52-68` (the `/ws` route registration)
 - Test: `server/test/server.test.ts`
 
 **Interfaces:**
+
 - Consumes: `buildServer(hub: Hub, media: MediaIndex, logger: Logger): Promise<FastifyInstance>` (unchanged signature).
 - No new exports — this task only changes what gets logged on WS connect.
 
@@ -273,46 +277,46 @@ Expected: `healthz responds ok` PASSes; `ws connect logs the scene query param` 
 In `server/src/web/server.ts`, change the `/ws` route registration (currently lines 52-68):
 
 ```ts
-  app.register(async (instance) => {
-    instance.get("/ws", { websocket: true }, (socket) => {
-      // ws.WebSocket satisfies WireSocket structurally (send/close/terminate/
-      // bufferedAmount/readyState); the double cast bridges the nominal types.
-      const wire = socket as unknown as WireSocket;
-      hub.add(wire);
-      logger.info({ clients: hub.size }, "ws: client connected");
-      socket.on("close", () => {
-        hub.remove(wire);
-        logger.info({ clients: hub.size }, "ws: client disconnected");
-      });
-      socket.on("error", () => {
-        hub.remove(wire);
-        logger.info({ clients: hub.size }, "ws: client error");
-      });
+app.register(async (instance) => {
+  instance.get("/ws", { websocket: true }, (socket) => {
+    // ws.WebSocket satisfies WireSocket structurally (send/close/terminate/
+    // bufferedAmount/readyState); the double cast bridges the nominal types.
+    const wire = socket as unknown as WireSocket;
+    hub.add(wire);
+    logger.info({ clients: hub.size }, "ws: client connected");
+    socket.on("close", () => {
+      hub.remove(wire);
+      logger.info({ clients: hub.size }, "ws: client disconnected");
+    });
+    socket.on("error", () => {
+      hub.remove(wire);
+      logger.info({ clients: hub.size }, "ws: client error");
     });
   });
+});
 ```
 
 to:
 
 ```ts
-  app.register(async (instance) => {
-    instance.get("/ws", { websocket: true }, (socket, request) => {
-      // ws.WebSocket satisfies WireSocket structurally (send/close/terminate/
-      // bufferedAmount/readyState); the double cast bridges the nominal types.
-      const wire = socket as unknown as WireSocket;
-      const scene = (request.query as { scene?: string }).scene;
-      hub.add(wire);
-      logger.info({ clients: hub.size, scene }, "ws: client connected");
-      socket.on("close", () => {
-        hub.remove(wire);
-        logger.info({ clients: hub.size }, "ws: client disconnected");
-      });
-      socket.on("error", () => {
-        hub.remove(wire);
-        logger.info({ clients: hub.size }, "ws: client error");
-      });
+app.register(async (instance) => {
+  instance.get("/ws", { websocket: true }, (socket, request) => {
+    // ws.WebSocket satisfies WireSocket structurally (send/close/terminate/
+    // bufferedAmount/readyState); the double cast bridges the nominal types.
+    const wire = socket as unknown as WireSocket;
+    const scene = (request.query as { scene?: string }).scene;
+    hub.add(wire);
+    logger.info({ clients: hub.size, scene }, "ws: client connected");
+    socket.on("close", () => {
+      hub.remove(wire);
+      logger.info({ clients: hub.size }, "ws: client disconnected");
+    });
+    socket.on("error", () => {
+      hub.remove(wire);
+      logger.info({ clients: hub.size }, "ws: client error");
     });
   });
+});
 ```
 
 - [ ] **Step 4: Run the tests to verify they pass**

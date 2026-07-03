@@ -25,7 +25,7 @@ The Big Board only ever shows the live, rolling ledger (last 500 spend events, a
 
 The height column (leftmost 8 characters) of every ledger row is clickable, whether or not that particular row currently renders the height glyphs (continuation rows within a block group are included) — the whole vertical stripe belongs to that row's block. Clicking it opens detail mode for that height. Clicking anywhere else in a row keeps today's behavior (the existing spend/aggregate detail card via `ui/picker.ts` + `ui/detail-card.ts`).
 
-This requires column-aware hit testing: `FlapGrid` instances already expose row *and* column via `instanceId` (`rowOf()` exists; a matching column derivation is `instanceId % cols`), so the picker's `metaFor`-based flow needs a companion path for "this hit was in the height gutter" that board.ts handles itself rather than routing through the generic card popup.
+This requires column-aware hit testing: `FlapGrid` instances already expose row _and_ column via `instanceId` (`rowOf()` exists; a matching column derivation is `instanceId % cols`), so the picker's `metaFor`-based flow needs a companion path for "this hit was in the height gutter" that board.ts handles itself rather than routing through the generic card popup.
 
 ## URL State
 
@@ -38,7 +38,7 @@ New Fastify route (`server/src/web/`), reusing the existing ingest pipeline rath
 1. Validate `:height` is a non-negative integer; 400 otherwise.
 2. `rpcView.getBlockInfo(height)` (already exists in `server/src/ingest/coinset-view.ts`, currently only constructed inside `index.ts` for the poller — needs to be lifted to a shared instance the route handler can also use). If the RPC 404s, or `timestamp` is `null` (a non-transaction block), respond with a block that has zero spends — this becomes the same "empty state" the frontend shows when stepping onto a quiet block, no separate error path needed.
 3. Otherwise `rpcView.getSpends(headerHash)` → `classifyBlock(block, cats, media)` → the same `BlockEvent` + `SproutEvent[]` shape already streamed over the WebSocket.
-4. Run the NFT sprout events through `contentFilter.enrich(events)` — the *exact* method the live `onBlock` handler uses. No new "cheap-only" variant: cheap signals apply synchronously, and any NFT not yet SafeSearch-checked gets enqueued to `SafeSearchWorker` for a real Vision call, persisted to the store exactly like a live spend. A resulting `sensitive` verdict pushes a `ContentFlagEvent` to all connected clients via the existing `onFlag: (e) => hub.publish([e])` wiring — including anyone currently viewing that block's detail, since the flag travels the normal WebSocket path regardless of how the NFT was first observed.
+4. Run the NFT sprout events through `contentFilter.enrich(events)` — the _exact_ method the live `onBlock` handler uses. No new "cheap-only" variant: cheap signals apply synchronously, and any NFT not yet SafeSearch-checked gets enqueued to `SafeSearchWorker` for a real Vision call, persisted to the store exactly like a live spend. A resulting `sensitive` verdict pushes a `ContentFlagEvent` to all connected clients via the existing `onFlag: (e) => hub.publish([e])` wiring — including anyone currently viewing that block's detail, since the flag travels the normal WebSocket path regardless of how the NFT was first observed.
 5. Respond `{ events: GroveEvent[] }` (mirrors `Snapshot`'s shape).
 
 `index.ts` needs light restructuring: `coinsetView(rpc)` and the constructed `contentFilter`/`cats`/`media` instances must be reachable from `buildServer` (or passed into route registration) rather than living only inside the poller's closure.
@@ -97,13 +97,13 @@ Late SafeSearch verdicts continue to flow through the existing `Hub → RingBuff
 
 ## Files Touched (expected)
 
-| File                                              | Change                                                                 |
-| -------------------------------------------------- | ----------------------------------------------------------------------- |
-| `server/src/index.ts`                              | Lift `coinsetView`/`contentFilter`/`cats`/`media` for route access     |
-| `server/src/web/server.ts`                         | Register new `/block/:height` route                                    |
-| new: `server/src/web/block-lookup.ts` (or similar) | Route handler: validate, fetch, classify, enrich, respond              |
-| `web/src/themes/board/board.ts`                    | Mode flag, detail fetch/nav, content-flag patch (live + detail), URL sync |
-| `web/src/themes/board/header.ts`                   | Detail-mode header variant                                             |
-| `web/src/themes/board/rows.ts`                     | Unaggregated single-block row rendering (reuse `rowText`, skip `toDisplayRows`) |
-| new: `web/src/themes/board/find-block.ts` (or similar) | DOM find-block + prev/next/return-to-live overlay component      |
-| `web/src/ui/picker.ts`                              | Column-aware height-gutter hit path                                    |
+| File                                                   | Change                                                                          |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------- |
+| `server/src/index.ts`                                  | Lift `coinsetView`/`contentFilter`/`cats`/`media` for route access              |
+| `server/src/web/server.ts`                             | Register new `/block/:height` route                                             |
+| new: `server/src/web/block-lookup.ts` (or similar)     | Route handler: validate, fetch, classify, enrich, respond                       |
+| `web/src/themes/board/board.ts`                        | Mode flag, detail fetch/nav, content-flag patch (live + detail), URL sync       |
+| `web/src/themes/board/header.ts`                       | Detail-mode header variant                                                      |
+| `web/src/themes/board/rows.ts`                         | Unaggregated single-block row rendering (reuse `rowText`, skip `toDisplayRows`) |
+| new: `web/src/themes/board/find-block.ts` (or similar) | DOM find-block + prev/next/return-to-live overlay component                     |
+| `web/src/ui/picker.ts`                                 | Column-aware height-gutter hit path                                             |

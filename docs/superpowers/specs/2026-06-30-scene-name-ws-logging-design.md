@@ -26,11 +26,11 @@ web/src/main.ts: theme = resolveTheme(...)
 
 ## Files Changed
 
-| File                        | Change                                                                                    |
-| ---------------------------- | ------------------------------------------------------------------------------------------ |
-| `web/src/net/feed.ts`       | `GroveFeed` constructor accepts optional `scene?: string`; `connect()` appends `?scene=` to the WS URL when set |
-| `web/src/main.ts`           | `new GroveFeed(theme.id)`                                                                 |
-| `server/src/web/server.ts`  | `/ws` route handler gains a `request` param; reads `scene` off `request.query` and adds it to the existing connect log line |
+| File                       | Change                                                                                                                      |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `web/src/net/feed.ts`      | `GroveFeed` constructor accepts optional `scene?: string`; `connect()` appends `?scene=` to the WS URL when set             |
+| `web/src/main.ts`          | `new GroveFeed(theme.id)`                                                                                                   |
+| `server/src/web/server.ts` | `/ws` route handler gains a `request` param; reads `scene` off `request.query` and adds it to the existing connect log line |
 
 No changes to `shared/`, no `WireMessage` additions, no protocol version bump.
 

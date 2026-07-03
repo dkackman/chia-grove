@@ -171,7 +171,10 @@ interface FakeBlock {
 class FakeRpc implements RpcView {
   blocks = new Map<number, FakeBlock>();
 
-  set(height: number, opts: { headerHash?: string; timestamp: bigint | null; spends?: CoinSpend[] }) {
+  set(
+    height: number,
+    opts: { headerHash?: string; timestamp: bigint | null; spends?: CoinSpend[] }
+  ) {
     this.blocks.set(height, {
       headerHash: opts.headerHash ?? `h${height}`,
       timestamp: opts.timestamp,
@@ -403,14 +406,14 @@ export async function buildServer(
 Find:
 
 ```typescript
-  registerImageProxy(app, media);
+registerImageProxy(app, media);
 ```
 
 Replace with:
 
 ```typescript
-  registerImageProxy(app, media);
-  if (blockLookup) registerBlockLookup(app, blockLookup, media);
+registerImageProxy(app, media);
+if (blockLookup) registerBlockLookup(app, blockLookup, media);
 ```
 
 - [ ] **Step 6: Wire real dependencies in `index.ts`**
@@ -654,7 +657,9 @@ test("a stale response is dropped when a newer load supersedes it before it reso
   const first = detail.load(100); // stays pending until resolveFirst() is called
   await detail.load(200); // resolves immediately, supersedes 100
   resolveFirst!({
-    events: [{ type: "block", height: 100, headerHash: "", timestamp: 1, spendCount: 0, fees: "0" }],
+    events: [
+      { type: "block", height: 100, headerHash: "", timestamp: 1, spendCount: 0, fees: "0" },
+    ],
   });
   await first;
 
@@ -1101,14 +1106,14 @@ Expected: all tests pass.
 In `web/index.html`, find:
 
 ```html
-    <div id="console" hidden></div>
+<div id="console" hidden></div>
 ```
 
 Replace with:
 
 ```html
-    <div id="console" hidden></div>
-    <div id="board-nav" hidden></div>
+<div id="console" hidden></div>
+<div id="board-nav" hidden></div>
 ```
 
 - [ ] **Step 6: Add styling to `style.css`**
@@ -1630,7 +1635,11 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
         }
         if (mode === "detail") {
           for (const row of displayRows) {
-            if (row.type === "sprout" && row.kind === "nft" && row.launcherId === event.launcherId) {
+            if (
+              row.type === "sprout" &&
+              row.kind === "nft" &&
+              row.launcherId === event.launcherId
+            ) {
               row.mediaFilter = event.mediaFilter;
             }
           }
