@@ -52,8 +52,10 @@ const contentFilter = new ContentFilter(media, {
 const cats = new CatRegistry();
 await cats.start();
 
+const rpcView = coinsetView(RpcClient.mainnet());
+
 const poller = new CoinsetPoller(
-  coinsetView(RpcClient.mainnet()),
+  rpcView,
   {
     async onBlock(block) {
       const events = classifyBlock(block, cats, media);
@@ -91,7 +93,7 @@ const poller = new CoinsetPoller(
   { pollIntervalMs: POLL_INTERVAL_MS, backfillBlocks: BACKFILL_BLOCKS }
 );
 
-const app = await buildServer(hub, media, log);
+const app = await buildServer(hub, media, log, { rpc: rpcView, cats, contentFilter });
 await app.listen({ port: PORT, host: "0.0.0.0" });
 poller.start();
 log.info(
