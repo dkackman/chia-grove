@@ -575,3 +575,53 @@ body {
     padding: 4px 8px;
   }
 }
+
+#board-nav {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: rgba(4, 17, 10, 0.78);
+  border: 1px solid rgba(61, 220, 132, 0.2);
+  backdrop-filter: blur(6px);
+  font:
+    12px/1.4 ui-monospace,
+    monospace;
+  color: #b9ffd9;
+}
+
+#board-nav-find {
+  display: flex;
+  gap: 6px;
+}
+
+#board-nav-find input {
+  width: 110px;
+  background: rgba(4, 17, 10, 0.9);
+  color: #eafff2;
+  border: 1px solid rgba(61, 220, 132, 0.35);
+  border-radius: 6px;
+  font: inherit;
+  padding: 3px 6px;
+}
+
+#board-nav-find button,
+#board-nav-controls button {
+  background: none;
+  border: 1px solid rgba(61, 220, 132, 0.35);
+  border-radius: 6px;
+  color: #eafff2;
+  font: inherit;
+  padding: 3px 8px;
+  cursor: pointer;
+}
+
+#board-nav-controls {
+  display: flex;
+  gap: 8px;
+}

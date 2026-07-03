@@ -4,6 +4,7 @@ import { isRenderable } from "./glyphs.js";
 import { mojosToXch, mojosToCAT } from "../../ui/format.js";
 
 export const BOARD_COLS = 48;
+export const HEIGHT_COLS = 8;
 
 const padL = (s: string, n: number) => s.slice(0, n).padStart(n);
 const padR = (s: string, n: number) => s.slice(0, n).padEnd(n);
@@ -63,7 +64,7 @@ export interface RowOptions {
 /** One fixed-width ledger line for an individual spend. Pure. Fields sum to BOARD_COLS (48). */
 export function rowText(event: SproutEvent, { showHeight = true }: RowOptions = {}): string {
   return (
-    (showHeight ? padR(String(event.height), 8) : " ".repeat(8)) +
+    (showHeight ? padR(String(event.height), HEIGHT_COLS) : " ".repeat(HEIGHT_COLS)) +
     " " +
     padR(kindLabel(event), 3) +
     " " +
@@ -101,7 +102,7 @@ function aggregatedRowText(row: AggregatedRow, { showHeight = true }: RowOptions
   const countStr = `${String(row.count).padStart(3)} ${row.count === 1 ? "SPEND" : "SPENDS"}`;
 
   return (
-    (showHeight ? padR(String(row.height), 8) : " ".repeat(8)) +
+    (showHeight ? padR(String(row.height), HEIGHT_COLS) : " ".repeat(HEIGHT_COLS)) +
     " " +
     padR(kindStr, 3) +
     " " +
@@ -218,4 +219,28 @@ export function cardMetaFor(row: DisplayRow): CardMeta | null {
     return { ...row.sample, amount: row.totalMojos.toString(), aggregate: { count: row.count } };
   }
   return null;
+}
+
+/**
+ * Patches `mediaFilter` on every NFT event matching `launcherId`, in place.
+ * Mutates the array's elements (not the array itself) so callers holding a
+ * reference to the same underlying objects (e.g. a `displayRows` filtered
+ * view sharing SproutEvent instances with the live `events` buffer) see the
+ * update without re-deriving anything. Pure aside from that mutation — no
+ * external state, same result for the same inputs. Returns whether anything
+ * was patched.
+ */
+export function patchMediaFilter(
+  events: SproutEvent[],
+  launcherId: string,
+  mediaFilter: SproutEvent["mediaFilter"]
+): boolean {
+  let patched = false;
+  for (const e of events) {
+    if (e.kind === "nft" && e.launcherId === launcherId) {
+      e.mediaFilter = mediaFilter;
+      patched = true;
+    }
+  }
+  return patched;
 }

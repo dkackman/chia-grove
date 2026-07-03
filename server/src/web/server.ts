@@ -7,6 +7,7 @@ import websocket from "@fastify/websocket";
 import fastifyStatic from "@fastify/static";
 import type { Hub, WireSocket } from "./hub.js";
 import { registerImageProxy } from "./img-proxy.js";
+import { registerBlockLookup, type BlockLookupDeps } from "./block-lookup.js";
 import type { MediaIndex } from "./media-index.js";
 import { readVersion } from "../version.js";
 import { PROTOCOL_VERSION } from "@grove/shared";
@@ -14,7 +15,8 @@ import { PROTOCOL_VERSION } from "@grove/shared";
 export async function buildServer(
   hub: Hub,
   media: MediaIndex,
-  logger: Logger
+  logger: Logger,
+  blockLookup?: BlockLookupDeps
 ): Promise<FastifyInstance> {
   // trust the local Caddy reverse proxy (see deploy/Caddyfile) so request.ip
   // reflects the real client via X-Forwarded-For — the image proxy rate-limits
@@ -48,6 +50,7 @@ export async function buildServer(
     protocolVersion: PROTOCOL_VERSION,
   }));
   registerImageProxy(app, media);
+  if (blockLookup) registerBlockLookup(app, blockLookup, media);
 
   app.register(async (instance) => {
     instance.get("/ws", { websocket: true }, (socket) => {

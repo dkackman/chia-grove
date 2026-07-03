@@ -13,17 +13,19 @@
 - No behavior change to the gallery wall's 3D wall texture — sensitive/blocked pieces keep the neutral striped placeholder there, focused or not (real art bytes are never fetched for wall display).
 - Media for the panel is fetched only when a piece is focused (zoomed), never ambiently.
 - Blocked NFTs get a "media unavailable" note in the panel (no media element, no src); sensitive NFTs get a blurred media element + "sensitive content" note. This mirrors `#card`'s existing `render === "placeholder"` / `render === "blur"` branches in `web/src/ui/detail-card.ts`.
-- Panel styling must use the gallery's existing warm palette (`#ffe9c2` accent), not `#card`'s green — copy `#card`'s CSS *structure*, not its colors.
+- Panel styling must use the gallery's existing warm palette (`#ffe9c2` accent), not `#card`'s green — copy `#card`'s CSS _structure_, not its colors.
 
 ---
 
 ### Task 1: Share `nftMediaEl` via `web/src/ui/media.ts`
 
 **Files:**
+
 - Modify: `web/src/ui/media.ts`
 - Modify: `web/src/ui/detail-card.ts`
 
 **Interfaces:**
+
 - Produces: `nftMediaEl(src: string, kind: MediaKind): HTMLElement`, exported from `web/src/ui/media.ts`. Task 3 imports this.
 
 This is a pure relocation of existing, already-working code — no behavior changes, so no new test is added (this mirrors how `detail-card.ts`'s DOM building is untested today; correctness is verified by the full suite still passing and by the manual browser check in Task 4).
@@ -181,10 +183,12 @@ EOF
 ### Task 2: Add a `media` field to `placardModel`
 
 **Files:**
+
 - Modify: `web/src/themes/gallery/label.ts`
 - Test: `web/test/gallery-label.test.ts`
 
 **Interfaces:**
+
 - Consumes: `resolveMedia(event: SproutEvent): MediaDisposition` and `type MediaDisposition` from `web/src/ui/media.js` (already exists; see `web/src/ui/media.ts`).
 - Produces: `Placard.media: MediaDisposition`, populated by `placardModel()`. Task 3 consumes `model.media` in `Placard$.render()`.
 
@@ -240,15 +244,15 @@ export interface Placard {
 In `placardModel()`, add `media: resolveMedia(event)` to the returned object (alongside the existing `title`, `meta`, etc. fields):
 
 ```ts
-  return {
-    title: event.mint ? "NFT mint" : "NFT",
-    meta: `${mojosToXch(event.amount)} XCH · block ${event.height}`,
-    coin: `coin ${shortHex(event.coinId)}`,
-    launcher: event.launcherId ? `launcher ${shortHex(event.launcherId)}` : null,
-    activity: count > 1 ? `${count} events` : null,
-    links,
-    media: resolveMedia(event),
-  };
+return {
+  title: event.mint ? "NFT mint" : "NFT",
+  meta: `${mojosToXch(event.amount)} XCH · block ${event.height}`,
+  coin: `coin ${shortHex(event.coinId)}`,
+  launcher: event.launcherId ? `launcher ${shortHex(event.launcherId)}` : null,
+  activity: count > 1 ? `${count} events` : null,
+  links,
+  media: resolveMedia(event),
+};
 ```
 
 - [ ] **Step 4: Run the test to verify it passes**
@@ -275,10 +279,12 @@ EOF
 ### Task 3: Render the media block in `Placard$` + gallery-palette CSS
 
 **Files:**
+
 - Modify: `web/src/themes/gallery/label.ts`
 - Modify: `web/src/style.css`
 
 **Interfaces:**
+
 - Consumes: `nftMediaEl(src, kind)` from `web/src/ui/media.js` (Task 1); `model.media: MediaDisposition` from `placardModel()` (Task 2).
 
 - [ ] **Step 1: Import `nftMediaEl` in `label.ts`**
@@ -354,7 +360,6 @@ In `web/src/style.css`, find this block:
 Insert immediately after its closing `}` (before the `/* play/pause button... */` comment that follows):
 
 ```css
-
 .gallery-label img,
 .gallery-label video {
   width: 100%;
@@ -422,6 +427,7 @@ Open `http://localhost:5173/?demo=1&theme=gallery` in a browser. `web/src/net/de
 - [ ] **Step 3: Zoom into a sensitive piece and confirm the panel**
 
 Click a framed piece on the wall to focus it. If its panel shows a plain title/meta/links with no media block, click "collapse details" (✕) then the ⓘ pill to re-expand, or click a different piece, until one flagged sensitive is focused. Confirm:
+
 - The wall's framed piece itself still shows the neutral striped placeholder (unchanged).
 - The side panel shows a blurred image (or video) directly under the title.
 - A dashed-border "sensitive content" note appears under the blurred media.

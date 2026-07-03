@@ -1,16 +1,27 @@
 // web/src/themes/board/board.ts
 import * as THREE from "three";
 import type { GroveFeed } from "../../net/feed.js";
-import type { SproutEvent } from "@grove/shared";
+import type { BlockEvent, GroveEvent, SproutEvent } from "@grove/shared";
 import type { VisualizationHandle } from "../types.js";
 import { createFrameLimiter } from "../shared/frame-limiter.js";
 import { BOARD } from "./palette.js";
 import { buildGlyphAtlas } from "./glyphs.js";
 import { FlapGrid } from "./flapgrid.js";
 import { Header } from "./header.js";
-import { rowTextFor, shouldShowHeight, cardMetaFor, toDisplayRows, BOARD_COLS } from "./rows.js";
+import {
+  rowTextFor,
+  shouldShowHeight,
+  cardMetaFor,
+  toDisplayRows,
+  patchMediaFilter,
+  BOARD_COLS,
+  HEIGHT_COLS,
+} from "./rows.js";
 import type { DisplayRow } from "./rows.js";
 import { fitDistance } from "./fit.js";
+import { BlockDetail, type DetailStatus } from "./detail.js";
+import { readBlockParam, writeBlockParam } from "./url-state.js";
+import { BoardNav } from "./block-nav.js";
 
 const LEDGER_ROWS = 20;
 const HISTORY = 500; // spends kept in memory for scrolling back through
@@ -21,6 +32,12 @@ const HISTORY = 500; // spends kept in memory for scrolling back through
 // riffles regardless — this only gates the `!wasIdle` case.
 const FAST_FORWARD = 48;
 const SCROLL_PX_PER_ROW = 30; // wheel delta per row scrolled
+
+const DETAIL_MESSAGES: Record<Exclude<DetailStatus, "loaded">, string> = {
+  loading: "LOADING…",
+  empty: "NO SPENDS THIS BLOCK",
+  error: "COULD NOT LOAD BLOCK",
+};
 
 export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): VisualizationHandle {
   const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -64,6 +81,15 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
   });
   const header = new Header(scene, atlas, { originY: HEADER_ORIGIN_Y });
 
+  const navRoot = document.getElementById("board-nav") as HTMLDivElement;
+  navRoot.hidden = false;
+  const nav = new BoardNav(navRoot, {
+    onFind: (height) => enterDetail(height),
+    onPrev: () => stepDetail(-1),
+    onNext: () => stepDetail(1),
+    onReturnToLive: () => returnToLive(),
+  });
+
   const events: SproutEvent[] = []; // newest first, capped at HISTORY
   let displayRows: DisplayRow[] = [];
   let ledgerDirty = false;
@@ -72,10 +98,20 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
   let scrollAccum = 0; // sub-row wheel remainder
   let lastRenderedOffset = -1;
 
+  // --- block-detail mode -------------------------------------------------
+  let mode: "live" | "detail" = "live";
+  let detailMessage: string | null = null; // non-null replaces the ledger with a status line
+  let detailDirty = false;
+  let lastLiveBlock: BlockEvent | null = null; // so returning to live doesn't wait for the next block
+
   const maxOffset = () => Math.max(0, displayRows.length - LEDGER_ROWS);
 
   function renderLedger(instant: boolean): void {
     for (let r = 0; r < LEDGER_ROWS; r++) {
+      if (detailMessage !== null) {
+        ledger.setRow(r, r === 0 ? detailMessage : "", instant);
+        continue;
+      }
       const i = r + scrollOffset;
       const row = displayRows[i];
       if (row) {
@@ -87,6 +123,49 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
     }
   }
 
+  const detail = new BlockDetail(
+    (height) =>
+      fetch(`/block/${height}`).then((res) => {
+        if (!res.ok) throw new Error(`block fetch failed: ${res.status}`);
+        return res.json() as Promise<{ events: GroveEvent[] }>;
+      }),
+    (state) => {
+      mode = "detail";
+      detailMessage = state.status === "loaded" ? null : DETAIL_MESSAGES[state.status];
+      if (state.status === "loaded" || state.status === "empty") {
+        displayRows = state.rows;
+      }
+      scrollOffset = 0;
+      lastRenderedOffset = -1;
+      header.setDetail(state.height, state.status, state.spendCount, state.fees);
+      nav.setMode("detail");
+      detailDirty = true;
+    }
+  );
+
+  function enterDetail(height: number, pushUrl = true): void {
+    if (pushUrl) writeBlockParam(height);
+    void detail.load(height);
+  }
+
+  function stepDetail(delta: number): void {
+    enterDetail(Math.max(0, detail.currentHeight + delta));
+  }
+
+  function returnToLive(pushUrl = true): void {
+    mode = "live";
+    detailMessage = null;
+    scrollOffset = 0;
+    lastRenderedOffset = -1;
+    ledgerDirty = true;
+    if (lastLiveBlock) {
+      header.setBlock(lastLiveBlock.height, lastLiveBlock.spendCount, lastLiveBlock.fees);
+    }
+    header.setLive(true);
+    nav.setMode("live");
+    if (pushUrl) writeBlockParam(null);
+  }
+
   feed.onEvent((event) => {
     switch (event.type) {
       case "sprout":
@@ -96,7 +175,8 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
         sproutsSinceFrame++;
         break;
       case "block":
-        header.setBlock(event.height, event.spendCount, event.fees);
+        lastLiveBlock = event;
+        if (mode === "live") header.setBlock(event.height, event.spendCount, event.fees);
         break;
       case "ambient":
         header.setAmbient(event.mempoolSize, event.netspace);
@@ -107,6 +187,17 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
           if (events[i].height >= event.forkHeight) events.splice(i, 1);
         }
         if (events.length !== before) ledgerDirty = true;
+        break;
+      }
+      case "content-flag": {
+        patchMediaFilter(events, event.launcherId, event.mediaFilter);
+        if (mode === "detail") {
+          patchMediaFilter(
+            displayRows.filter((r): r is SproutEvent => r.type === "sprout"),
+            event.launcherId,
+            event.mediaFilter
+          );
+        }
         break;
       }
     }
@@ -124,27 +215,40 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
     const dt = Math.min(timer.getDelta(), 0.1);
     const t = timer.getElapsed();
 
-    if (scrollOffset > maxOffset()) scrollOffset = maxOffset(); // a reorg may have shrunk history
-    const scrolled = scrollOffset !== lastRenderedOffset;
-    if (ledgerDirty || scrolled) {
-      const wasIdle = ledger.idle();
-      if (ledgerDirty) {
-        const prevLen = displayRows.length;
-        displayRows = toDisplayRows(events);
-        // keep the same block in view when scrolled back
-        if (scrollOffset > 0) {
-          scrollOffset = Math.min(scrollOffset + displayRows.length - prevLen, maxOffset());
+    if (mode === "live") {
+      if (scrollOffset > maxOffset()) scrollOffset = maxOffset(); // a reorg may have shrunk history
+      const scrolled = scrollOffset !== lastRenderedOffset;
+      if (ledgerDirty || scrolled) {
+        const wasIdle = ledger.idle();
+        if (ledgerDirty) {
+          const prevLen = displayRows.length;
+          displayRows = toDisplayRows(events);
+          // keep the same block in view when scrolled back
+          if (scrollOffset > 0) {
+            scrollOffset = Math.min(scrollOffset + displayRows.length - prevLen, maxOffset());
+          }
+          ledgerDirty = false;
         }
-        ledgerDirty = false;
+        // Scrubbing through history snaps instantly; a settled board always
+        // riffles a fresh block no matter how many spends it carries. Only snap
+        // when we're already mid-riffle and being flooded (e.g. the startup
+        // snapshot replay) so the board can catch up instead of churning forever.
+        const flooding = !wasIdle && sproutsSinceFrame > FAST_FORWARD;
+        renderLedger(scrolled || reducedMotion || flooding);
+        lastRenderedOffset = scrollOffset;
+        header.setLive(scrollOffset === 0);
       }
-      // Scrubbing through history snaps instantly; a settled board always
-      // riffles a fresh block no matter how many spends it carries. Only snap
-      // when we're already mid-riffle and being flooded (e.g. the startup
-      // snapshot replay) so the board can catch up instead of churning forever.
-      const flooding = !wasIdle && sproutsSinceFrame > FAST_FORWARD;
-      renderLedger(scrolled || reducedMotion || flooding);
+    } else if (detailDirty) {
+      // block navigation and the live↔detail switch always riffle, like any
+      // other board update — only reduced-motion forces an instant cut
+      renderLedger(reducedMotion);
       lastRenderedOffset = scrollOffset;
-      header.setLive(scrollOffset === 0);
+      detailDirty = false;
+    } else if (scrollOffset !== lastRenderedOffset) {
+      // scrolling within a busy block's rows snaps instantly, matching the
+      // live ledger's own history-scrub behavior
+      renderLedger(true);
+      lastRenderedOffset = scrollOffset;
     }
     sproutsSinceFrame = 0;
 
@@ -175,8 +279,8 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
     baseZ = fitDistance(contentW, contentH, VFOV, camera.aspect);
   });
 
-  // wheel / trackpad scrolls vertically through history; scrolling down reveals
-  // older spends, scrolling back to the top resumes following live
+  // wheel / trackpad scrolls vertically through history (live) or through a
+  // busy block's spend list (detail); scrolling down reveals older rows
   canvas.addEventListener(
     "wheel",
     (e) => {
@@ -193,15 +297,32 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
     { passive: false }
   );
 
+  addEventListener("popstate", () => {
+    const height = readBlockParam(location.search);
+    if (height !== null) enterDetail(height, false);
+    else returnToLive(false);
+  });
+
+  const initialHeight = readBlockParam(location.search);
+  if (initialHeight !== null) enterDetail(initialHeight, false);
+
   return {
     camera,
     onFrame: (fn) => frameCallbacks.push(fn),
     pickables: () => [ledger.mesh],
     metaFor: (object, instanceId) => {
       if (object !== ledger.mesh || instanceId === undefined) return null;
+      if (instanceId % BOARD_COLS < HEIGHT_COLS) return null; // height gutter: see pickHeight
       const row = displayRows[scrollOffset + ledger.rowOf(instanceId)];
       return row ? cardMetaFor(row) : null;
     },
+    pickHeight: (object, instanceId) => {
+      if (object !== ledger.mesh || instanceId === undefined) return null;
+      if (instanceId % BOARD_COLS >= HEIGHT_COLS) return null;
+      const row = displayRows[scrollOffset + ledger.rowOf(instanceId)];
+      return row ? row.height : null;
+    },
+    selectHeight: (height) => enterDetail(height),
     setHovered: (object, instanceId) =>
       ledger.highlightRow(
         object === ledger.mesh && instanceId !== undefined ? ledger.rowOf(instanceId) : null

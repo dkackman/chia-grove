@@ -15,7 +15,7 @@ by grove/farm/mine/board) should give the same content-filter treatment the
 - **blocked** → a "media unavailable" note (no bytes fetched, ever).
 
 This closes a gap from [`2026-06-26-sensitive-content-filtering-design.md`](2026-06-26-sensitive-content-filtering-design.md):
-that design deliberately kept the gallery *wall* on a neutral placeholder
+that design deliberately kept the gallery _wall_ on a neutral placeholder
 texture instead of fetching+blurring real art, since a wall shows many pieces
 ambiently. It didn't add an equivalent to `#card`'s blur+label treatment for
 gallery's own "detail view" (the zoom/focus panel) — so today a focused

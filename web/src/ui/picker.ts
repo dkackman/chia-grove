@@ -5,7 +5,16 @@ import { hideCard, showCard } from "./detail-card.js";
 interface Hit {
   object: THREE.Object3D;
   instanceId: number | undefined;
-  meta: CardMeta;
+  meta: CardMeta | null;
+  height: number | null;
+}
+
+/** Identifies a hovered pick target for dedup, independent of whether it carries card data. Pure. */
+export function hitKey(
+  hit: { object: THREE.Object3D; instanceId: number | undefined } | null
+): string {
+  if (!hit) return "";
+  return `${hit.object.id}:${hit.instanceId ?? -1}`;
 }
 
 export function attachPicker(canvas: HTMLCanvasElement, viz: VisualizationHandle): void {
@@ -18,7 +27,10 @@ export function attachPicker(canvas: HTMLCanvasElement, viz: VisualizationHandle
     const hits = raycaster.intersectObjects(viz.pickables?.() ?? [], false);
     for (const hit of hits) {
       const meta = viz.metaFor?.(hit.object, hit.instanceId) ?? null;
-      if (meta) return { object: hit.object, instanceId: hit.instanceId, meta };
+      const height = viz.pickHeight?.(hit.object, hit.instanceId) ?? null;
+      if (meta || height !== null) {
+        return { object: hit.object, instanceId: hit.instanceId, meta, height };
+      }
     }
     return null;
   }
@@ -33,7 +45,7 @@ export function attachPicker(canvas: HTMLCanvasElement, viz: VisualizationHandle
 
   let pendingX = -1;
   let pendingY = -1;
-  let hoveredCoinId: string | null = null;
+  let hoveredKey = "";
   // a click pins the card open so the spacescan link is reachable;
   // click-away (or clicking another plant) releases it
   let pinned = false;
@@ -73,15 +85,15 @@ export function attachPicker(canvas: HTMLCanvasElement, viz: VisualizationHandle
     const hit = intersect(pendingX, pendingY);
     pendingX = -1;
 
-    const coinId = hit?.meta.coinId ?? null;
-    if (coinId === hoveredCoinId) return;
-    hoveredCoinId = coinId;
+    const key = hitKey(hit);
+    if (key === hoveredKey) return;
+    hoveredKey = key;
 
     viz.setHovered?.(hit?.object ?? null, hit?.instanceId);
     canvas.style.cursor = hit ? "pointer" : "default";
     if (!pinned && !insideCard) {
       clearCardTimers();
-      if (hit) {
+      if (hit?.meta) {
         const meta = hit.meta;
         showTimer = window.setTimeout(() => showCard(meta), SHOW_DELAY_MS);
       } else {
@@ -94,7 +106,13 @@ export function attachPicker(canvas: HTMLCanvasElement, viz: VisualizationHandle
     if (viz.isDragging?.()) return;
     const hit = intersect(event.clientX, event.clientY);
     clearCardTimers();
-    if (hit) {
+    if (hit && hit.height !== null) {
+      pinned = false;
+      hideCard();
+      viz.selectHeight?.(hit.height);
+      return;
+    }
+    if (hit?.meta) {
       pinned = true;
       showCard(hit.meta);
     } else {

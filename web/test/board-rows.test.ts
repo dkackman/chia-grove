@@ -1,8 +1,10 @@
 import { expect, test } from "vitest";
 import {
   BOARD_COLS,
+  HEIGHT_COLS,
   cardMetaFor,
   isBlockStart,
+  patchMediaFilter,
   rowText,
   rowTextFor,
   shouldShowHeight,
@@ -390,4 +392,56 @@ test("cardMetaFor builds an XCH detail carrying the aggregated total", () => {
   expect(meta!.kind).toBe("xch");
   expect(meta!.amount).toBe("2000000000000"); // 1.5 + 0.5 XCH = 2 XCH total
   expect(meta!.height).toBe(700);
+});
+
+test("HEIGHT_COLS matches the width of the height field", () => {
+  const e = sprout({ kind: "xch", amount: "1000", height: 5121 });
+  const hidden = rowText(e, { showHeight: false });
+  expect(hidden.slice(0, HEIGHT_COLS)).toBe(" ".repeat(HEIGHT_COLS));
+  expect(hidden[HEIGHT_COLS]).toBe(" "); // the space separator right after the height field
+});
+
+// --- patchMediaFilter ---
+
+test("patchMediaFilter sets mediaFilter on the matching NFT and returns true", () => {
+  const e = sprout({ kind: "nft", launcherId: "L1" });
+  const patched = patchMediaFilter([e], "L1", "sensitive");
+  expect(patched).toBe(true);
+  expect(e.mediaFilter).toBe("sensitive");
+});
+
+test("patchMediaFilter leaves NFTs with a different launcherId untouched", () => {
+  const e = sprout({ kind: "nft", launcherId: "L1" });
+  const patched = patchMediaFilter([e], "L2", "sensitive");
+  expect(patched).toBe(false);
+  expect(e.mediaFilter).toBeUndefined();
+});
+
+test("patchMediaFilter leaves non-NFT kinds untouched even with a matching launcherId", () => {
+  const e = sprout({ kind: "did", launcherId: "L1" });
+  const patched = patchMediaFilter([e], "L1", "sensitive");
+  expect(patched).toBe(false);
+  expect((e as { mediaFilter?: string }).mediaFilter).toBeUndefined();
+});
+
+test("patchMediaFilter returns false when nothing matches", () => {
+  const events = [sprout({ kind: "nft", launcherId: "L1" }), sprout({ kind: "xch" })];
+  expect(patchMediaFilter(events, "nope", "blocked")).toBe(false);
+});
+
+test("patchMediaFilter overwrites with undefined to clear a flag", () => {
+  const e = sprout({ kind: "nft", launcherId: "L1", mediaFilter: "blocked" });
+  const patched = patchMediaFilter([e], "L1", undefined);
+  expect(patched).toBe(true);
+  expect(e.mediaFilter).toBeUndefined();
+});
+
+test("patchMediaFilter patches only the matching NFT among several", () => {
+  const a = sprout({ kind: "nft", launcherId: "L1" });
+  const b = sprout({ kind: "nft", launcherId: "L2" });
+  const c = sprout({ kind: "nft", launcherId: "L1" }); // same launcherId as `a`
+  patchMediaFilter([a, b, c], "L1", "sensitive");
+  expect(a.mediaFilter).toBe("sensitive");
+  expect(b.mediaFilter).toBeUndefined();
+  expect(c.mediaFilter).toBe("sensitive");
 });
