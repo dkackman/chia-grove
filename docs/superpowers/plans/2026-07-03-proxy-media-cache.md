@@ -407,6 +407,10 @@ Replace it with:
     const cacheable = !hasRange && status === 200 && ct.startsWith("image/");
     if (cacheable) {
       const collector = cachingCollector(CACHE_ENTRY_MAX_BYTES);
+      // Full teardown triangle: capped's own byte-cap error must destroy the
+      // upstream too (plain .pipe() does not propagate teardown to the source),
+      // else a chunked/over-cap image leaks the upstream socket.
+      capped.on("error", () => upstream.destroy());
       capped.on("error", () => collector.stream.destroy());
       collector.stream.on("error", () => capped.destroy());
       // `close` fires on both clean completion and client abort; result() is
@@ -604,6 +608,7 @@ Update the cacheable/non-cacheable stream branches from Task 2 to settle the lea
     const cacheable = !hasRange && status === 200 && ct.startsWith("image/");
     if (cacheable) {
       const collector = cachingCollector(CACHE_ENTRY_MAX_BYTES);
+      capped.on("error", () => upstream.destroy()); // capped's byte-cap error must tear down upstream too
       capped.on("error", () => collector.stream.destroy());
       collector.stream.on("error", () => capped.destroy());
       // Single finalization point: `close` fires on clean completion and on
@@ -807,6 +812,7 @@ Replace it with:
     const cacheable = status === 200 && ct.startsWith("image/");
     if (cacheable) {
       const collector = cachingCollector(CACHE_ENTRY_MAX_BYTES);
+      capped.on("error", () => upstream!.destroy()); // capped's byte-cap error must tear down upstream too
       capped.on("error", () => collector.stream.destroy());
       collector.stream.on("error", () => capped.destroy());
       collector.stream.on("close", () => {
