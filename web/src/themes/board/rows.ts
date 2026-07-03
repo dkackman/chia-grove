@@ -4,6 +4,7 @@ import { isRenderable } from "./glyphs.js";
 import { mojosToXch, mojosToCAT } from "../../ui/format.js";
 
 export const BOARD_COLS = 48;
+export const HEIGHT_COLS = 8;
 
 const padL = (s: string, n: number) => s.slice(0, n).padStart(n);
 const padR = (s: string, n: number) => s.slice(0, n).padEnd(n);
@@ -63,7 +64,7 @@ export interface RowOptions {
 /** One fixed-width ledger line for an individual spend. Pure. Fields sum to BOARD_COLS (48). */
 export function rowText(event: SproutEvent, { showHeight = true }: RowOptions = {}): string {
   return (
-    (showHeight ? padR(String(event.height), 8) : " ".repeat(8)) +
+    (showHeight ? padR(String(event.height), HEIGHT_COLS) : " ".repeat(HEIGHT_COLS)) +
     " " +
     padR(kindLabel(event), 3) +
     " " +
@@ -101,7 +102,7 @@ function aggregatedRowText(row: AggregatedRow, { showHeight = true }: RowOptions
   const countStr = `${String(row.count).padStart(3)} ${row.count === 1 ? "SPEND" : "SPENDS"}`;
 
   return (
-    (showHeight ? padR(String(row.height), 8) : " ".repeat(8)) +
+    (showHeight ? padR(String(row.height), HEIGHT_COLS) : " ".repeat(HEIGHT_COLS)) +
     " " +
     padR(kindStr, 3) +
     " " +

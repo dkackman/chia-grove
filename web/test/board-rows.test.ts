@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 import {
   BOARD_COLS,
+  HEIGHT_COLS,
   cardMetaFor,
   isBlockStart,
   rowText,
@@ -390,4 +391,11 @@ test("cardMetaFor builds an XCH detail carrying the aggregated total", () => {
   expect(meta!.kind).toBe("xch");
   expect(meta!.amount).toBe("2000000000000"); // 1.5 + 0.5 XCH = 2 XCH total
   expect(meta!.height).toBe(700);
+});
+
+test("HEIGHT_COLS matches the width of the height field", () => {
+  const e = sprout({ kind: "xch", amount: "1000", height: 5121 });
+  const hidden = rowText(e, { showHeight: false });
+  expect(hidden.slice(0, HEIGHT_COLS)).toBe(" ".repeat(HEIGHT_COLS));
+  expect(hidden[HEIGHT_COLS]).toBe(" "); // the space separator right after the height field
 });
