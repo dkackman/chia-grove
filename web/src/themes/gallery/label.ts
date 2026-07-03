@@ -1,5 +1,6 @@
 import type { SproutEvent } from "@grove/shared";
 import { mojosToXch, shortHex } from "../../ui/format.js";
+import { resolveMedia, nftMediaEl, type MediaDisposition } from "../../ui/media.js";
 
 export interface PlacardLink {
   label: string;
@@ -13,6 +14,7 @@ export interface Placard {
   launcher: string | null;
   activity: string | null;
   links: PlacardLink[];
+  media: MediaDisposition;
 }
 
 /**
@@ -37,6 +39,7 @@ export function placardModel(event: SproutEvent, count = 1): Placard {
     launcher: event.launcherId ? `launcher ${shortHex(event.launcherId)}` : null,
     activity: count > 1 ? `${count} events` : null,
     links,
+    media: resolveMedia(event),
   };
 }
 
@@ -106,6 +109,21 @@ export class Placard$ {
     h.textContent = model.title;
     head.append(h, this.iconButton("✕", "collapse details", true));
     this.el.appendChild(head);
+
+    if (model.media.render === "blur") {
+      const media = nftMediaEl(model.media.src, model.media.kind);
+      media.classList.add("sensitive");
+      this.el.appendChild(media);
+      const note = document.createElement("div");
+      note.className = "media-note";
+      note.textContent = "sensitive content";
+      this.el.appendChild(note);
+    } else if (model.media.render === "placeholder") {
+      const note = document.createElement("div");
+      note.className = "media-note";
+      note.textContent = "media unavailable";
+      this.el.appendChild(note);
+    }
 
     if (model.activity) {
       const a = document.createElement("div");

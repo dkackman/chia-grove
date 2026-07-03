@@ -48,3 +48,19 @@ test("launcher line omitted when absent, mintgarden link omitted without nftId",
   expect(m.launcher).toBeNull();
   expect(m.links.some((l) => l.href.includes("mintgarden"))).toBe(false);
 });
+
+test("media reflects the resolver: blur for sensitive, placeholder for blocked, art otherwise", () => {
+  expect(placardModel({ ...base, mediaKind: "image", mediaFilter: "sensitive" }).media).toEqual({
+    render: "blur",
+    src: `/img?nft=${base.launcherId}`,
+    kind: "image",
+  });
+  expect(placardModel({ ...base, mediaKind: "image", mediaFilter: "blocked" }).media).toEqual({
+    render: "placeholder",
+  });
+  expect(placardModel({ ...base, mediaKind: "image" }).media).toEqual({
+    render: "art",
+    src: `/img?nft=${base.launcherId}`,
+    kind: "image",
+  });
+});
