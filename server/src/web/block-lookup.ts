@@ -48,7 +48,8 @@ export function registerBlockLookup(
     let info;
     try {
       info = await deps.rpc.getBlockInfo(height);
-    } catch {
+    } catch (err) {
+      request.log.warn({ err, height }, "block lookup: getBlockInfo failed");
       return { events: [emptyBlockEvent(height)] };
     }
     if (info.timestamp === null) {
