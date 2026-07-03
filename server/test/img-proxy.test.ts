@@ -378,3 +378,31 @@ test("an upstream error mid-stream on a cacheable image aborts cleanly, no hang,
   expect(calls).toBe(2);
   await app.close();
 });
+
+test("coalesces concurrent requests for the same nft into one upstream fetch", async () => {
+  const media = new MediaIndex(10);
+  media.set("img3", { url: "https://cdn.test/c.png", kind: "image" });
+  let calls = 0;
+  // A deferred fetcher: the fetch stays pending until we release it, so the
+  // second request provably arrives while the first is still fetching.
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  const fetcher = async (): Promise<IncomingMessage | null> => {
+    calls++;
+    await gate;
+    return fakeUpstream(200, "image/png", "PNGDATA");
+  };
+  const app = fastify();
+  registerImageProxy(app, media, new FailureCache(60_000, 10), fetcher, new MediaCache(1_000_000));
+
+  const p1 = app.inject({ method: "GET", url: "/img?nft=img3" });
+  const p2 = app.inject({ method: "GET", url: "/img?nft=img3" });
+  await new Promise((r) => setTimeout(r, 20)); // let both handlers reach the fetch/await
+  release();
+  const [r1, r2] = await Promise.all([p1, p2]);
+
+  expect(r1.body).toBe("PNGDATA");
+  expect(r2.body).toBe("PNGDATA");
+  expect(calls).toBe(1); // one leader fetch shared by both requests
+  await app.close();
+});

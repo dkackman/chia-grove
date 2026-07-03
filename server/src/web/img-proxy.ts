@@ -221,6 +221,13 @@ function cachingCollector(cap: number): { stream: Transform; result(): Buffer | 
   return { stream, result: () => (ended && !truncated ? Buffer.concat(chunks) : null) };
 }
 
+/** A promise with its resolver exposed, for the single-flight in-flight map. */
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => (resolve = r));
+  return { promise, resolve };
+}
+
 /** Serve a cached body with the same headers a fresh serve would set. */
 function serveCached(reply: FastifyReply, resp: CachedResponse): FastifyReply {
   reply.code(200);
@@ -265,6 +272,12 @@ export function registerImageProxy(
   const limiter = new RateLimiter(RATE_WINDOW_MS, RATE_MAX_PER_IP);
   let inflight = 0;
 
+  // Single-flight: concurrent cold requests for the same key await one leader's
+  // fetch instead of each opening their own. Resolves with the cached body, or
+  // null when the leader's body turned out uncacheable (waiters then fall
+  // through to their own fetch — same as today for videos).
+  const inFlight = new Map<string, Promise<CachedResponse | null>>();
+
   // periodically drop stale buckets so the maps can't grow without bound
   const sweep = setInterval(() => {
     limiter.sweep();
@@ -284,6 +297,12 @@ export function registerImageProxy(
     if (!hasRange) {
       const cached = cache.get(key);
       if (cached) return serveCached(reply, cached);
+      const pending = inFlight.get(key);
+      if (pending) {
+        const shared = await pending;
+        if (shared) return serveCached(reply, shared);
+        // leader's body was uncacheable → fall through to an independent fetch
+      }
     }
 
     // a recently-failed target short-circuits here — before consuming an inflight
@@ -301,6 +320,19 @@ export function registerImageProxy(
       .map(validateProxyTarget)
       .filter((u): u is URL => u !== null);
     if (candidates.length === 0) return reply.code(400).send("disallowed nft url");
+
+    // Become the single-flight leader for this key so concurrent cold requests
+    // coalesce onto this fetch. Only non-ranged requests participate.
+    const lead = !hasRange ? deferred<CachedResponse | null>() : null;
+    if (lead) inFlight.set(key, lead.promise);
+    let settled = false;
+    const settle = (value: CachedResponse | null): void => {
+      if (lead && !settled) {
+        settled = true;
+        inFlight.delete(key);
+        lead.resolve(value);
+      }
+    };
 
     inflight++;
     let released = false;
@@ -337,6 +369,7 @@ export function registerImageProxy(
     if (!upstream) {
       release();
       failures.mark(launcherId!);
+      settle(null);
       return sawError
         ? reply.code(504).send("upstream fetch failed")
         : reply.code(502).send("upstream unavailable");
@@ -348,6 +381,7 @@ export function registerImageProxy(
       upstream.destroy();
       release();
       failures.mark(launcherId!);
+      settle(null);
       return reply.code(502).send("upstream too large");
     }
 
@@ -379,22 +413,25 @@ export function registerImageProxy(
     const cacheable = !hasRange && status === 200 && ct.startsWith("image/");
     if (cacheable) {
       const collector = cachingCollector(CACHE_ENTRY_MAX_BYTES);
-      capped.on("error", () => upstream.destroy());
+      capped.on("error", () => upstream.destroy()); // capped's byte-cap error must tear down upstream too
       capped.on("error", () => collector.stream.destroy());
-      upstream.on("error", () => collector.stream.destroy());
+      upstream.on("error", () => collector.stream.destroy()); // upstream error must tear down the collector (release rides on its close)
       collector.stream.on("error", () => capped.destroy());
-      // `close` fires on both clean completion and client abort; result() is
-      // non-null only after a clean end within the cap, so this both fills the
-      // cache and frees the slot in one place.
+      // Single finalization point: `close` fires on clean completion and on
+      // client abort. result() is non-null only after a clean end within the
+      // cap, so this fills the cache, frees the slot, and settles waiters at
+      // once (on abort, body is null → not cached and waiters fall through).
       collector.stream.on("close", () => {
         release();
         const body = collector.result();
         if (body) cache.set(key, { body, contentType: ct });
+        settle(body ? { body, contentType: ct } : null);
       });
       upstream.pipe(capped).pipe(collector.stream);
       return reply.send(collector.stream);
     }
 
+    settle(null); // this body won't be cached (video/partial); waiters fall through
     capped.on("error", () => upstream.destroy());
     capped.on("close", release);
     upstream.pipe(capped);
