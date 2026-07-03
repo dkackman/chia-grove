@@ -14,6 +14,7 @@ import { Hub } from "../src/web/hub.js";
 import { RingBuffer } from "../src/web/ring-buffer.js";
 import { MediaIndex } from "../src/web/media-index.js";
 import { FailureCache } from "../src/web/failure-cache.js";
+import { MediaCache } from "../src/web/media-cache.js";
 import type { GroveEvent } from "@grove/shared";
 
 const silent = pino({ level: "silent" });
@@ -270,5 +271,74 @@ test("falls back to the original url when the primary 5xx-es", async () => {
   expect(res.statusCode).toBe(200);
   expect(res.body).toBe("PNGDATA");
   expect(calls).toEqual(["https://archive.test/content/h", "https://ipfs.test/41.png"]);
+  await app.close();
+});
+
+test("caches a small image on first fetch and serves the second request from cache", async () => {
+  const media = new MediaIndex(10);
+  media.set("img1", { url: "https://cdn.test/a.png", kind: "image" });
+  let calls = 0;
+  const fetcher = async (): Promise<IncomingMessage | null> => {
+    calls++;
+    return fakeUpstream(200, "image/png", "PNGDATA");
+  };
+  const app = fastify();
+  registerImageProxy(app, media, new FailureCache(60_000, 10), fetcher, new MediaCache(1_000_000));
+
+  const first = await app.inject({ method: "GET", url: "/img?nft=img1" });
+  expect(first.statusCode).toBe(200);
+  expect(first.body).toBe("PNGDATA");
+
+  const second = await app.inject({ method: "GET", url: "/img?nft=img1" });
+  expect(second.statusCode).toBe(200);
+  expect(second.body).toBe("PNGDATA");
+  expect(second.headers["content-type"]).toBe("image/png");
+  expect(calls).toBe(1); // second request served from cache, no upstream fetch
+  await app.close();
+});
+
+test("does not cache a video body (streams it, refetches next time)", async () => {
+  const media = new MediaIndex(10);
+  media.set("vid1", { url: "https://cdn.test/clip.mp4", kind: "video" });
+  let calls = 0;
+  const fetcher = async (): Promise<IncomingMessage | null> => {
+    calls++;
+    return fakeUpstream(200, "video/mp4", "VIDEODATA");
+  };
+  const app = fastify();
+  registerImageProxy(app, media, new FailureCache(60_000, 10), fetcher, new MediaCache(1_000_000));
+
+  await app.inject({ method: "GET", url: "/img?nft=vid1" });
+  await app.inject({ method: "GET", url: "/img?nft=vid1" });
+  expect(calls).toBe(2); // videos are never cached
+  await app.close();
+});
+
+test("a ranged request bypasses the cache", async () => {
+  const media = new MediaIndex(10);
+  media.set("img2", { url: "https://cdn.test/b.png", kind: "image" });
+  let calls = 0;
+  const fetcher = async (): Promise<IncomingMessage | null> => {
+    calls++;
+    return fakeUpstream(200, "image/png", "PNGDATA");
+  };
+  const app = fastify();
+  registerImageProxy(app, media, new FailureCache(60_000, 10), fetcher, new MediaCache(1_000_000));
+
+  await app.inject({ method: "GET", url: "/img?nft=img2" }); // primes the cache (fetch 1)
+  await app.inject({ method: "GET", url: "/img?nft=img2", headers: { range: "bytes=0-3" } });
+  expect(calls).toBe(2); // ranged request must not be served the full cached body
+  await app.close();
+});
+
+test("a failed fetch leaves the cache empty", async () => {
+  const media = new MediaIndex(10);
+  media.set("fail2", { url: "https://nonexistent.invalid/x.png", kind: "image" });
+  const cache = new MediaCache(1_000_000);
+  const app = fastify();
+  registerImageProxy(app, media, new FailureCache(60_000, 10), undefined, cache);
+  const res = await app.inject({ method: "GET", url: "/img?nft=fail2" });
+  expect(res.statusCode).toBe(504);
+  expect(cache.get("img:fail2")).toBeUndefined();
   await app.close();
 });

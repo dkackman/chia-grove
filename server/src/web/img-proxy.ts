@@ -4,10 +4,11 @@ import { Transform } from "node:stream";
 import { lookup as dnsLookup, type LookupAddress } from "node:dns";
 import { isIP, type LookupFunction } from "node:net";
 import type { IncomingMessage } from "node:http";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import type { MediaIndex } from "./media-index.js";
 import { FailureCache } from "./failure-cache.js";
 import { RateLimiter } from "./rate-limiter.js";
+import { MediaCache, type CachedResponse } from "./media-cache.js";
 
 const MAX_REDIRECTS = 4;
 // Short idle timeout: art that hangs (unpinned IPFS CID, slow gateway) frees the
@@ -40,6 +41,12 @@ const MAX_INFLIGHT = 32;
 const FAIL_BASE_TTL_MS = 30 * 1000;
 const FAIL_MAX_TTL_MS = 10 * 60 * 1000;
 const FAIL_CAPACITY = 10_000;
+
+// In-memory response cache for bounded media (thumbnails + small images). Large
+// videos and ranged requests are never cached — they stream through the hardened
+// path unchanged. Total heap held at/below the budget; oldest evicts first.
+const CACHE_BYTE_BUDGET = 64 * 1024 * 1024;
+const CACHE_ENTRY_MAX_BYTES = 4 * 1024 * 1024; // == THUMB_MAX_BYTES
 
 // hostnames refused outright; IP-literal and DNS-resolved addresses are checked
 // against private ranges separately (isPrivateAddress / safeLookup)
@@ -182,6 +189,51 @@ function byteCap(max: number): Transform {
 }
 
 /**
+ * A pass-through that forwards every chunk unchanged (so client delivery is
+ * exactly the streamed path) while accumulating the body up to `cap` bytes for
+ * caching. If the body exceeds `cap`, accumulation is abandoned (the buffer is
+ * dropped) but forwarding continues. `result()` returns the full body only if the
+ * stream ended cleanly within the cap, else null.
+ */
+function cachingCollector(cap: number): { stream: Transform; result(): Buffer | null } {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  let truncated = false;
+  let ended = false;
+  const stream = new Transform({
+    transform(chunk: Buffer, _enc, cb) {
+      if (!truncated) {
+        size += chunk.length;
+        if (size > cap) {
+          truncated = true;
+          chunks.length = 0; // don't hold a partial body
+        } else {
+          chunks.push(chunk);
+        }
+      }
+      cb(null, chunk);
+    },
+    flush(cb) {
+      ended = true;
+      cb();
+    },
+  });
+  return { stream, result: () => (ended && !truncated ? Buffer.concat(chunks) : null) };
+}
+
+/** Serve a cached body with the same headers a fresh serve would set. */
+function serveCached(reply: FastifyReply, resp: CachedResponse): FastifyReply {
+  reply.code(200);
+  reply.header("access-control-allow-origin", "*");
+  reply.header("cache-control", "public, max-age=86400");
+  reply.header("content-type", resp.contentType);
+  reply.header("x-content-type-options", "nosniff");
+  reply.header("content-security-policy", "sandbox; default-src 'none'");
+  reply.header("content-length", String(resp.body.length));
+  return reply.send(resp.body);
+}
+
+/**
  * GET /img?nft=… — resolve the NFT launcher id through the server-side MediaIndex
  * to the on-chain art URL the server decoded, then fetch it server-side and stream
  * it back with permissive CORS so the WebGL gallery can texture media from hosts
@@ -207,7 +259,8 @@ export function registerImageProxy(
     Date.now,
     FAIL_MAX_TTL_MS
   ),
-  fetchUpstream: UpstreamFetcher = fetchFollowingSafeRedirects
+  fetchUpstream: UpstreamFetcher = fetchFollowingSafeRedirects,
+  cache: MediaCache = new MediaCache(CACHE_BYTE_BUDGET)
 ): void {
   const limiter = new RateLimiter(RATE_WINDOW_MS, RATE_MAX_PER_IP);
   let inflight = 0;
@@ -225,6 +278,13 @@ export function registerImageProxy(
     const launcherId = (request.query as { nft?: string }).nft;
     const entry = launcherId ? media.get(launcherId) : undefined;
     if (!entry) return reply.code(404).send("unknown nft");
+
+    const key = `img:${launcherId!}`;
+    const hasRange = typeof request.headers.range === "string";
+    if (!hasRange) {
+      const cached = cache.get(key);
+      if (cached) return serveCached(reply, cached);
+    }
 
     // a recently-failed target short-circuits here — before consuming an inflight
     // slot or re-incurring the upstream stall on every viewer / snapshot replay
@@ -299,7 +359,8 @@ export function registerImageProxy(
       reply.header("cache-control", "public, max-age=86400");
       failures.clear(launcherId!); // recovered → drop any prior backoff streak
     }
-    reply.header("content-type", safeContentType(upstream.headers["content-type"]));
+    const ct = safeContentType(upstream.headers["content-type"]);
+    reply.header("content-type", ct);
     reply.header("x-content-type-options", "nosniff");
     reply.header("content-security-policy", "sandbox; default-src 'none'");
     for (const name of PASS_THROUGH) {
@@ -310,8 +371,30 @@ export function registerImageProxy(
     // enforce the cap mid-stream too — content-length can lie or be absent.
     // tearing down either end propagates to the other and frees the inflight slot.
     const capped = byteCap(MAX_BODY_BYTES);
-    capped.on("error", () => upstream.destroy());
     upstream.on("error", () => capped.destroy());
+
+    // Cache only a full 200 image with no range: tee the streamed bytes into a
+    // collector that fills the cache on a clean end. Everything else (videos,
+    // ranged/partial responses) streams through the hardened path unchanged.
+    const cacheable = !hasRange && status === 200 && ct.startsWith("image/");
+    if (cacheable) {
+      const collector = cachingCollector(CACHE_ENTRY_MAX_BYTES);
+      capped.on("error", () => upstream.destroy());
+      capped.on("error", () => collector.stream.destroy());
+      collector.stream.on("error", () => capped.destroy());
+      // `close` fires on both clean completion and client abort; result() is
+      // non-null only after a clean end within the cap, so this both fills the
+      // cache and frees the slot in one place.
+      collector.stream.on("close", () => {
+        release();
+        const body = collector.result();
+        if (body) cache.set(key, { body, contentType: ct });
+      });
+      upstream.pipe(capped).pipe(collector.stream);
+      return reply.send(collector.stream);
+    }
+
+    capped.on("error", () => upstream.destroy());
     capped.on("close", release);
     upstream.pipe(capped);
     return reply.send(capped);
