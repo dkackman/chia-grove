@@ -3,7 +3,7 @@ export function readBlockParam(search: string): number | null {
   const raw = new URLSearchParams(search).get("block");
   if (raw === null) return null;
   const n = Number(raw);
-  return Number.isInteger(n) && n >= 0 ? n : null;
+  return Number.isSafeInteger(n) && n >= 0 ? n : null;
 }
 
 /** Reflects (or clears) the detail-mode block height in the URL, preserving other params. */

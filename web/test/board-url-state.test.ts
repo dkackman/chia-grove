@@ -19,3 +19,7 @@ test("returns null for a non-integer or negative value", () => {
 test("block=0 is a valid height", () => {
   expect(readBlockParam("?block=0")).toBe(0);
 });
+
+test("returns null for a value beyond Number.MAX_SAFE_INTEGER", () => {
+  expect(readBlockParam("?block=99999999999999999999")).toBeNull();
+});
