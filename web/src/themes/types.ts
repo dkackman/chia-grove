@@ -19,6 +19,10 @@ export interface VisualizationHandle {
   isDragging?(): boolean;
   pickables?(): THREE.Object3D[];
   metaFor?(object: THREE.Object3D, instanceId: number | undefined): CardMeta | null;
+  /** A hit that means "jump to this block's detail view" rather than a spend card. */
+  pickHeight?(object: THREE.Object3D, instanceId: number | undefined): number | null;
+  /** Invoked by the picker on a `pickHeight` click; the theme owns what "selecting" a height means. */
+  selectHeight?(height: number): void;
   setHovered?(object: THREE.Object3D | null, instanceId: number | undefined): void;
 }
 
