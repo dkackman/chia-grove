@@ -24,6 +24,15 @@ export interface VisualizationHandle {
   /** Invoked by the picker on a `pickHeight` click; the theme owns what "selecting" a height means. */
   selectHeight?(height: number): void;
   setHovered?(object: THREE.Object3D | null, instanceId: number | undefined): void;
+  /**
+   * A stable identity for the thing under the pointer, used by the picker to
+   * decide when the hover (and its detail card) actually changed. Defaults to
+   * `object + instanceId`. A theme overrides it when one logical target spans
+   * many instances — the board packs ~40 grid cells into a single ledger row, so
+   * without this, sweeping across a row would rebuild the card (reloading its
+   * thumbnail) on every cell boundary.
+   */
+  hoverKey?(object: THREE.Object3D, instanceId: number | undefined): string;
 }
 
 export interface Visualization {

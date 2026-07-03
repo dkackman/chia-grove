@@ -12,6 +12,7 @@ import {
   rowTextFor,
   shouldShowHeight,
   cardMetaFor,
+  cellHoverKey,
   toDisplayRows,
   patchMediaFilter,
   BOARD_COLS,
@@ -327,5 +328,12 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
       ledger.highlightRow(
         object === ledger.mesh && instanceId !== undefined ? ledger.rowOf(instanceId) : null
       ),
+    // Collapse a row's ~40 cells to one hover identity so the picker doesn't
+    // rebuild the detail card (and reload its thumbnail) as the pointer sweeps
+    // across a single row's columns.
+    hoverKey: (object, instanceId) =>
+      object === ledger.mesh && instanceId !== undefined
+        ? cellHoverKey(instanceId, scrollOffset + ledger.rowOf(instanceId))
+        : "",
   };
 }

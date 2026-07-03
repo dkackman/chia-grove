@@ -222,6 +222,18 @@ export function cardMetaFor(row: DisplayRow): CardMeta | null {
 }
 
 /**
+ * A hover-dedup key for a single ledger cell. Every content cell of one display
+ * row shares a key so sweeping the pointer across a row's ~40 cells doesn't
+ * retrigger the detail card (which would reload its NFT thumbnail from scratch);
+ * the height gutter gets its own key so moving between the block-nav gutter and
+ * the spend content of the same row still toggles the card. Pure.
+ */
+export function cellHoverKey(instanceId: number, displayRow: number): string {
+  const gutter = instanceId % BOARD_COLS < HEIGHT_COLS;
+  return `${displayRow}:${gutter ? "h" : "c"}`;
+}
+
+/**
  * Patches `mediaFilter` on every NFT event matching `launcherId`, in place.
  * Mutates the array's elements (not the array itself) so callers holding a
  * reference to the same underlying objects (e.g. a `displayRows` filtered
