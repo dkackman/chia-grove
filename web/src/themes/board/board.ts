@@ -13,6 +13,7 @@ import {
   shouldShowHeight,
   cardMetaFor,
   toDisplayRows,
+  patchMediaFilter,
   BOARD_COLS,
   HEIGHT_COLS,
 } from "./rows.js";
@@ -148,7 +149,7 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
   }
 
   function stepDetail(delta: number): void {
-    enterDetail(detail.currentHeight + delta);
+    enterDetail(Math.max(0, detail.currentHeight + delta));
   }
 
   function returnToLive(pushUrl = true): void {
@@ -189,17 +190,13 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
         break;
       }
       case "content-flag": {
-        for (const e of events) {
-          if (e.kind === "nft" && e.launcherId === event.launcherId) {
-            e.mediaFilter = event.mediaFilter;
-          }
-        }
+        patchMediaFilter(events, event.launcherId, event.mediaFilter);
         if (mode === "detail") {
-          for (const row of displayRows) {
-            if (row.type === "sprout" && row.kind === "nft" && row.launcherId === event.launcherId) {
-              row.mediaFilter = event.mediaFilter;
-            }
-          }
+          patchMediaFilter(
+            displayRows.filter((r): r is SproutEvent => r.type === "sprout"),
+            event.launcherId,
+            event.mediaFilter
+          );
         }
         break;
       }

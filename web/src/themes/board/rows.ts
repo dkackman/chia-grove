@@ -220,3 +220,27 @@ export function cardMetaFor(row: DisplayRow): CardMeta | null {
   }
   return null;
 }
+
+/**
+ * Patches `mediaFilter` on every NFT event matching `launcherId`, in place.
+ * Mutates the array's elements (not the array itself) so callers holding a
+ * reference to the same underlying objects (e.g. a `displayRows` filtered
+ * view sharing SproutEvent instances with the live `events` buffer) see the
+ * update without re-deriving anything. Pure aside from that mutation — no
+ * external state, same result for the same inputs. Returns whether anything
+ * was patched.
+ */
+export function patchMediaFilter(
+  events: SproutEvent[],
+  launcherId: string,
+  mediaFilter: SproutEvent["mediaFilter"]
+): boolean {
+  let patched = false;
+  for (const e of events) {
+    if (e.kind === "nft" && e.launcherId === launcherId) {
+      e.mediaFilter = mediaFilter;
+      patched = true;
+    }
+  }
+  return patched;
+}
