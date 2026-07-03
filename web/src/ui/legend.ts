@@ -35,7 +35,7 @@ export function initLegend(active: Visualization): void {
     item.append(swatch, label);
     list.appendChild(item);
   }
-  body.append(picker, list);
+  body.append(picker, list, buildTipJar());
 
   let collapsed = localStorage.getItem(COLLAPSED_KEY) === "1";
   const render = () => {
@@ -61,4 +61,23 @@ export function initLegend(active: Visualization): void {
   legend.append(header, body);
   render();
   legend.hidden = false;
+}
+
+// xchtip.app embeddable tip widget. The script boots on load, finds its own
+// <script> tag, and mounts the button inline right after it — so injecting it
+// into our own container lands the button here in the legend, on every scene.
+function buildTipJar(): HTMLDivElement {
+  const tip = document.createElement("div");
+  tip.id = "legend-tip";
+
+  const script = document.createElement("script");
+  script.src = "https://xchtip.app/embed/xch-tip.js";
+  script.async = true;
+  script.dataset.recipient = "xch1tjmpazqs9vnylc40ygw4xtq6e760nha3l8cw8kp3jx5rrq79krxqs5pg0g";
+  script.dataset.asset = "xch";
+  script.dataset.scheme = "green";
+  script.dataset.variant = "inline";
+  tip.appendChild(script);
+
+  return tip;
 }

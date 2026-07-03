@@ -170,6 +170,12 @@ body {
   margin-top: 6px;
 }
 
+#legend-tip {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(61, 220, 132, 0.2);
+}
+
 #legend-scene {
   display: flex;
   align-items: center;
