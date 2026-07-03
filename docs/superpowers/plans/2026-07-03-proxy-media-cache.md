@@ -574,7 +574,11 @@ Immediately before the candidate `inflight++;` / fetch section (after the `candi
     const settle = (value: CachedResponse | null): void => {
       if (lead && !settled) {
         settled = true;
-        inFlight.delete(key);
+        // Only clear the map if it still holds OUR promise — a later leader may
+        // have already overwritten it (waiters that fell through and re-led), and
+        // deleting their live entry would let a new request launch a redundant
+        // fetch, silently defeating coalescing.
+        if (inFlight.get(key) === lead.promise) inFlight.delete(key);
         lead.resolve(value);
       }
     };
@@ -759,7 +763,9 @@ Register as leader just before `inflight++;` in `/thumbnail`:
     const settle = (value: CachedResponse | null): void => {
       if (!settled) {
         settled = true;
-        inFlight.delete(key);
+        // Only clear the map if it still holds OUR promise — a later leader may
+        // have overwritten it; deleting their live entry would defeat coalescing.
+        if (inFlight.get(key) === lead.promise) inFlight.delete(key);
         lead.resolve(value);
       }
     };
