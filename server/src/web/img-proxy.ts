@@ -7,6 +7,7 @@ import type { IncomingMessage } from "node:http";
 import type { FastifyInstance } from "fastify";
 import type { MediaIndex } from "./media-index.js";
 import { FailureCache } from "./failure-cache.js";
+import { RateLimiter } from "./rate-limiter.js";
 
 const MAX_REDIRECTS = 4;
 // Short idle timeout: art that hangs (unpinned IPFS CID, slow gateway) frees the
@@ -196,32 +197,18 @@ export function registerImageProxy(
   failures: FailureCache = new FailureCache(FAIL_TTL_MS, FAIL_CAPACITY),
   fetchUpstream: UpstreamFetcher = fetchFollowingSafeRedirects
 ): void {
-  const hits = new Map<string, number[]>(); // ip → recent request timestamps
+  const limiter = new RateLimiter(RATE_WINDOW_MS, RATE_MAX_PER_IP);
   let inflight = 0;
 
-  function rateLimited(ip: string): boolean {
-    const now = Date.now();
-    const recent = (hits.get(ip) ?? []).filter((t) => now - t < RATE_WINDOW_MS);
-    hits.set(ip, recent);
-    if (recent.length >= RATE_MAX_PER_IP) return true;
-    recent.push(now);
-    return false;
-  }
-
-  // periodically drop stale buckets so the map can't grow without bound
+  // periodically drop stale buckets so the maps can't grow without bound
   const sweep = setInterval(() => {
-    const now = Date.now();
-    for (const [ip, times] of hits) {
-      const recent = times.filter((t) => now - t < RATE_WINDOW_MS);
-      if (recent.length === 0) hits.delete(ip);
-      else hits.set(ip, recent);
-    }
+    limiter.sweep();
     failures.sweep();
   }, RATE_WINDOW_MS);
   sweep.unref();
 
   app.get("/img", async (request, reply) => {
-    if (rateLimited(request.ip)) return reply.code(429).send("rate limited");
+    if (limiter.limited(request.ip)) return reply.code(429).send("rate limited");
 
     const launcherId = (request.query as { nft?: string }).nft;
     const entry = launcherId ? media.get(launcherId) : undefined;
@@ -320,7 +307,7 @@ export function registerImageProxy(
   const THUMB_MAX_BYTES = 4 * 1024 * 1024; // 4 MB ceiling for thumbnail images
 
   app.get("/thumbnail", async (request, reply) => {
-    if (rateLimited(request.ip)) return reply.code(429).send("rate limited");
+    if (limiter.limited(request.ip)) return reply.code(429).send("rate limited");
 
     const launcherId = (request.query as { nft?: string }).nft;
     const entry = launcherId ? media.get(launcherId) : undefined;

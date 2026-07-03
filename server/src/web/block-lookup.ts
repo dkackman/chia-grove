@@ -4,6 +4,14 @@ import type { RpcView } from "../ingest/types.js";
 import type { CatRegistry } from "../classify/cats.js";
 import type { MediaIndex } from "./media-index.js";
 import { classifyBlock } from "../classify/classify.js";
+import { RateLimiter } from "./rate-limiter.js";
+
+// Lower than /img's per-IP ceiling: a block lookup is heavier — one RPC round
+// trip plus a possible paid Vision SafeSearch call per never-before-seen NFT,
+// vs. a cached media fetch. Generous enough for a human clicking prev/next/
+// find-block repeatedly; tight enough to meaningfully throttle a scripted walk.
+const RATE_WINDOW_MS = 60_000;
+const RATE_MAX_PER_IP = 30;
 
 export interface BlockLookupDeps {
   rpc: RpcView;
@@ -31,9 +39,19 @@ function emptyBlockEvent(height: number): BlockEvent {
 export function registerBlockLookup(
   app: FastifyInstance,
   deps: BlockLookupDeps,
-  media: MediaIndex
+  media: MediaIndex,
+  limiter: RateLimiter = new RateLimiter(RATE_WINDOW_MS, RATE_MAX_PER_IP)
 ): void {
+  // periodically drop stale buckets so the map can't grow without bound
+  const sweep = setInterval(() => limiter.sweep(), RATE_WINDOW_MS);
+  sweep.unref();
+
   app.get<{ Params: { height: string } }>("/block/:height", async (request, reply) => {
+    if (limiter.limited(request.ip)) {
+      reply.code(429);
+      return { error: "rate limited" };
+    }
+
     const raw = request.params.height;
     if (!/^\d+$/.test(raw)) {
       reply.code(400);

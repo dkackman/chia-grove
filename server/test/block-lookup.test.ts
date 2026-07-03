@@ -6,6 +6,7 @@ import { registerBlockLookup } from "../src/web/block-lookup.js";
 import type { BlockLookupDeps } from "../src/web/block-lookup.js";
 import { MediaIndex } from "../src/web/media-index.js";
 import { CatRegistry } from "../src/classify/cats.js";
+import { RateLimiter } from "../src/web/rate-limiter.js";
 import type { BlockInfo, RpcView } from "../src/ingest/types.js";
 import type { GroveEvent } from "@grove/shared";
 
@@ -107,5 +108,21 @@ test("a transaction block with a real spend classifies it and calls contentFilte
   expect(body.events[0]).toMatchObject({ type: "block", height: 200, spendCount: 1 });
   expect(body.events[1]).toMatchObject({ type: "sprout", kind: "xch", height: 200 });
   expect(enrich).toHaveBeenCalledTimes(1);
+  await app.close();
+});
+
+test("a per-IP rate limit rejects requests past the ceiling with 429", async () => {
+  const rpc = new FakeRpc();
+  rpc.set(100, { timestamp: null });
+  const app = fastify();
+  registerBlockLookup(app, deps(rpc), new MediaIndex(10), new RateLimiter(60_000, 2));
+
+  const first = await app.inject({ method: "GET", url: "/block/100" });
+  const second = await app.inject({ method: "GET", url: "/block/100" });
+  const third = await app.inject({ method: "GET", url: "/block/100" });
+
+  expect(first.statusCode).toBe(200);
+  expect(second.statusCode).toBe(200);
+  expect(third.statusCode).toBe(429); // same simulated IP (app.inject defaults to 127.0.0.1)
   await app.close();
 });
