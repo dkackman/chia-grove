@@ -342,3 +342,39 @@ test("a failed fetch leaves the cache empty", async () => {
   expect(cache.get("img:fail2")).toBeUndefined();
   await app.close();
 });
+
+test("an upstream error mid-stream on a cacheable image aborts cleanly, no hang, partial not cached", async () => {
+  const media = new MediaIndex(10);
+  media.set("errimg", { url: "https://cdn.test/e.png", kind: "image" });
+  let calls = 0;
+  const fetcher = async (): Promise<IncomingMessage | null> => {
+    calls++;
+    if (calls === 1) {
+      const s = new PassThrough() as unknown as IncomingMessage & PassThrough;
+      s.statusCode = 200;
+      s.headers = { "content-type": "image/png" };
+      process.nextTick(() => {
+        s.write("PART");
+        s.destroy(new Error("upstream reset")); // reset after some bytes
+      });
+      return s;
+    }
+    return fakeUpstream(200, "image/png", "PNGDATA"); // a later request succeeds
+  };
+  const cache = new MediaCache(1_000_000);
+  const app = fastify();
+  registerImageProxy(app, media, new FailureCache(60_000, 10), fetcher, cache);
+
+  // The reset aborts the response, so inject rejects — but it must SETTLE, not
+  // hang. If the collector weren't torn down, this await never returns and the
+  // test times out. The .catch swallows the expected abort rejection.
+  await app.inject({ method: "GET", url: "/img?nft=errimg" }).catch(() => {});
+  expect(cache.get("img:errimg")).toBeUndefined(); // a partial body is never cached
+
+  // The endpoint still serves after an aborted stream.
+  const ok = await app.inject({ method: "GET", url: "/img?nft=errimg" });
+  expect(ok.statusCode).toBe(200);
+  expect(ok.body).toBe("PNGDATA");
+  expect(calls).toBe(2);
+  await app.close();
+});

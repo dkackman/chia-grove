@@ -381,6 +381,7 @@ export function registerImageProxy(
       const collector = cachingCollector(CACHE_ENTRY_MAX_BYTES);
       capped.on("error", () => upstream.destroy());
       capped.on("error", () => collector.stream.destroy());
+      upstream.on("error", () => collector.stream.destroy());
       collector.stream.on("error", () => capped.destroy());
       // `close` fires on both clean completion and client abort; result() is
       // non-null only after a clean end within the cap, so this both fills the
