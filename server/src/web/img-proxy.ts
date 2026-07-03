@@ -329,7 +329,10 @@ export function registerImageProxy(
     const settle = (value: CachedResponse | null): void => {
       if (lead && !settled) {
         settled = true;
-        inFlight.delete(key);
+        // Only remove our own entry: a waiter that fell through (leader
+        // resolved null) may have already re-registered as the new leader, so
+        // deleting unconditionally would orphan its still-live promise.
+        if (inFlight.get(key) === lead.promise) inFlight.delete(key);
         lead.resolve(value);
       }
     };
