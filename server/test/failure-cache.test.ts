@@ -108,3 +108,28 @@ test("a failure after a long quiet spell restarts the backoff at the base delay"
   now += 2;
   expect(cache.has("a")).toBe(false);
 });
+
+test("holds at the ceiling when retried as the block opens, even with resetAfterMs === maxTtlMs", () => {
+  let now = 0;
+  // Mirror the production wiring: resetAfterMs defaults to maxTtlMs, so at the
+  // ceiling the block window equals the reset window. The quiet spell must be
+  // measured from when the block *opened* (retryAt), not from the last failure —
+  // otherwise a dead gateway retried the instant its block opens is always "one
+  // reset window past the last failure" and collapses straight back to the base
+  // delay, sawtoothing instead of holding at the ceiling.
+  const cache = new FailureCache(30_000, 100, () => now, 60_000); // base 30s, cap 60s, reset defaults to 60s
+
+  cache.mark("a"); // 1st → 30s
+  now = 30_001; // window opens
+  expect(cache.has("a")).toBe(false);
+
+  cache.mark("a"); // 2nd → 60s (cap)
+  now = 90_002; // window opens again — retried the moment it opens
+  expect(cache.has("a")).toBe(false);
+
+  cache.mark("a"); // 3rd — must stay at the 60s cap, not reset to the 30s base
+  now += 30_001; // 120_003: past the base(30s) window but inside the cap(60s) window
+  expect(cache.has("a")).toBe(true); // still blocked ⇒ the ceiling held
+  now += 30_000; // 150_003: past the 60s cap window
+  expect(cache.has("a")).toBe(false);
+});

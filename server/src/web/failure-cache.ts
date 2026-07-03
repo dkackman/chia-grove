@@ -11,15 +11,16 @@
  * only `baseTtlMs`, and each consecutive failure doubles the wait up to
  * `maxTtlMs`, so a transient hiccup recovers fast while a persistently-dead
  * target quickly climbs to the ceiling. A streak resets after `resetAfterMs`
- * of quiet, or immediately when `clear()` is called on a successful load.
+ * of quiet — measured from when the block last *reopened* (`retryAt`), so a dead
+ * target retried the moment its window opens keeps climbing instead of resetting
+ * — or immediately when `clear()` is called on a successful load.
  *
  * With the defaults (`maxTtlMs = baseTtlMs`) there is no backoff and this behaves
  * exactly like a flat TTL cache. The clock is injectable for testing.
  */
 interface Entry {
   count: number; // consecutive failures — drives the backoff exponent
-  retryAt: number; // short-circuit until this timestamp
-  last: number; // last mark time — for streak reset + eviction ordering
+  retryAt: number; // short-circuit until this timestamp; also the streak/sweep anchor
 }
 
 export class FailureCache {
@@ -36,12 +37,17 @@ export class FailureCache {
   mark(key: string): void {
     const t = this.now();
     const prev = this.map.get(key);
-    // Continue the streak only if the previous failure was recent; a failure
-    // after a long quiet spell starts over at the base delay.
-    const count = prev && t - prev.last <= this.resetAfterMs ? prev.count + 1 : 1;
+    // Continue the streak only if this failure recurs within resetAfterMs of the
+    // previous block reopening (retryAt) — the "quiet spell" is time since we
+    // allowed a retry, not time since the last failure. Anchoring on retryAt is
+    // what lets a dead target hold at the ceiling: when the block window equals
+    // resetAfterMs (the production config), a retry the instant the window opens
+    // is 0ms — not a full window — past reopening, so the streak keeps climbing
+    // instead of collapsing back to the base delay every cycle.
+    const count = prev && t - prev.retryAt <= this.resetAfterMs ? prev.count + 1 : 1;
     const ttl = Math.min(this.baseTtlMs * 2 ** (count - 1), this.maxTtlMs);
     this.map.delete(key); // re-insert moves the key to newest
-    this.map.set(key, { count, retryAt: t + ttl, last: t });
+    this.map.set(key, { count, retryAt: t + ttl });
     if (this.map.size > this.capacity) {
       const oldest = this.map.keys().next().value;
       if (oldest !== undefined) this.map.delete(oldest);
@@ -65,7 +71,10 @@ export class FailureCache {
   sweep(): void {
     const t = this.now();
     for (const [key, entry] of this.map) {
-      if (t - entry.last > this.resetAfterMs) this.map.delete(key);
+      // Drop an entry once it's been retryable and quiet for a full reset window
+      // (same anchor as the streak reset in mark). A still-blocking entry
+      // (retryAt in the future) is always kept.
+      if (t - entry.retryAt > this.resetAfterMs) this.map.delete(key);
     }
   }
 }
