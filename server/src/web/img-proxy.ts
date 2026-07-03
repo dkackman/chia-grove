@@ -31,7 +31,14 @@ const MAX_INFLIGHT = 32;
 // that hangs to the timeout, deprecated gateway), remember it so we short-circuit
 // instead of re-stalling on every viewer and every snapshot replay. Capacity
 // tracks the MediaIndex so any replayable NFT can be remembered.
-const FAIL_TTL_MS = 10 * 60 * 1000;
+//
+// Backoff, not a flat window: a merely-slow gateway that trips the 6 s timeout
+// once is blocked for just FAIL_BASE_TTL_MS and then retried (so its thumbnail
+// comes back quickly), while a genuinely dead target that keeps failing doubles
+// its way up to FAIL_MAX_TTL_MS so we stop re-stalling on it. A successful fetch
+// clears the streak.
+const FAIL_BASE_TTL_MS = 30 * 1000;
+const FAIL_MAX_TTL_MS = 10 * 60 * 1000;
 const FAIL_CAPACITY = 10_000;
 
 // hostnames refused outright; IP-literal and DNS-resolved addresses are checked
@@ -194,7 +201,12 @@ export type UpstreamFetcher = (
 export function registerImageProxy(
   app: FastifyInstance,
   media: MediaIndex,
-  failures: FailureCache = new FailureCache(FAIL_TTL_MS, FAIL_CAPACITY),
+  failures: FailureCache = new FailureCache(
+    FAIL_BASE_TTL_MS,
+    FAIL_CAPACITY,
+    Date.now,
+    FAIL_MAX_TTL_MS
+  ),
   fetchUpstream: UpstreamFetcher = fetchFollowingSafeRedirects
 ): void {
   const limiter = new RateLimiter(RATE_WINDOW_MS, RATE_MAX_PER_IP);
@@ -285,6 +297,7 @@ export function registerImageProxy(
     // only cache successful media — don't pin upstream errors for a day
     if (status === 200 || status === 206) {
       reply.header("cache-control", "public, max-age=86400");
+      failures.clear(launcherId!); // recovered → drop any prior backoff streak
     }
     reply.header("content-type", safeContentType(upstream.headers["content-type"]));
     reply.header("x-content-type-options", "nosniff");

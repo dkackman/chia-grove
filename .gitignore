@@ -12,3 +12,8 @@ version.json
 # content-filter SQLite store
 /data/
 content-filter.sqlite
+
+# Playwright e2e output
+/test-results/
+/playwright-report/
+/blob-report/

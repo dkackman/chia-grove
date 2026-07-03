@@ -3,6 +3,7 @@ import {
   BOARD_COLS,
   HEIGHT_COLS,
   cardMetaFor,
+  cellHoverKey,
   isBlockStart,
   patchMediaFilter,
   rowText,
@@ -23,6 +24,24 @@ function sprout(over: Partial<SproutEvent>): SproutEvent {
     ...over,
   };
 }
+
+test("cellHoverKey: all content cells of a row share one key", () => {
+  const content = HEIGHT_COLS; // first content column
+  const first = 3 * BOARD_COLS + content;
+  const last = 3 * BOARD_COLS + (BOARD_COLS - 1);
+  expect(cellHoverKey(first, 3)).toBe(cellHoverKey(last, 3));
+});
+
+test("cellHoverKey: the height gutter is distinct from the content", () => {
+  const gutter = 3 * BOARD_COLS + 0; // a gutter column (< HEIGHT_COLS)
+  const content = 3 * BOARD_COLS + HEIGHT_COLS; // first content column
+  expect(cellHoverKey(gutter, 3)).not.toBe(cellHoverKey(content, 3));
+});
+
+test("cellHoverKey: different display rows get different keys", () => {
+  const col = HEIGHT_COLS;
+  expect(cellHoverKey(3 * BOARD_COLS + col, 3)).not.toBe(cellHoverKey(4 * BOARD_COLS + col, 4));
+});
 
 test("every row is exactly BOARD_COLS wide", () => {
   expect(rowText(sprout({})).length).toBe(BOARD_COLS);

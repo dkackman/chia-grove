@@ -85,7 +85,11 @@ export function attachPicker(canvas: HTMLCanvasElement, viz: VisualizationHandle
     const hit = intersect(pendingX, pendingY);
     pendingX = -1;
 
-    const key = hitKey(hit);
+    // Dedup on the theme's own hover identity when it supplies one. The board
+    // packs ~40 grid cells into a single logical row; keying on raw instanceId
+    // would retrigger the card (reloading its thumbnail from scratch) every time
+    // the pointer crossed a cell boundary within the same row.
+    const key = hit ? (viz.hoverKey?.(hit.object, hit.instanceId) ?? hitKey(hit)) : "";
     if (key === hoveredKey) return;
     hoveredKey = key;
 

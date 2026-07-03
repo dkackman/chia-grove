@@ -37,29 +37,42 @@ function createMediaEl(src: string, kind: MediaKind): HTMLElement {
   return img;
 }
 
+/** The stable "nothing to show" fallback: a note, never a removed node or a
+ * broken media widget. `.media-note` is styled by both the detail card and the
+ * gallery label. */
+function mediaPlaceholder(): HTMLElement {
+  const note = document.createElement("div");
+  note.className = "media-note";
+  note.textContent = "media unavailable";
+  return note;
+}
+
 // `mediaKind` is only a hint (guessed from the URL extension), so when an
 // element can't play its source retry the next element type (image → video →
 // audio) against the same cached /img URL. Fixes extensionless videos rendering
-// as a black <img>; once the chain is exhausted the broken element is removed
-// rather than shown.
-export function nftMediaEl(src: string, kind: MediaKind): HTMLElement {
+// as a black <img>; once the chain is exhausted we show a placeholder instead of
+// a removed node or a stuck broken widget.
+//
+// `escalated` marks an element we swapped in because an earlier guess failed —
+// its kind is now a shot in the dark, so any error on it moves on, whereas the
+// server's original hint gets the benefit of the network-error tolerance below.
+export function nftMediaEl(src: string, kind: MediaKind, escalated = false): HTMLElement {
   const node = createMediaEl(src, kind);
   node.addEventListener("error", () => {
-    // A media element reports why it failed: a transient network/abort error
-    // doesn't mean the element type is wrong, so don't downgrade the kind (a
-    // hiccuping <video> would otherwise be permanently replaced by an <audio>).
-    // Only a decode / unsupported-source error means the hint was wrong. An
-    // <img> exposes no such reason, so any error escalates — its kind is only a
-    // guess to begin with.
-    if (node instanceof HTMLMediaElement) {
+    // A media element reports why it failed: on the server's original kind hint,
+    // a transient network/abort error doesn't mean the type is wrong, so don't
+    // downgrade it (a hiccuping <video> would otherwise be replaced by <audio>).
+    // But once we've escalated, the URL itself is failing (e.g. the /img proxy
+    // returned 504) — tolerating the network error here would strand a broken
+    // <video>/<audio> widget in the card, so we fall through to the placeholder.
+    if (!escalated && node instanceof HTMLMediaElement) {
       const code = node.error?.code;
       if (code === MediaError.MEDIA_ERR_NETWORK || code === MediaError.MEDIA_ERR_ABORTED) {
         return;
       }
     }
     const next = escalateMediaKind(kind);
-    if (next) node.replaceWith(nftMediaEl(src, next));
-    else node.remove();
+    node.replaceWith(next ? nftMediaEl(src, next, true) : mediaPlaceholder());
   });
   return node;
 }
