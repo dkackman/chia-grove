@@ -453,7 +453,30 @@ export function registerImageProxy(
     const target = validateProxyTarget(entry.thumbnailUrl);
     if (!target) return reply.code(400).send("disallowed thumbnail url");
 
+    const key = `thumb:${launcherId!}`;
+    const cachedThumb = cache.get(key);
+    if (cachedThumb) return serveCached(reply, cachedThumb);
+    const pendingThumb = inFlight.get(key);
+    if (pendingThumb) {
+      const shared = await pendingThumb;
+      if (shared) return serveCached(reply, shared);
+      // leader uncacheable → fall through
+    }
+
     if (inflight >= MAX_INFLIGHT) return reply.code(503).send("proxy busy");
+
+    const lead = deferred<CachedResponse | null>();
+    inFlight.set(key, lead.promise);
+    let settled = false;
+    const settle = (value: CachedResponse | null): void => {
+      if (!settled) {
+        settled = true;
+        // Only clear the map if it still holds OUR promise — a later leader may
+        // have overwritten it; deleting their live entry would defeat coalescing.
+        if (inFlight.get(key) === lead.promise) inFlight.delete(key);
+        lead.resolve(value);
+      }
+    };
 
     inflight++;
     let released = false;
@@ -469,12 +492,14 @@ export function registerImageProxy(
       upstream = await fetchUpstream(target, undefined);
     } catch {
       release();
+      settle(null);
       return reply.code(504).send("upstream fetch failed");
     }
 
     if (!upstream || (upstream.statusCode ?? 0) >= 400) {
       upstream?.resume();
       release();
+      settle(null);
       return reply.code(502).send("upstream unavailable");
     }
 
@@ -482,6 +507,7 @@ export function registerImageProxy(
     if (Number.isFinite(declared) && declared > THUMB_MAX_BYTES) {
       upstream.destroy();
       release();
+      settle(null);
       return reply.code(502).send("upstream too large");
     }
 
@@ -489,13 +515,33 @@ export function registerImageProxy(
     reply.code(status);
     reply.header("access-control-allow-origin", "*");
     if (status === 200) reply.header("cache-control", "public, max-age=86400");
-    reply.header("content-type", safeContentType(upstream.headers["content-type"]));
+    const ct = safeContentType(upstream.headers["content-type"]);
+    reply.header("content-type", ct);
     reply.header("x-content-type-options", "nosniff");
     reply.header("content-security-policy", "sandbox; default-src 'none'");
 
     const capped = byteCap(THUMB_MAX_BYTES);
-    capped.on("error", () => upstream!.destroy());
     upstream.on("error", () => capped.destroy());
+
+    const cacheable = status === 200 && ct.startsWith("image/");
+    if (cacheable) {
+      const collector = cachingCollector(CACHE_ENTRY_MAX_BYTES);
+      capped.on("error", () => upstream!.destroy()); // capped's byte-cap error must tear down upstream too
+      capped.on("error", () => collector.stream.destroy());
+      upstream.on("error", () => collector.stream.destroy()); // upstream error must tear down the collector (release rides on its close)
+      collector.stream.on("error", () => capped.destroy());
+      collector.stream.on("close", () => {
+        release();
+        const body = collector.result();
+        if (body) cache.set(key, { body, contentType: ct });
+        settle(body ? { body, contentType: ct } : null);
+      });
+      upstream.pipe(capped).pipe(collector.stream);
+      return reply.send(collector.stream);
+    }
+
+    settle(null);
+    capped.on("error", () => upstream!.destroy());
     capped.on("close", release);
     upstream.pipe(capped);
     return reply.send(capped);

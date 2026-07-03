@@ -406,3 +406,57 @@ test("coalesces concurrent requests for the same nft into one upstream fetch", a
   expect(calls).toBe(1); // one leader fetch shared by both requests
   await app.close();
 });
+
+test("caches a thumbnail on first fetch and serves the second from cache", async () => {
+  const media = new MediaIndex(10);
+  media.set("thumb1", {
+    url: "https://cdn.test/a.png",
+    kind: "video",
+    thumbnailUrl: "https://cdn.test/a_512.webp",
+  });
+  let calls = 0;
+  const fetcher = async (): Promise<IncomingMessage | null> => {
+    calls++;
+    return fakeUpstream(200, "image/webp", "WEBPDATA");
+  };
+  const app = fastify();
+  registerImageProxy(app, media, new FailureCache(60_000, 10), fetcher, new MediaCache(1_000_000));
+
+  const first = await app.inject({ method: "GET", url: "/thumbnail?nft=thumb1" });
+  expect(first.statusCode).toBe(200);
+  expect(first.body).toBe("WEBPDATA");
+  const second = await app.inject({ method: "GET", url: "/thumbnail?nft=thumb1" });
+  expect(second.body).toBe("WEBPDATA");
+  expect(second.headers["content-type"]).toBe("image/webp");
+  expect(calls).toBe(1);
+  await app.close();
+});
+
+test("coalesces concurrent thumbnail requests into one fetch", async () => {
+  const media = new MediaIndex(10);
+  media.set("thumb2", {
+    url: "https://cdn.test/b.png",
+    kind: "video",
+    thumbnailUrl: "https://cdn.test/b_512.webp",
+  });
+  let calls = 0;
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  const fetcher = async (): Promise<IncomingMessage | null> => {
+    calls++;
+    await gate;
+    return fakeUpstream(200, "image/webp", "WEBPDATA");
+  };
+  const app = fastify();
+  registerImageProxy(app, media, new FailureCache(60_000, 10), fetcher, new MediaCache(1_000_000));
+
+  const p1 = app.inject({ method: "GET", url: "/thumbnail?nft=thumb2" });
+  const p2 = app.inject({ method: "GET", url: "/thumbnail?nft=thumb2" });
+  await new Promise((r) => setTimeout(r, 20));
+  release();
+  const [r1, r2] = await Promise.all([p1, p2]);
+  expect(r1.body).toBe("WEBPDATA");
+  expect(r2.body).toBe("WEBPDATA");
+  expect(calls).toBe(1);
+  await app.close();
+});
