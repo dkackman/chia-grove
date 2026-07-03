@@ -241,12 +241,17 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
         lastRenderedOffset = scrollOffset;
         header.setLive(scrollOffset === 0);
       }
-    } else if (detailDirty) {
-      // block navigation and the live↔detail switch always riffle, like any
-      // other board update — only reduced-motion forces an instant cut
-      renderLedger(reducedMotion);
-      lastRenderedOffset = scrollOffset;
-      detailDirty = false;
+    } else {
+      const scrolled = scrollOffset !== lastRenderedOffset;
+      if (detailDirty || scrolled) {
+        // block navigation and the live↔detail switch always riffle, like any
+        // other board update; scrolling within a block's rows snaps instantly,
+        // matching the live ledger's own history-scrub behavior. Only reduced
+        // motion forces an instant cut in the nav/switch case.
+        renderLedger(scrolled || reducedMotion);
+        lastRenderedOffset = scrollOffset;
+        detailDirty = false;
+      }
     }
     sproutsSinceFrame = 0;
 
