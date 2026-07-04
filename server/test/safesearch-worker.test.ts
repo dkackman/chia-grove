@@ -785,3 +785,37 @@ test("a sensitive verdict reached via the fallback URL still emits a content-fla
   expect(store.get("L1")?.disposition).toBe("sensitive");
   store.close();
 });
+
+test("a hash-keyed launcher reuses a verdict recorded earlier under the original URI", async () => {
+  const HASH = "6f".repeat(32);
+  const ORIGINAL = "https://gw.example/ipfs/xyz";
+  const store = new ContentStore(":memory:");
+  // Lold was checked before MintGarden resolved a hash: its row has a
+  // checked_uri but a NULL content_hash.
+  store.putCheap("Lold", "nftold", { disposition: "ok" });
+  store.putSafeSearch("Lold", { sensitive: false, adult: "UNLIKELY", raw: {} }, ORIGINAL);
+  // Lnew shares the bytes and DOES have the hash, so its media URL is the
+  // archive content URL and its fallback is the original URI.
+  const media = new MediaIndex(10);
+  media.set("Lnew", { url: `${ARCHIVE}/content/${HASH}`, kind: "image", fallbackUrl: ORIGINAL });
+  store.putCheap("Lnew", "nftnew", { disposition: "ok" }, HASH);
+  let fetchCalls = 0;
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    apiKey: "k",
+    onFlag: () => {},
+    archiveBaseUrl: ARCHIVE,
+    archiveCheckAttempts: 1,
+    archiveCheckDelayMs: 0,
+    fetchImpl: (async () => {
+      fetchCalls++;
+      return new Response("{}", { status: 404 });
+    }) as typeof fetch,
+  });
+  worker.maybeEnqueue(nftEvent({ launcherId: "Lnew", nftId: "nftnew" }));
+  await flushMicrotasks();
+  expect(fetchCalls).toBe(0); // no probe, no Vision: the URI row satisfied the check
+  expect(store.get("Lnew")?.safesearchChecked).toBe(true);
+  store.close();
+});

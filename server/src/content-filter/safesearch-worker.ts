@@ -166,9 +166,16 @@ export class SafeSearchWorker {
       return;
     }
     try {
-      const prior = contentHash
-        ? this.opts.store.getSafeSearchByContentHash(contentHash)
-        : this.opts.store.getSafeSearchByUri(imageUri);
+      // Second chance on a hash miss: content checked before MintGarden resolved
+      // its hash sits in a row with a checked_uri and a NULL content_hash. This
+      // launcher's fallbackUri is that same original URI, so one extra indexed
+      // SELECT can save a paid Vision call. (When contentHash is undefined,
+      // fallbackUri is too — media is never Archive-upgraded without a hash.)
+      const prior =
+        (contentHash
+          ? this.opts.store.getSafeSearchByContentHash(contentHash)
+          : this.opts.store.getSafeSearchByUri(imageUri)) ??
+        (fallbackUri ? this.opts.store.getSafeSearchByUri(fallbackUri) : undefined);
       if (prior) {
         this.persistVerdict(
           launcherId,
