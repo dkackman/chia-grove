@@ -63,30 +63,29 @@ export function registerBlockLookup(
       return { error: "invalid height" };
     }
 
-    let info;
     try {
-      info = await deps.rpc.getBlockInfo(height);
-    } catch (err) {
-      request.log.warn({ err, height }, "block lookup: getBlockInfo failed");
-      return { events: [emptyBlockEvent(height)] };
-    }
-    if (info.timestamp === null) {
-      return { events: [emptyBlockEvent(height)] };
-    }
+      const info = await deps.rpc.getBlockInfo(height);
+      if (info.timestamp === null) {
+        return { events: [emptyBlockEvent(height)] };
+      }
 
-    const spends = await deps.rpc.getSpends(info.headerHash);
-    const events = classifyBlock(
-      {
-        height,
-        headerHash: info.headerHash,
-        timestamp: Number(info.timestamp),
-        fees: info.fees ?? 0n,
-        spends,
-      },
-      deps.cats,
-      media
-    );
-    await deps.contentFilter.enrich(events);
-    return { events };
+      const spends = await deps.rpc.getSpends(info.headerHash);
+      const events = classifyBlock(
+        {
+          height,
+          headerHash: info.headerHash,
+          timestamp: Number(info.timestamp),
+          fees: info.fees ?? 0n,
+          spends,
+        },
+        deps.cats,
+        media
+      );
+      await deps.contentFilter.enrich(events);
+      return { events };
+    } catch (err) {
+      request.log.warn({ err, height }, "block lookup: failed to fetch/classify block");
+      return { events: [emptyBlockEvent(height)] };
+    }
   });
 }
