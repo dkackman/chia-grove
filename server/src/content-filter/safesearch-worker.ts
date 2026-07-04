@@ -62,10 +62,11 @@ export class SafeSearchWorker {
   private readonly waiters: Array<() => void> = [];
   private readonly queued = new Set<string>();
   private readonly failedUntil = new BoundedMap<string, number>(FAILED_UNTIL_CAP);
-  /** contentHash -> in-progress Vision check, so concurrent first-time checks of
-   *  identical bytes (e.g. an edition drop landing in one block) coalesce onto a
-   *  single paid call instead of each racing the not-yet-persisted DB dedup. */
-  private readonly contentHashInflight = new Map<string, Promise<SafeSearchResult>>();
+  /** dedup key (contentHash, or imageUri when no contentHash is known yet) ->
+   *  in-progress Vision check, so concurrent first-time checks of identical
+   *  bytes (e.g. an edition drop landing in one block) coalesce onto a single
+   *  paid call instead of each racing the not-yet-persisted DB dedup. */
+  private readonly dedupInflight = new Map<string, Promise<SafeSearchResult>>();
 
   constructor(private readonly opts: SafeSearchWorkerOpts) {
     this.fetchImpl = opts.fetchImpl ?? fetch;
@@ -120,38 +121,39 @@ export class SafeSearchWorker {
   }
 
   private async run(launcherId: string, imageUri: string, contentHash?: string): Promise<void> {
+    // Distinct NFTs can share identical bytes. Prefer the real content hash for
+    // dedup; MintGarden's indexer lags mint time (sometimes indefinitely for a
+    // given collection), so when it hasn't resolved one yet, fall back to the
+    // exact image URI about to be checked — identical on-chain bytes still
+    // resolve to the same URI (e.g. edition drops sharing one IPFS CID).
+    const dedupKey = contentHash ?? imageUri;
     try {
-      // Distinct NFTs can share the same bytes. If another NFT with this content
-      // hash was already SafeSearch-checked, reuse that verdict instead of paying
-      // for a second identical Vision lookup.
-      if (contentHash) {
-        const prior = this.opts.store.getSafeSearchByContentHash(contentHash);
-        if (prior) {
-          this.persistVerdict(
-            launcherId,
-            imageUri,
-            { sensitive: adultIsSensitive(prior.adult), adult: prior.adult, raw: prior.raw },
-            "reused"
-          );
-          return;
-        }
-        // The DB check above is a snapshot, not a lock — another run() for the
-        // same content hash may already be checking it but hasn't persisted a
-        // verdict yet. Join it instead of independently paying for a second
-        // identical Vision lookup.
-        const inflight = this.contentHashInflight.get(contentHash);
-        if (inflight) {
-          this.persistVerdict(launcherId, imageUri, await inflight, "reused");
-          return;
-        }
+      const prior = contentHash
+        ? this.opts.store.getSafeSearchByContentHash(contentHash)
+        : this.opts.store.getSafeSearchByUri(imageUri);
+      if (prior) {
+        this.persistVerdict(
+          launcherId,
+          imageUri,
+          { sensitive: adultIsSensitive(prior.adult), adult: prior.adult, raw: prior.raw },
+          "reused"
+        );
+        return;
+      }
+      // The DB check above is a snapshot, not a lock — another run() for the
+      // same dedup key may already be checking it but hasn't persisted a
+      // verdict yet. Join it instead of independently paying for a second
+      // identical Vision lookup.
+      const inflight = this.dedupInflight.get(dedupKey);
+      if (inflight) {
+        this.persistVerdict(launcherId, imageUri, await inflight, "reused");
+        return;
       }
       const work = this.checkVision(launcherId, imageUri);
-      if (contentHash) {
-        this.contentHashInflight.set(contentHash, work);
-        // .finally() derives a new promise; it must carry its own rejection
-        // handler; the "real" rejection is still caught below via `await work`.
-        work.finally(() => this.contentHashInflight.delete(contentHash)).catch(() => {});
-      }
+      this.dedupInflight.set(dedupKey, work);
+      // .finally() derives a new promise; it must carry its own rejection
+      // handler; the "real" rejection is still caught below via `await work`.
+      work.finally(() => this.dedupInflight.delete(dedupKey)).catch(() => {});
       this.persistVerdict(launcherId, imageUri, await work, "vision");
     } catch (err) {
       log.warn(
@@ -182,7 +184,7 @@ export class SafeSearchWorker {
     result: SafeSearchResult,
     source: "vision" | "reused"
   ): void {
-    this.opts.store.putSafeSearch(launcherId, result);
+    this.opts.store.putSafeSearch(launcherId, result, imageUri);
     this.failedUntil.delete(launcherId);
     log.info(
       { launcherId, imageUri, source, verdict: result.sensitive ? "sensitive" : "ok" },

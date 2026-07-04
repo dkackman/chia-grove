@@ -60,6 +60,66 @@ test("getSafeSearchByContentHash ignores rows that are only cheap-checked", () =
   store.close();
 });
 
+test("getSafeSearchByUri returns a prior checked verdict for the same image URI", () => {
+  const store = new ContentStore(":memory:");
+  const URI = "https://gw.example/ipfs/abc";
+  store.putCheap("L1", "nft1", { disposition: "ok" }); // no content hash
+  store.putSafeSearch("L1", { sensitive: true, adult: "LIKELY", raw: { adult: "LIKELY" } }, URI);
+  expect(store.getSafeSearchByUri(URI)).toEqual({ adult: "LIKELY", raw: { adult: "LIKELY" } });
+  store.close();
+});
+
+test("getSafeSearchByUri ignores rows that are only cheap-checked and unrelated URIs", () => {
+  const store = new ContentStore(":memory:");
+  const URI = "https://gw.example/ipfs/def";
+  store.putCheap("L1", "nft1", { disposition: "ok" }); // no SafeSearch yet
+  expect(store.getSafeSearchByUri(URI)).toBeUndefined();
+  expect(store.getSafeSearchByUri("https://gw.example/ipfs/other")).toBeUndefined();
+  store.close();
+});
+
+test("checked_uri is indexed so the URI-fallback dedup lookup is not a full table scan", () => {
+  const path = join(mkdtempSync(join(tmpdir(), "cstore-")), "c.sqlite");
+  new ContentStore(path).close();
+  const db = new DatabaseSync(path);
+  try {
+    const indexes = db.prepare("PRAGMA index_list(nft)").all() as Array<{ name: string }>;
+    const indexedColumns = indexes.flatMap((ix) =>
+      (db.prepare(`PRAGMA index_info('${ix.name}')`).all() as Array<{ name: string }>).map(
+        (c) => c.name
+      )
+    );
+    expect(indexedColumns).toContain("checked_uri");
+  } finally {
+    db.close();
+  }
+});
+
+test("opening an existing pre-checked_uri database migrates it in place", () => {
+  const path = join(mkdtempSync(join(tmpdir(), "cstore-")), "c.sqlite");
+  const legacy = new DatabaseSync(path);
+  legacy.exec(`
+    CREATE TABLE nft (
+      launcher_id           TEXT PRIMARY KEY,
+      nft_id                TEXT,
+      disposition           TEXT NOT NULL,
+      safesearch_adult      TEXT,
+      safesearch_raw_json   TEXT,
+      safesearch_checked_at INTEGER,
+      checked_at            INTEGER NOT NULL,
+      content_hash          TEXT
+    );
+  `);
+  legacy.close();
+
+  const store = new ContentStore(path);
+  const URI = "https://gw.example/ipfs/migrated";
+  store.putCheap("L1", "nft1", { disposition: "ok" });
+  store.putSafeSearch("L1", { sensitive: false, adult: "UNLIKELY", raw: {} }, URI);
+  expect(store.getSafeSearchByUri(URI)).toEqual({ adult: "UNLIKELY", raw: {} });
+  store.close();
+});
+
 test("content_hash is indexed so the dedup lookup is not a full table scan", () => {
   // open the produced db file with a fresh connection to inspect its real schema
   const path = join(mkdtempSync(join(tmpdir(), "cstore-")), "c.sqlite");

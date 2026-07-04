@@ -415,3 +415,78 @@ test("two never-checked NFTs sharing a content hash in the same batch coalesce o
   expect(flags.length).toBe(2);
   store.close();
 });
+
+// ── image-URI fallback dedup: when MintGarden never resolves a content hash ──
+// Seen in production: an edition drop where MintGarden's indexer hadn't hashed
+// the asset for 6 of 7 launcherIds sharing one IPFS URI — content_hash stayed
+// NULL for those rows, so the content-hash dedup above never engaged at all
+// (not just raced) and each burned its own paid Vision call.
+
+test("reuses a prior verdict by image URI when no content hash is available (sequential)", async () => {
+  const SHARED_URI = "https://gw.example/ipfs/bafybeigshared";
+  const media = new MediaIndex(10);
+  media.set("Lsrc2", { url: SHARED_URI, kind: "image" });
+  media.set("Ldup2", { url: SHARED_URI, kind: "image" });
+  const store = new ContentStore(":memory:");
+  store.putCheap("Lsrc2", "nftsrc2", { disposition: "ok" }); // no contentHash
+  store.putCheap("Ldup2", "nftdup2", { disposition: "ok" }); // no contentHash, same URI
+  const flags: ContentFlagEvent[] = [];
+  let visionCalls = 0;
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    apiKey: "k",
+    onFlag: (e) => flags.push(e),
+    fetchImpl: (async () => {
+      visionCalls++;
+      return new Response(
+        JSON.stringify({ responses: [{ safeSearchAnnotation: { adult: "VERY_LIKELY" } }] }),
+        { status: 200 }
+      );
+    }) as typeof fetch,
+  });
+
+  worker.maybeEnqueue(nftEvent({ launcherId: "Lsrc2", nftId: "nftsrc2" }));
+  await flushMicrotasks(); // let the first check fully persist before the second starts
+  worker.maybeEnqueue(nftEvent({ launcherId: "Ldup2", nftId: "nftdup2" }));
+  await flushMicrotasks();
+
+  expect(visionCalls).toBe(1);
+  expect(store.get("Ldup2")?.disposition).toBe("sensitive");
+  expect(store.get("Ldup2")?.safesearchChecked).toBe(true);
+  expect(flags.length).toBe(2);
+  store.close();
+});
+
+test("two never-checked NFTs sharing an image URI (no content hash) in the same batch coalesce onto one Vision call", async () => {
+  const SHARED_URI = "https://gw.example/ipfs/bafybeigbatch";
+  const media = new MediaIndex(10);
+  media.set("Lc", { url: SHARED_URI, kind: "image" });
+  media.set("Ld", { url: SHARED_URI, kind: "image" });
+  const store = new ContentStore(":memory:");
+  store.putCheap("Lc", "nftc", { disposition: "ok" });
+  store.putCheap("Ld", "nftd", { disposition: "ok" });
+  let visionCalls = 0;
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    apiKey: "k",
+    onFlag: () => {},
+    fetchImpl: (async () => {
+      visionCalls++;
+      return new Response(
+        JSON.stringify({ responses: [{ safeSearchAnnotation: { adult: "UNLIKELY" } }] }),
+        { status: 200 }
+      );
+    }) as typeof fetch,
+  });
+
+  worker.maybeEnqueue(nftEvent({ launcherId: "Lc", nftId: "nftc" }));
+  worker.maybeEnqueue(nftEvent({ launcherId: "Ld", nftId: "nftd" }));
+  await flushMicrotasks();
+
+  expect(visionCalls).toBe(1);
+  expect(store.get("Lc")?.safesearchChecked).toBe(true);
+  expect(store.get("Ld")?.safesearchChecked).toBe(true);
+  store.close();
+});
