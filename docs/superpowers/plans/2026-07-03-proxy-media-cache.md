@@ -25,10 +25,12 @@
 ### Task 1: `MediaCache` — pure byte-budgeted LRU store
 
 **Files:**
+
 - Create: `server/src/web/media-cache.ts`
 - Test: `server/test/media-cache.test.ts`
 
 **Interfaces:**
+
 - Consumes: nothing.
 - Produces:
   - `export interface CachedResponse { body: Buffer; contentType: string }`
@@ -166,10 +168,12 @@ git commit -m "Add MediaCache: byte-budgeted LRU store for proxy media"
 Adds the cache dependency, constants, two module helpers (`cachingCollector`, `serveCached`), and wires `/img` to serve from cache on a hit and to tee a successful small-image body into the cache on a miss. **No coalescing yet** (Task 3).
 
 **Files:**
+
 - Modify: `server/src/web/img-proxy.ts`
 - Test: `server/test/img-proxy.test.ts`
 
 **Interfaces:**
+
 - Consumes: `MediaCache`, `CachedResponse` from `./media-cache.js` (Task 1).
 - Produces:
   - `registerImageProxy(app, media, failures?, fetchUpstream?, cache?)` — `cache` added last, defaulting to `new MediaCache(CACHE_BYTE_BUDGET)`.
@@ -353,12 +357,12 @@ export function registerImageProxy(
 In the `/img` handler, immediately after the unknown-nft 404 (`if (!entry) return reply.code(404).send("unknown nft");`) and **before** the `failures.has(...)` check, insert:
 
 ```ts
-    const key = `img:${launcherId!}`;
-    const hasRange = typeof request.headers.range === "string";
-    if (!hasRange) {
-      const cached = cache.get(key);
-      if (cached) return serveCached(reply, cached);
-    }
+const key = `img:${launcherId!}`;
+const hasRange = typeof request.headers.range === "string";
+if (!hasRange) {
+  const cached = cache.get(key);
+  if (cached) return serveCached(reply, cached);
+}
 ```
 
 - [ ] **Step 6: Tee a successful small-image body into the cache**
@@ -366,74 +370,74 @@ In the `/img` handler, immediately after the unknown-nft 404 (`if (!entry) retur
 In the `/img` handler's success section, replace the existing content-type/stream block. The current code is:
 
 ```ts
-    reply.header("content-type", safeContentType(upstream.headers["content-type"]));
-    reply.header("x-content-type-options", "nosniff");
-    reply.header("content-security-policy", "sandbox; default-src 'none'");
-    for (const name of PASS_THROUGH) {
-      const value = upstream.headers[name];
-      if (typeof value === "string") reply.header(name, value);
-    }
+reply.header("content-type", safeContentType(upstream.headers["content-type"]));
+reply.header("x-content-type-options", "nosniff");
+reply.header("content-security-policy", "sandbox; default-src 'none'");
+for (const name of PASS_THROUGH) {
+  const value = upstream.headers[name];
+  if (typeof value === "string") reply.header(name, value);
+}
 
-    // enforce the cap mid-stream too — content-length can lie or be absent.
-    // tearing down either end propagates to the other and frees the inflight slot.
-    const capped = byteCap(MAX_BODY_BYTES);
-    capped.on("error", () => upstream.destroy());
-    upstream.on("error", () => capped.destroy());
-    capped.on("close", release);
-    upstream.pipe(capped);
-    return reply.send(capped);
+// enforce the cap mid-stream too — content-length can lie or be absent.
+// tearing down either end propagates to the other and frees the inflight slot.
+const capped = byteCap(MAX_BODY_BYTES);
+capped.on("error", () => upstream.destroy());
+upstream.on("error", () => capped.destroy());
+capped.on("close", release);
+upstream.pipe(capped);
+return reply.send(capped);
 ```
 
 Replace it with:
 
 ```ts
-    const ct = safeContentType(upstream.headers["content-type"]);
-    reply.header("content-type", ct);
-    reply.header("x-content-type-options", "nosniff");
-    reply.header("content-security-policy", "sandbox; default-src 'none'");
-    for (const name of PASS_THROUGH) {
-      const value = upstream.headers[name];
-      if (typeof value === "string") reply.header(name, value);
-    }
+const ct = safeContentType(upstream.headers["content-type"]);
+reply.header("content-type", ct);
+reply.header("x-content-type-options", "nosniff");
+reply.header("content-security-policy", "sandbox; default-src 'none'");
+for (const name of PASS_THROUGH) {
+  const value = upstream.headers[name];
+  if (typeof value === "string") reply.header(name, value);
+}
 
-    // enforce the cap mid-stream too — content-length can lie or be absent.
-    // tearing down either end propagates to the other and frees the inflight slot.
-    const capped = byteCap(MAX_BODY_BYTES);
-    upstream.on("error", () => capped.destroy());
+// enforce the cap mid-stream too — content-length can lie or be absent.
+// tearing down either end propagates to the other and frees the inflight slot.
+const capped = byteCap(MAX_BODY_BYTES);
+upstream.on("error", () => capped.destroy());
 
-    // Cache only a full 200 image with no range: tee the streamed bytes into a
-    // collector that fills the cache on a clean end. Everything else (videos,
-    // ranged/partial responses) streams through the hardened path unchanged.
-    const cacheable = !hasRange && status === 200 && ct.startsWith("image/");
-    if (cacheable) {
-      const collector = cachingCollector(CACHE_ENTRY_MAX_BYTES);
-      // Full teardown triangle across the 3-stage pipe (upstream → capped →
-      // collector). Any stage's error must destroy the other two; plain .pipe()
-      // does not propagate a destroyed source's teardown to its destination, and
-      // destroy() with no error emits only "close" (not "error"), so each leg is
-      // wired explicitly. `release` rides on the collector's "close", so the
-      // collector MUST be torn down on every failure or the reply hangs and the
-      // inflight slot leaks.
-      capped.on("error", () => upstream.destroy());
-      capped.on("error", () => collector.stream.destroy());
-      upstream.on("error", () => collector.stream.destroy());
-      collector.stream.on("error", () => capped.destroy());
-      // `close` fires on both clean completion and client abort; result() is
-      // non-null only after a clean end within the cap, so this both fills the
-      // cache and frees the slot in one place.
-      collector.stream.on("close", () => {
-        release();
-        const body = collector.result();
-        if (body) cache.set(key, { body, contentType: ct });
-      });
-      upstream.pipe(capped).pipe(collector.stream);
-      return reply.send(collector.stream);
-    }
+// Cache only a full 200 image with no range: tee the streamed bytes into a
+// collector that fills the cache on a clean end. Everything else (videos,
+// ranged/partial responses) streams through the hardened path unchanged.
+const cacheable = !hasRange && status === 200 && ct.startsWith("image/");
+if (cacheable) {
+  const collector = cachingCollector(CACHE_ENTRY_MAX_BYTES);
+  // Full teardown triangle across the 3-stage pipe (upstream → capped →
+  // collector). Any stage's error must destroy the other two; plain .pipe()
+  // does not propagate a destroyed source's teardown to its destination, and
+  // destroy() with no error emits only "close" (not "error"), so each leg is
+  // wired explicitly. `release` rides on the collector's "close", so the
+  // collector MUST be torn down on every failure or the reply hangs and the
+  // inflight slot leaks.
+  capped.on("error", () => upstream.destroy());
+  capped.on("error", () => collector.stream.destroy());
+  upstream.on("error", () => collector.stream.destroy());
+  collector.stream.on("error", () => capped.destroy());
+  // `close` fires on both clean completion and client abort; result() is
+  // non-null only after a clean end within the cap, so this both fills the
+  // cache and frees the slot in one place.
+  collector.stream.on("close", () => {
+    release();
+    const body = collector.result();
+    if (body) cache.set(key, { body, contentType: ct });
+  });
+  upstream.pipe(capped).pipe(collector.stream);
+  return reply.send(collector.stream);
+}
 
-    capped.on("error", () => upstream.destroy());
-    capped.on("close", release);
-    upstream.pipe(capped);
-    return reply.send(capped);
+capped.on("error", () => upstream.destroy());
+capped.on("close", release);
+upstream.pipe(capped);
+return reply.send(capped);
 ```
 
 (`status` is the existing `const status = upstream.statusCode ?? 502;` a few lines above; `key`, `hasRange`, `release`, and `ct` are all in scope.)
@@ -460,10 +464,12 @@ git commit -m "Cache small /img image responses in an in-memory LRU"
 Collapses concurrent cold requests for the same launcherId to a single upstream fetch: the first request registers an in-flight promise before fetching; later requests await it and serve from the resulting cache entry (or fall through if the leader's body turned out uncacheable).
 
 **Files:**
+
 - Modify: `server/src/web/img-proxy.ts`
 - Test: `server/test/img-proxy.test.ts`
 
 **Interfaces:**
+
 - Consumes: everything from Task 2.
 - Produces: an `inFlight = new Map<string, Promise<CachedResponse | null>>()` in the `registerImageProxy` closure and a module-level `deferred<T>()` helper. No signature change.
 
@@ -524,11 +530,11 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 In `registerImageProxy`, next to `let inflight = 0;`, add:
 
 ```ts
-  // Single-flight: concurrent cold requests for the same key await one leader's
-  // fetch instead of each opening their own. Resolves with the cached body, or
-  // null when the leader's body turned out uncacheable (waiters then fall
-  // through to their own fetch — same as today for videos).
-  const inFlight = new Map<string, Promise<CachedResponse | null>>();
+// Single-flight: concurrent cold requests for the same key await one leader's
+// fetch instead of each opening their own. Resolves with the cached body, or
+// null when the leader's body turned out uncacheable (waiters then fall
+// through to their own fetch — same as today for videos).
+const inFlight = new Map<string, Promise<CachedResponse | null>>();
 ```
 
 - [ ] **Step 5: Await an in-flight leader on a cache miss**
@@ -536,29 +542,29 @@ In `registerImageProxy`, next to `let inflight = 0;`, add:
 Extend the cache-hit block added in Task 2 so it also coalesces. Replace:
 
 ```ts
-    const key = `img:${launcherId!}`;
-    const hasRange = typeof request.headers.range === "string";
-    if (!hasRange) {
-      const cached = cache.get(key);
-      if (cached) return serveCached(reply, cached);
-    }
+const key = `img:${launcherId!}`;
+const hasRange = typeof request.headers.range === "string";
+if (!hasRange) {
+  const cached = cache.get(key);
+  if (cached) return serveCached(reply, cached);
+}
 ```
 
 with:
 
 ```ts
-    const key = `img:${launcherId!}`;
-    const hasRange = typeof request.headers.range === "string";
-    if (!hasRange) {
-      const cached = cache.get(key);
-      if (cached) return serveCached(reply, cached);
-      const pending = inFlight.get(key);
-      if (pending) {
-        const shared = await pending;
-        if (shared) return serveCached(reply, shared);
-        // leader's body was uncacheable → fall through to an independent fetch
-      }
-    }
+const key = `img:${launcherId!}`;
+const hasRange = typeof request.headers.range === "string";
+if (!hasRange) {
+  const cached = cache.get(key);
+  if (cached) return serveCached(reply, cached);
+  const pending = inFlight.get(key);
+  if (pending) {
+    const shared = await pending;
+    if (shared) return serveCached(reply, shared);
+    // leader's body was uncacheable → fall through to an independent fetch
+  }
+}
 ```
 
 - [ ] **Step 6: Register as leader before fetching, and settle on every exit**
@@ -566,47 +572,47 @@ with:
 Immediately before the candidate `inflight++;` / fetch section (after the `candidates.length === 0` → 400 check), add the leader registration:
 
 ```ts
-    // Become the single-flight leader for this key so concurrent cold requests
-    // coalesce onto this fetch. Only non-ranged requests participate.
-    const lead = !hasRange ? deferred<CachedResponse | null>() : null;
-    if (lead) inFlight.set(key, lead.promise);
-    let settled = false;
-    const settle = (value: CachedResponse | null): void => {
-      if (lead && !settled) {
-        settled = true;
-        // Only clear the map if it still holds OUR promise — a later leader may
-        // have already overwritten it (waiters that fell through and re-led), and
-        // deleting their live entry would let a new request launch a redundant
-        // fetch, silently defeating coalescing.
-        if (inFlight.get(key) === lead.promise) inFlight.delete(key);
-        lead.resolve(value);
-      }
-    };
+// Become the single-flight leader for this key so concurrent cold requests
+// coalesce onto this fetch. Only non-ranged requests participate.
+const lead = !hasRange ? deferred<CachedResponse | null>() : null;
+if (lead) inFlight.set(key, lead.promise);
+let settled = false;
+const settle = (value: CachedResponse | null): void => {
+  if (lead && !settled) {
+    settled = true;
+    // Only clear the map if it still holds OUR promise — a later leader may
+    // have already overwritten it (waiters that fell through and re-led), and
+    // deleting their live entry would let a new request launch a redundant
+    // fetch, silently defeating coalescing.
+    if (inFlight.get(key) === lead.promise) inFlight.delete(key);
+    lead.resolve(value);
+  }
+};
 ```
 
 Then settle on each post-registration exit. Change the fetch-failure block:
 
 ```ts
-    if (!upstream) {
-      release();
-      failures.mark(launcherId!);
-      settle(null);
-      return sawError
-        ? reply.code(504).send("upstream fetch failed")
-        : reply.code(502).send("upstream unavailable");
-    }
+if (!upstream) {
+  release();
+  failures.mark(launcherId!);
+  settle(null);
+  return sawError
+    ? reply.code(504).send("upstream fetch failed")
+    : reply.code(502).send("upstream unavailable");
+}
 ```
 
 and the oversized block:
 
 ```ts
-    if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
-      upstream.destroy();
-      release();
-      failures.mark(launcherId!);
-      settle(null);
-      return reply.code(502).send("upstream too large");
-    }
+if (Number.isFinite(declared) && declared > MAX_BODY_BYTES) {
+  upstream.destroy();
+  release();
+  failures.mark(launcherId!);
+  settle(null);
+  return reply.code(502).send("upstream too large");
+}
 ```
 
 - [ ] **Step 7: Resolve the leader from the stream outcome**
@@ -614,32 +620,32 @@ and the oversized block:
 Update the cacheable/non-cacheable stream branches from Task 2 to settle the leader. Replace the `cacheable` block's `end` handler and the non-cacheable tail:
 
 ```ts
-    const cacheable = !hasRange && status === 200 && ct.startsWith("image/");
-    if (cacheable) {
-      const collector = cachingCollector(CACHE_ENTRY_MAX_BYTES);
-      capped.on("error", () => upstream.destroy()); // capped's byte-cap error must tear down upstream too
-      capped.on("error", () => collector.stream.destroy());
-      upstream.on("error", () => collector.stream.destroy()); // upstream error must tear down the collector (release rides on its close)
-      collector.stream.on("error", () => capped.destroy());
-      // Single finalization point: `close` fires on clean completion and on
-      // client abort. result() is non-null only after a clean end within the
-      // cap, so this fills the cache, frees the slot, and settles waiters at
-      // once (on abort, body is null → not cached and waiters fall through).
-      collector.stream.on("close", () => {
-        release();
-        const body = collector.result();
-        if (body) cache.set(key, { body, contentType: ct });
-        settle(body ? { body, contentType: ct } : null);
-      });
-      upstream.pipe(capped).pipe(collector.stream);
-      return reply.send(collector.stream);
-    }
+const cacheable = !hasRange && status === 200 && ct.startsWith("image/");
+if (cacheable) {
+  const collector = cachingCollector(CACHE_ENTRY_MAX_BYTES);
+  capped.on("error", () => upstream.destroy()); // capped's byte-cap error must tear down upstream too
+  capped.on("error", () => collector.stream.destroy());
+  upstream.on("error", () => collector.stream.destroy()); // upstream error must tear down the collector (release rides on its close)
+  collector.stream.on("error", () => capped.destroy());
+  // Single finalization point: `close` fires on clean completion and on
+  // client abort. result() is non-null only after a clean end within the
+  // cap, so this fills the cache, frees the slot, and settles waiters at
+  // once (on abort, body is null → not cached and waiters fall through).
+  collector.stream.on("close", () => {
+    release();
+    const body = collector.result();
+    if (body) cache.set(key, { body, contentType: ct });
+    settle(body ? { body, contentType: ct } : null);
+  });
+  upstream.pipe(capped).pipe(collector.stream);
+  return reply.send(collector.stream);
+}
 
-    settle(null); // this body won't be cached (video/partial); waiters fall through
-    capped.on("error", () => upstream.destroy());
-    capped.on("close", release);
-    upstream.pipe(capped);
-    return reply.send(capped);
+settle(null); // this body won't be cached (video/partial); waiters fall through
+capped.on("error", () => upstream.destroy());
+capped.on("close", release);
+upstream.pipe(capped);
+return reply.send(capped);
 ```
 
 - [ ] **Step 8: Run the tests to verify they pass**
@@ -664,10 +670,12 @@ git commit -m "Coalesce concurrent /img fetches with single-flight"
 Applies the same cache + single-flight to `/thumbnail`, reusing the Task 2/3 helpers and the shared `cache` and `inFlight`. `/thumbnail` never takes a client `Range` and only serves images ≤ 4 MB, so it is simpler than `/img`.
 
 **Files:**
+
 - Modify: `server/src/web/img-proxy.ts`
 - Test: `server/test/img-proxy.test.ts`
 
 **Interfaces:**
+
 - Consumes: `cachingCollector`, `serveCached`, `deferred`, `cache`, `inFlight`, `CACHE_ENTRY_MAX_BYTES` from Tasks 2–3.
 - Produces: `/thumbnail` uses the `thumb:<launcherId>` cache key.
 
@@ -741,15 +749,15 @@ Expected: FAIL — `/thumbnail` does not cache yet, so `calls` is `2` in both te
 In the `/thumbnail` handler, after `if (!entry?.thumbnailUrl) return reply.code(404).send("no thumbnail");` and the `validateProxyTarget` 400 check, before `if (inflight >= MAX_INFLIGHT)`, insert:
 
 ```ts
-    const key = `thumb:${launcherId!}`;
-    const cachedThumb = cache.get(key);
-    if (cachedThumb) return serveCached(reply, cachedThumb);
-    const pendingThumb = inFlight.get(key);
-    if (pendingThumb) {
-      const shared = await pendingThumb;
-      if (shared) return serveCached(reply, shared);
-      // leader uncacheable → fall through
-    }
+const key = `thumb:${launcherId!}`;
+const cachedThumb = cache.get(key);
+if (cachedThumb) return serveCached(reply, cachedThumb);
+const pendingThumb = inFlight.get(key);
+if (pendingThumb) {
+  const shared = await pendingThumb;
+  if (shared) return serveCached(reply, shared);
+  // leader uncacheable → fall through
+}
 ```
 
 - [ ] **Step 4: Register the leader and tee the body into the cache**
@@ -757,18 +765,18 @@ In the `/thumbnail` handler, after `if (!entry?.thumbnailUrl) return reply.code(
 Register as leader just before `inflight++;` in `/thumbnail`:
 
 ```ts
-    const lead = deferred<CachedResponse | null>();
-    inFlight.set(key, lead.promise);
-    let settled = false;
-    const settle = (value: CachedResponse | null): void => {
-      if (!settled) {
-        settled = true;
-        // Only clear the map if it still holds OUR promise — a later leader may
-        // have overwritten it; deleting their live entry would defeat coalescing.
-        if (inFlight.get(key) === lead.promise) inFlight.delete(key);
-        lead.resolve(value);
-      }
-    };
+const lead = deferred<CachedResponse | null>();
+inFlight.set(key, lead.promise);
+let settled = false;
+const settle = (value: CachedResponse | null): void => {
+  if (!settled) {
+    settled = true;
+    // Only clear the map if it still holds OUR promise — a later leader may
+    // have overwritten it; deleting their live entry would defeat coalescing.
+    if (inFlight.get(key) === lead.promise) inFlight.delete(key);
+    lead.resolve(value);
+  }
+};
 ```
 
 Update the `/thumbnail` failure exits to settle. The catch block:
@@ -784,65 +792,65 @@ Update the `/thumbnail` failure exits to settle. The catch block:
 the unavailable block:
 
 ```ts
-    if (!upstream || (upstream.statusCode ?? 0) >= 400) {
-      upstream?.resume();
-      release();
-      settle(null);
-      return reply.code(502).send("upstream unavailable");
-    }
+if (!upstream || (upstream.statusCode ?? 0) >= 400) {
+  upstream?.resume();
+  release();
+  settle(null);
+  return reply.code(502).send("upstream unavailable");
+}
 ```
 
 and the too-large block:
 
 ```ts
-    if (Number.isFinite(declared) && declared > THUMB_MAX_BYTES) {
-      upstream.destroy();
-      release();
-      settle(null);
-      return reply.code(502).send("upstream too large");
-    }
+if (Number.isFinite(declared) && declared > THUMB_MAX_BYTES) {
+  upstream.destroy();
+  release();
+  settle(null);
+  return reply.code(502).send("upstream too large");
+}
 ```
 
 Then replace the `/thumbnail` stream tail. The current code is:
 
 ```ts
-    const capped = byteCap(THUMB_MAX_BYTES);
-    capped.on("error", () => upstream!.destroy());
-    upstream.on("error", () => capped.destroy());
-    capped.on("close", release);
-    upstream.pipe(capped);
-    return reply.send(capped);
+const capped = byteCap(THUMB_MAX_BYTES);
+capped.on("error", () => upstream!.destroy());
+upstream.on("error", () => capped.destroy());
+capped.on("close", release);
+upstream.pipe(capped);
+return reply.send(capped);
 ```
 
 Replace it with:
 
 ```ts
-    const ct = safeContentType(upstream.headers["content-type"]);
-    const capped = byteCap(THUMB_MAX_BYTES);
-    upstream.on("error", () => capped.destroy());
+const ct = safeContentType(upstream.headers["content-type"]);
+const capped = byteCap(THUMB_MAX_BYTES);
+upstream.on("error", () => capped.destroy());
 
-    const cacheable = status === 200 && ct.startsWith("image/");
-    if (cacheable) {
-      const collector = cachingCollector(CACHE_ENTRY_MAX_BYTES);
-      capped.on("error", () => upstream!.destroy()); // capped's byte-cap error must tear down upstream too
-      capped.on("error", () => collector.stream.destroy());
-      upstream.on("error", () => collector.stream.destroy()); // upstream error must tear down the collector (release rides on its close)
-      collector.stream.on("error", () => capped.destroy());
-      collector.stream.on("close", () => {
-        release();
-        const body = collector.result();
-        if (body) cache.set(key, { body, contentType: ct });
-        settle(body ? { body, contentType: ct } : null);
-      });
-      upstream.pipe(capped).pipe(collector.stream);
-      return reply.send(collector.stream);
-    }
+const cacheable = status === 200 && ct.startsWith("image/");
+if (cacheable) {
+  const collector = cachingCollector(CACHE_ENTRY_MAX_BYTES);
+  capped.on("error", () => upstream!.destroy()); // capped's byte-cap error must tear down upstream too
+  capped.on("error", () => collector.stream.destroy());
+  upstream.on("error", () => collector.stream.destroy()); // upstream error must tear down the collector (release rides on its close)
+  collector.stream.on("error", () => capped.destroy());
+  collector.stream.on("close", () => {
+    release();
+    const body = collector.result();
+    if (body) cache.set(key, { body, contentType: ct });
+    settle(body ? { body, contentType: ct } : null);
+  });
+  upstream.pipe(capped).pipe(collector.stream);
+  return reply.send(collector.stream);
+}
 
-    settle(null);
-    capped.on("error", () => upstream.destroy());
-    capped.on("close", release);
-    upstream.pipe(capped);
-    return reply.send(capped);
+settle(null);
+capped.on("error", () => upstream.destroy());
+capped.on("close", release);
+upstream.pipe(capped);
+return reply.send(capped);
 ```
 
 Confirm `status` exists in `/thumbnail` (`const status = upstream.statusCode ?? 502;`); the content-type header is already set from `safeContentType` a couple lines below the original tail — since we now compute `ct` up front, also update the existing `reply.header("content-type", safeContentType(upstream.headers["content-type"]));` line in `/thumbnail` to `reply.header("content-type", ct);` to avoid computing it twice.
