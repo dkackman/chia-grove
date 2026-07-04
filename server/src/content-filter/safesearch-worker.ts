@@ -50,6 +50,16 @@ export interface SafeSearchWorkerOpts {
 const FAILED_UNTIL_CAP = 10000;
 const DEFAULT_MAX_PENDING = 256;
 
+/** Hosts Google's image fetcher cannot reach (the reason the Archive upgrade
+ *  exists) — a Vision call against them is a guaranteed failure, so don't pay
+ *  the attempt. */
+const GOOGLE_UNREACHABLE_HOSTS = new Set(["ipfs.mintgarden.io"]);
+
+interface VisionOutcome {
+  result: SafeSearchResult;
+  checkedUri: string;
+}
+
 export class SafeSearchWorker {
   private readonly fetchImpl: typeof fetch;
   private readonly timeoutMs: number;
@@ -69,7 +79,7 @@ export class SafeSearchWorker {
    *  in-progress Vision check, so concurrent first-time checks of identical
    *  bytes (e.g. an edition drop landing in one block) coalesce onto a single
    *  paid call instead of each racing the not-yet-persisted DB dedup. */
-  private readonly dedupInflight = new Map<string, Promise<SafeSearchResult>>();
+  private readonly dedupInflight = new Map<string, Promise<VisionOutcome>>();
   /** Same dedup key -> suppression deadline after a failure (Vision error, or
    *  Archive never becoming ready). Bounds the case where the in-flight leader
    *  has already failed and cleaned up before the next launcher sharing this
@@ -124,15 +134,23 @@ export class SafeSearchWorker {
     // spend or after failedUntil lapses — acceptable for an out-of-band path.
     if (this.queued.size >= this.maxPending) return;
 
+    // Only images can fall back to the on-chain original: a video's fallback is
+    // the raw clip, which Vision cannot decode.
+    const fallbackUri = media.kind === "image" ? media.fallbackUrl : undefined;
     this.queued.add(launcherId);
-    // run() is not gated: its Archive-readiness wait is cheap polling that must
+    // run() is not gated: its content-readiness wait is cheap polling that must
     // not occupy a Vision slot. Only the paid Vision call inside run() is gated.
-    void this.run(launcherId, imageUri, stored?.contentHash).finally(() =>
+    void this.run(launcherId, imageUri, stored?.contentHash, fallbackUri).finally(() =>
       this.queued.delete(launcherId)
     );
   }
 
-  private async run(launcherId: string, imageUri: string, contentHash?: string): Promise<void> {
+  private async run(
+    launcherId: string,
+    imageUri: string,
+    contentHash?: string,
+    fallbackUri?: string
+  ): Promise<void> {
     // Distinct NFTs can share identical bytes. Prefer the real content hash for
     // dedup; MintGarden's indexer lags mint time (sometimes indefinitely for a
     // given collection), so when it hasn't resolved one yet, fall back to the
@@ -166,15 +184,16 @@ export class SafeSearchWorker {
       // identical Vision lookup.
       const inflight = this.dedupInflight.get(dedupKey);
       if (inflight) {
-        this.persistVerdict(launcherId, imageUri, await inflight, "reused");
+        this.persistVerdict(launcherId, imageUri, (await inflight).result, "reused");
         return;
       }
-      const work = this.checkVision(imageUri);
+      const work = this.checkVision(imageUri, fallbackUri);
       this.dedupInflight.set(dedupKey, work);
       // .finally() derives a new promise; it must carry its own rejection
       // handler; the "real" rejection is still caught below via `await work`.
       work.finally(() => this.dedupInflight.delete(dedupKey)).catch(() => {});
-      this.persistVerdict(launcherId, imageUri, await work, "vision");
+      const outcome = await work;
+      this.persistVerdict(launcherId, outcome.checkedUri, outcome.result, "vision");
     } catch (err) {
       log.warn(
         { launcherId, imageUri, err: err instanceof Error ? err.message : String(err) },
@@ -185,20 +204,42 @@ export class SafeSearchWorker {
     }
   }
 
-  private async checkVision(imageUri: string): Promise<SafeSearchResult> {
+  private async checkVision(imageUri: string, fallbackUri?: string): Promise<VisionOutcome> {
+    let target = imageUri;
     if (this.needsReadyProbe(imageUri)) {
       const ready = await this.waitForContentReady(imageUri);
       if (!ready) {
-        throw new Error(`content not ready after ${this.archiveCheckAttempts} attempts`);
+        const fallback = this.usableFallback(imageUri, fallbackUri);
+        if (!fallback) {
+          throw new Error(`content not ready after ${this.archiveCheckAttempts} attempts`);
+        }
+        // MintGarden never ingested these bytes; classify the on-chain original
+        // instead of giving up. checked_uri records what was actually classified.
+        target = fallback;
       }
     }
-    return this.gate(() =>
-      querySafeSearch(imageUri, {
+    const result = await this.gate(() =>
+      querySafeSearch(target, {
         apiKey: this.opts.apiKey,
         fetchImpl: this.fetchImpl,
         timeoutMs: this.timeoutMs,
       })
     );
+    return { result, checkedUri: target };
+  }
+
+  /** The original art URL, if it is worth one Vision attempt: http(s), distinct
+   *  from what we already tried, and not on a host Google cannot reach. */
+  private usableFallback(imageUri: string, fallbackUri?: string): string | undefined {
+    if (!fallbackUri || fallbackUri === imageUri) return undefined;
+    try {
+      const u = new URL(fallbackUri);
+      if (u.protocol !== "https:" && u.protocol !== "http:") return undefined;
+      if (GOOGLE_UNREACHABLE_HOSTS.has(u.hostname)) return undefined;
+      return fallbackUri;
+    } catch {
+      return undefined;
+    }
   }
 
   /** MintGarden's ingestion-lagged CDNs, where a probe from here predicts what
