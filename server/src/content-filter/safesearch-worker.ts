@@ -2,6 +2,7 @@ import type { ContentFlagEvent, SproutEvent } from "@grove/shared";
 import type { MediaIndex } from "../web/media-index.js";
 import type { ContentStore } from "./store.js";
 import { querySafeSearch, adultIsSensitive, type SafeSearchResult } from "./signals/safesearch.js";
+import { BoundedMap } from "../util/bounded-map.js";
 import { log } from "../logger.js";
 
 export interface SafeSearchWorkerOpts {
@@ -60,7 +61,7 @@ export class SafeSearchWorker {
   private active = 0;
   private readonly waiters: Array<() => void> = [];
   private readonly queued = new Set<string>();
-  private readonly failedUntil = new Map<string, number>();
+  private readonly failedUntil = new BoundedMap<string, number>(FAILED_UNTIL_CAP);
 
   constructor(private readonly opts: SafeSearchWorkerOpts) {
     this.fetchImpl = opts.fetchImpl ?? fetch;
@@ -148,11 +149,6 @@ export class SafeSearchWorker {
         "safesearch: vision api failed"
       );
       this.failedUntil.set(launcherId, this.now() + this.failTtlMs);
-      // evict oldest entry if the map has grown too large
-      if (this.failedUntil.size > FAILED_UNTIL_CAP) {
-        const oldest = this.failedUntil.keys().next().value;
-        if (oldest !== undefined) this.failedUntil.delete(oldest);
-      }
     }
   }
 

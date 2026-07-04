@@ -4,6 +4,7 @@ import type { Verdict } from "./types.js";
 import { mapMintgardenSignals, extractContentHash } from "./signals/mintgarden.js";
 import type { ContentStore } from "./store.js";
 import { SafeSearchWorker } from "./safesearch-worker.js";
+import { BoundedMap } from "../util/bounded-map.js";
 import { log } from "../logger.js";
 
 export type { Disposition } from "./types.js";
@@ -68,9 +69,9 @@ export interface ContentFilterOptions {
  *     rather than poisoning the cache with a permanent "ok".
  */
 export class ContentFilter {
-  private readonly cache = new Map<string, Verdict>();
+  private readonly cache: BoundedMap<string, Verdict>;
   /** nftId -> epoch ms until which a recent failure keeps it permissive without refetch */
-  private readonly negativeUntil = new Map<string, number>();
+  private readonly negativeUntil: BoundedMap<string, number>;
   private readonly inflight = new Map<string, Promise<FetchResult>>();
   private readonly fetchImpl: typeof fetch;
   private readonly baseUrl: string;
@@ -95,6 +96,8 @@ export class ContentFilter {
     this.timeoutMs = opts.timeoutMs ?? 4000;
     this.concurrency = opts.concurrency ?? 4;
     this.cacheCapacity = opts.cacheCapacity ?? 10000;
+    this.cache = new BoundedMap(this.cacheCapacity);
+    this.negativeUntil = new BoundedMap(this.cacheCapacity);
     this.enrichBudgetMs = opts.enrichBudgetMs ?? 1500;
     this.failTtlMs = opts.failTtlMs ?? 60000;
     this.now = opts.now ?? Date.now;
@@ -259,22 +262,12 @@ export class ContentFilter {
   }
 
   private remember(nftId: string, verdict: Verdict): void {
-    this.cache.delete(nftId);
     this.cache.set(nftId, verdict);
-    if (this.cache.size > this.cacheCapacity) {
-      const oldest = this.cache.keys().next().value;
-      if (oldest !== undefined) this.cache.delete(oldest);
-    }
   }
 
   private rememberFailure(nftId: string): void {
     if (this.failTtlMs <= 0) return; // negative caching disabled
-    this.negativeUntil.delete(nftId);
     this.negativeUntil.set(nftId, this.now() + this.failTtlMs);
-    if (this.negativeUntil.size > this.cacheCapacity) {
-      const oldest = this.negativeUntil.keys().next().value;
-      if (oldest !== undefined) this.negativeUntil.delete(oldest);
-    }
   }
 
   private gate<T>(fn: () => Promise<T>): Promise<T> {
