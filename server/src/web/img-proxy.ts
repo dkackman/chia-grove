@@ -47,6 +47,8 @@ const FAIL_CAPACITY = 10_000;
 // path unchanged. Total heap held at/below the budget; oldest evicts first.
 const CACHE_BYTE_BUDGET = 64 * 1024 * 1024;
 const CACHE_ENTRY_MAX_BYTES = 4 * 1024 * 1024; // == THUMB_MAX_BYTES
+// Real transient RSS ≈ (MAX_INFLIGHT × CACHE_ENTRY_MAX_BYTES) + CACHE_BYTE_BUDGET
+// ≈ 32×4MB + 64MB ≈ 192MB, since each cacheable leader also buffers its body.
 
 // hostnames refused outright; IP-literal and DNS-resolved addresses are checked
 // against private ranges separately (isPrivateAddress / safeLookup)
@@ -276,7 +278,7 @@ export function registerImageProxy(
   // fetch instead of each opening their own. Resolves with the cached body, or
   // null when the leader's body turned out uncacheable (waiters then fall
   // through to their own fetch — same as today for videos).
-  const inFlight = new Map<string, Promise<CachedResponse | null>>();
+  const inFlightLeaders = new Map<string, Promise<CachedResponse | null>>();
 
   // periodically drop stale buckets so the maps can't grow without bound
   const sweep = setInterval(() => {
@@ -297,7 +299,7 @@ export function registerImageProxy(
     if (!hasRange) {
       const cached = cache.get(key);
       if (cached) return serveCached(reply, cached);
-      const pending = inFlight.get(key);
+      const pending = inFlightLeaders.get(key);
       if (pending) {
         const shared = await pending;
         if (shared) return serveCached(reply, shared);
@@ -324,7 +326,7 @@ export function registerImageProxy(
     // Become the single-flight leader for this key so concurrent cold requests
     // coalesce onto this fetch. Only non-ranged requests participate.
     const lead = !hasRange ? deferred<CachedResponse | null>() : null;
-    if (lead) inFlight.set(key, lead.promise);
+    if (lead) inFlightLeaders.set(key, lead.promise);
     let settled = false;
     const settle = (value: CachedResponse | null): void => {
       if (lead && !settled) {
@@ -332,7 +334,7 @@ export function registerImageProxy(
         // Only remove our own entry: a waiter that fell through (leader
         // resolved null) may have already re-registered as the new leader, so
         // deleting unconditionally would orphan its still-live promise.
-        if (inFlight.get(key) === lead.promise) inFlight.delete(key);
+        if (inFlightLeaders.get(key) === lead.promise) inFlightLeaders.delete(key);
         lead.resolve(value);
       }
     };
@@ -406,7 +408,9 @@ export function registerImageProxy(
     }
 
     // enforce the cap mid-stream too — content-length can lie or be absent.
-    // tearing down either end propagates to the other and frees the inflight slot.
+    // Each stage's error tears down the others; the inflight slot is freed when
+    // the delivered stream closes (the collector's close for a cached image, or
+    // capped's close otherwise).
     const capped = byteCap(MAX_BODY_BYTES);
     upstream.on("error", () => capped.destroy());
 
@@ -456,7 +460,7 @@ export function registerImageProxy(
     const key = `thumb:${launcherId!}`;
     const cachedThumb = cache.get(key);
     if (cachedThumb) return serveCached(reply, cachedThumb);
-    const pendingThumb = inFlight.get(key);
+    const pendingThumb = inFlightLeaders.get(key);
     if (pendingThumb) {
       const shared = await pendingThumb;
       if (shared) return serveCached(reply, shared);
@@ -466,14 +470,14 @@ export function registerImageProxy(
     if (inflight >= MAX_INFLIGHT) return reply.code(503).send("proxy busy");
 
     const lead = deferred<CachedResponse | null>();
-    inFlight.set(key, lead.promise);
+    inFlightLeaders.set(key, lead.promise);
     let settled = false;
     const settle = (value: CachedResponse | null): void => {
       if (!settled) {
         settled = true;
         // Only clear the map if it still holds OUR promise — a later leader may
         // have overwritten it; deleting their live entry would defeat coalescing.
-        if (inFlight.get(key) === lead.promise) inFlight.delete(key);
+        if (inFlightLeaders.get(key) === lead.promise) inFlightLeaders.delete(key);
         lead.resolve(value);
       }
     };
