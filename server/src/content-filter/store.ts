@@ -158,8 +158,7 @@ export class ContentStore {
          ORDER BY safesearch_checked_at DESC LIMIT 1`
       )
       .get(uri) as
-      | { safesearch_adult: string | null; safesearch_raw_json: string | null }
-      | undefined;
+      { safesearch_adult: string | null; safesearch_raw_json: string | null } | undefined;
     if (!row) return undefined;
     return {
       adult: row.safesearch_adult ?? "UNKNOWN",

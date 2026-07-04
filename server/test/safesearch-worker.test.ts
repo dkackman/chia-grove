@@ -490,3 +490,50 @@ test("two never-checked NFTs sharing an image URI (no content hash) in the same 
   expect(store.get("Ld")?.safesearchChecked).toBe(true);
   store.close();
 });
+
+// ── shared failure backoff: don't re-poll Archive per launcher for the same
+// content ────────────────────────────────────────────────────────────────────
+// Seen in production: 11 launcherIds sharing one content hash, each running
+// its own archiveCheckAttempts loop against an asset Archive hadn't ingested
+// yet — N times the network calls (and N cold failures) for what Archive
+// answers identically for all of them. In-flight coalescing alone doesn't
+// cover this: by the time a later launcher arrives, the leader may have
+// already failed and been removed from the in-flight map.
+
+test("a content hash's archive failure suppresses later launchers instead of each re-polling", async () => {
+  const SHARED_HASH = "ef".repeat(32);
+  const ARCHIVE_URL = `${ARCHIVE}/content/${SHARED_HASH}`;
+  const media = new MediaIndex(20);
+  for (const id of ["Lp", "Lq", "Lr"]) media.set(id, { url: ARCHIVE_URL, kind: "image" });
+  const store = new ContentStore(":memory:");
+  store.putCheap("Lp", "nftp", { disposition: "ok" }, SHARED_HASH);
+  store.putCheap("Lq", "nftq", { disposition: "ok" }, SHARED_HASH);
+  store.putCheap("Lr", "nftr", { disposition: "ok" }, SHARED_HASH);
+  let archiveCalls = 0;
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    apiKey: "k",
+    onFlag: () => {},
+    archiveBaseUrl: ARCHIVE,
+    archiveCheckAttempts: 2,
+    archiveCheckDelayMs: 0,
+    fetchImpl: (async (url: string) => {
+      if (String(url).includes(`${ARCHIVE}/nfts/`)) archiveCalls++;
+      return new Response("{}", { status: 404 }); // never ready
+    }) as typeof fetch,
+  });
+
+  // Lp runs to completion (fails) before Lq/Lr arrive — the in-flight leader
+  // entry is long gone by the time they show up, unlike the same-batch case.
+  worker.maybeEnqueue(nftEvent({ launcherId: "Lp", nftId: "nftp" }));
+  await flushMicrotasks();
+  await flushMicrotasks();
+
+  worker.maybeEnqueue(nftEvent({ launcherId: "Lq", nftId: "nftq" }));
+  worker.maybeEnqueue(nftEvent({ launcherId: "Lr", nftId: "nftr" }));
+  await flushMicrotasks();
+
+  expect(archiveCalls).toBe(2); // only Lp's own archiveCheckAttempts ran
+  store.close();
+});

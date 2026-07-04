@@ -67,6 +67,13 @@ export class SafeSearchWorker {
    *  bytes (e.g. an edition drop landing in one block) coalesce onto a single
    *  paid call instead of each racing the not-yet-persisted DB dedup. */
   private readonly dedupInflight = new Map<string, Promise<SafeSearchResult>>();
+  /** Same dedup key -> suppression deadline after a failure (Vision error, or
+   *  Archive never becoming ready). Bounds the case where the in-flight leader
+   *  has already failed and cleaned up before the next launcher sharing this
+   *  content arrives — without this, that launcher would re-run its own
+   *  archive-readiness poll from scratch for content already known to be
+   *  unready, rather than just inheriting the recent failure. */
+  private readonly dedupFailedUntil = new BoundedMap<string, number>(FAILED_UNTIL_CAP);
 
   constructor(private readonly opts: SafeSearchWorkerOpts) {
     this.fetchImpl = opts.fetchImpl ?? fetch;
@@ -127,6 +134,14 @@ export class SafeSearchWorker {
     // exact image URI about to be checked — identical on-chain bytes still
     // resolve to the same URI (e.g. edition drops sharing one IPFS CID).
     const dedupKey = contentHash ?? imageUri;
+    // Cheapest check first: skip the DB round-trip entirely when this exact
+    // content just failed (e.g. Archive hasn't ingested it yet) via a different
+    // launcherId — no point re-running the same doomed archive-readiness poll.
+    const dedupFailedUntil = this.dedupFailedUntil.get(dedupKey);
+    if (dedupFailedUntil !== undefined && this.now() < dedupFailedUntil) {
+      this.failedUntil.set(launcherId, this.now() + this.failTtlMs);
+      return;
+    }
     try {
       const prior = contentHash
         ? this.opts.store.getSafeSearchByContentHash(contentHash)
@@ -161,6 +176,7 @@ export class SafeSearchWorker {
         "safesearch: vision api failed"
       );
       this.failedUntil.set(launcherId, this.now() + this.failTtlMs);
+      this.dedupFailedUntil.set(dedupKey, this.now() + this.failTtlMs);
     }
   }
 
