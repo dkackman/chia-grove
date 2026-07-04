@@ -16,6 +16,34 @@ test("putCheap then get round-trips disposition, safesearch not yet checked", ()
   store.close();
 });
 
+test("putCheap with skipSafesearch stamps safesearchChecked immediately", () => {
+  const store = new ContentStore(":memory:");
+  store.putCheap("lid4", "nft1d", { disposition: "ok", whitelisted: true }, undefined, true);
+  const v = store.get("lid4");
+  expect(v?.disposition).toBe("ok");
+  expect(v?.safesearchChecked).toBe(true);
+  store.close();
+});
+
+test("putCheap without skipSafesearch does not clobber an already-stamped safesearchChecked", () => {
+  const store = new ContentStore(":memory:");
+  store.putCheap("lid5", "nft1e", { disposition: "ok" }, undefined, true);
+  // a later re-spend re-runs putCheap without the flag (e.g. cache-miss path) —
+  // must not un-stamp a row that was already marked checked
+  store.putCheap("lid5", "nft1e", { disposition: "ok" });
+  const v = store.get("lid5");
+  expect(v?.safesearchChecked).toBe(true);
+  store.close();
+});
+
+test("putCheap without skipSafesearch on a fresh row leaves safesearchChecked false", () => {
+  const store = new ContentStore(":memory:");
+  store.putCheap("lid6", "nft1f", { disposition: "ok" });
+  const v = store.get("lid6");
+  expect(v?.safesearchChecked).toBe(false);
+  store.close();
+});
+
 test("putSafeSearch sensitive upgrades an ok row and records the check", () => {
   const store = new ContentStore(":memory:");
   store.putCheap("l", "nft1", { disposition: "ok" });

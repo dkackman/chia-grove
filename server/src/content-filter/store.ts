@@ -71,19 +71,29 @@ export class ContentStore {
     launcherId: string,
     nftId: string | undefined,
     verdict: Verdict,
-    contentHash?: string
+    contentHash?: string,
+    skipSafesearch?: boolean
   ): void {
+    const now = Date.now();
     this.db
       .prepare(
-        `INSERT INTO nft (launcher_id, nft_id, disposition, content_hash, checked_at)
-         VALUES (?, ?, ?, ?, ?)
+        `INSERT INTO nft (launcher_id, nft_id, disposition, content_hash, checked_at, safesearch_checked_at)
+         VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT(launcher_id) DO UPDATE SET
            nft_id = excluded.nft_id,
            disposition = excluded.disposition,
            content_hash = COALESCE(excluded.content_hash, nft.content_hash),
-           checked_at = excluded.checked_at`
+           checked_at = excluded.checked_at,
+           safesearch_checked_at = COALESCE(nft.safesearch_checked_at, excluded.safesearch_checked_at)`
       )
-      .run(launcherId, nftId ?? null, verdict.disposition, contentHash ?? null, Date.now());
+      .run(
+        launcherId,
+        nftId ?? null,
+        verdict.disposition,
+        contentHash ?? null,
+        now,
+        skipSafesearch ? now : null
+      );
   }
 
   putSafeSearch(
