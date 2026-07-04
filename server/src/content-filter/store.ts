@@ -39,9 +39,18 @@ export class ContentStore {
         content_hash          TEXT
       );
     `);
+    // Added after the initial release; existing prod databases need it backfilled in place.
+    // ALTER TABLE ADD COLUMN has no IF NOT EXISTS form, so check first.
+    const columns = this.db.prepare("PRAGMA table_info(nft)").all() as Array<{ name: string }>;
+    if (!columns.some((c) => c.name === "checked_uri")) {
+      this.db.exec("ALTER TABLE nft ADD COLUMN checked_uri TEXT;");
+    }
     // Index the content-hash dedup lookup (getSafeSearchByContentHash); without
     // it that query full-scans a table that grows one row per NFT ever seen.
     this.db.exec("CREATE INDEX IF NOT EXISTS idx_nft_content_hash ON nft (content_hash);");
+    // Fallback dedup key (getSafeSearchByUri) for when MintGarden hasn't resolved
+    // a content_hash yet — see comment on getSafeSearchByUri.
+    this.db.exec("CREATE INDEX IF NOT EXISTS idx_nft_checked_uri ON nft (checked_uri);");
   }
 
   get(launcherId: string): StoredVerdict | undefined {
@@ -79,7 +88,8 @@ export class ContentStore {
 
   putSafeSearch(
     launcherId: string,
-    result: { sensitive: boolean; adult: string; raw: unknown }
+    result: { sensitive: boolean; adult: string; raw: unknown },
+    imageUri?: string
   ): StoredVerdict {
     const current = this.get(launcherId) ?? {
       disposition: "ok" as Disposition,
@@ -90,13 +100,14 @@ export class ContentStore {
       : current.disposition;
     this.db
       .prepare(
-        `INSERT INTO nft (launcher_id, disposition, safesearch_adult, safesearch_raw_json, safesearch_checked_at, checked_at)
-         VALUES (?, ?, ?, ?, ?, ?)
+        `INSERT INTO nft (launcher_id, disposition, safesearch_adult, safesearch_raw_json, safesearch_checked_at, checked_at, checked_uri)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(launcher_id) DO UPDATE SET
            disposition = excluded.disposition,
            safesearch_adult = excluded.safesearch_adult,
            safesearch_raw_json = excluded.safesearch_raw_json,
-           safesearch_checked_at = excluded.safesearch_checked_at`
+           safesearch_checked_at = excluded.safesearch_checked_at,
+           checked_uri = excluded.checked_uri`
       )
       .run(
         launcherId,
@@ -104,7 +115,8 @@ export class ContentStore {
         result.adult,
         JSON.stringify(result.raw),
         Date.now(),
-        Date.now()
+        Date.now(),
+        imageUri ?? null
       );
     return { disposition, safesearchChecked: true };
   }
@@ -122,6 +134,30 @@ export class ContentStore {
          ORDER BY safesearch_checked_at DESC LIMIT 1`
       )
       .get(contentHash) as
+      { safesearch_adult: string | null; safesearch_raw_json: string | null } | undefined;
+    if (!row) return undefined;
+    return {
+      adult: row.safesearch_adult ?? "UNKNOWN",
+      raw: row.safesearch_raw_json ? JSON.parse(row.safesearch_raw_json) : null,
+    };
+  }
+
+  /**
+   * The most recent SafeSearch result recorded for any NFT whose Vision check
+   * used this exact image URI, or undefined if none has been checked. Fallback
+   * for getSafeSearchByContentHash when MintGarden hasn't resolved a
+   * content_hash yet (its indexer lags mint time, sometimes indefinitely for a
+   * given collection) — identical on-chain bytes still produce an identical
+   * URI, so this still catches duplicate editions minted in the same batch.
+   */
+  getSafeSearchByUri(uri: string): { adult: string; raw: unknown } | undefined {
+    const row = this.db
+      .prepare(
+        `SELECT safesearch_adult, safesearch_raw_json FROM nft
+         WHERE checked_uri = ? AND safesearch_checked_at IS NOT NULL
+         ORDER BY safesearch_checked_at DESC LIMIT 1`
+      )
+      .get(uri) as
       { safesearch_adult: string | null; safesearch_raw_json: string | null } | undefined;
     if (!row) return undefined;
     return {
