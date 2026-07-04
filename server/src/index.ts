@@ -23,12 +23,20 @@ process.on("uncaughtException", (error) => {
   process.exit(1);
 });
 
-const PORT = Number(process.env.PORT ?? 8080);
-const POLL_INTERVAL_MS = Number(process.env.POLL_INTERVAL_MS ?? 3000);
+// Number() on a non-numeric env value yields NaN rather than throwing, which
+// would otherwise flow silently into setTimeout delays etc. (NaN coerces to 0,
+// producing a tight loop hammering the RPC) — fall back to the default instead.
+function envInt(name: string, fallback: number): number {
+  const n = Number(process.env[name]);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+const PORT = envInt("PORT", 8080);
+const POLL_INTERVAL_MS = envInt("POLL_INTERVAL_MS", 3000);
 // backfill ~150 blocks on boot so a fresh deploy (which clears the in-memory
 // buffer) already has some history — NFT mints are sparse (~1 per 18 blocks),
 // so a deep backfill is what keeps the gallery from starting empty
-const BACKFILL_BLOCKS = Number(process.env.BACKFILL_BLOCKS ?? 150);
+const BACKFILL_BLOCKS = envInt("BACKFILL_BLOCKS", 150);
 
 // the ring buffer is sized to absorb airdrop blocks (400+ sprouts each) while
 // still covering the full backfill window; older events fall off the back
