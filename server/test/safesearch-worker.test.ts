@@ -631,8 +631,7 @@ test("archive never ready + reachable original URL → Vision checks the fallbac
     archiveCheckDelayMs: 0,
     fetchImpl: (async (url: string, init?: RequestInit) => {
       if (init?.method === "HEAD") return new Response(null, { status: 404 });
-      visionUri = JSON.parse((init?.body as string) ?? "{}").requests?.[0]?.image?.source
-        ?.imageUri;
+      visionUri = JSON.parse((init?.body as string) ?? "{}").requests?.[0]?.image?.source?.imageUri;
       return visionOk();
     }) as typeof fetch,
   });
@@ -705,6 +704,54 @@ test("a video NFT never falls back to the raw clip when its poster is not ready"
   worker.maybeEnqueue(nftEvent({ launcherId: "V1", nftId: "nftv", mediaKind: "video" }));
   await flushMicrotasks();
   expect(visionCalls).toBe(0); // Vision can't decode video frames
+  store.close();
+});
+
+test("coalesced followers of a fallback-checked leader record their own imageUri, not the leader's fallback", async () => {
+  const HASH = "6f".repeat(32);
+  const ARCHIVE_URL = `${ARCHIVE}/content/${HASH}`;
+  const media = new MediaIndex(10);
+  // Same bytes (one content hash, one archive URL), but each launcher preserved
+  // a different on-chain original — only the leader's fallback gets classified.
+  media.set("L1", {
+    url: ARCHIVE_URL,
+    kind: "image",
+    fallbackUrl: "https://original1.example/a.png",
+  });
+  media.set("L2", {
+    url: ARCHIVE_URL,
+    kind: "image",
+    fallbackUrl: "https://original2.example/b.png",
+  });
+  const store = new ContentStore(":memory:");
+  store.putCheap("L1", "nft1", { disposition: "ok" }, HASH);
+  store.putCheap("L2", "nft2", { disposition: "ok" }, HASH);
+  let visionCalls = 0;
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    apiKey: "k",
+    onFlag: () => {},
+    archiveBaseUrl: ARCHIVE,
+    archiveCheckAttempts: 1,
+    archiveCheckDelayMs: 0,
+    fetchImpl: (async (url: string, init?: RequestInit) => {
+      if (init?.method === "HEAD") return new Response(null, { status: 404 }); // never ready
+      if (String(url).includes("images:annotate")) visionCalls++;
+      return visionOk();
+    }) as typeof fetch,
+  });
+  // Same batch, no await between them — L2 joins L1's in-flight check.
+  worker.maybeEnqueue(nftEvent());
+  worker.maybeEnqueue(nftEvent({ launcherId: "L2", nftId: "nft2" }));
+  await flushMicrotasks();
+  expect(visionCalls).toBe(1); // coalesced onto the leader's fallback check
+  expect(store.get("L1")?.safesearchChecked).toBe(true);
+  expect(store.get("L2")?.safesearchChecked).toBe(true);
+  // Leader's checked_uri is the fallback it actually classified; the follower
+  // records its own imageUri (the archive URL), not the leader's fallback.
+  expect(store.getSafeSearchByUri("https://original1.example/a.png")?.adult).toBe("UNLIKELY");
+  expect(store.getSafeSearchByUri(ARCHIVE_URL)?.adult).toBe("UNLIKELY");
   store.close();
 });
 
