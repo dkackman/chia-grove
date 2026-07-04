@@ -372,3 +372,46 @@ test("reuses a prior ok verdict for the same content hash and still skips Vision
   expect(flags).toEqual([]);
   store.close();
 });
+
+// Two never-checked NFTs sharing a content hash, enqueued in the same tick (e.g.
+// an edition mint drop landing in one block), have no persisted verdict for
+// either yet — the DB-based reuse check above can't help. Without in-flight
+// coalescing both independently proceed to Vision, burning N paid calls for
+// what should be one.
+test("two never-checked NFTs sharing a content hash in the same batch coalesce onto one Vision call", async () => {
+  const SHARED_HASH = "cd".repeat(32);
+  const media = new MediaIndex(10);
+  media.set("La", { url: "https://e/a.png", kind: "image" });
+  media.set("Lb", { url: "https://e/b.png", kind: "image" });
+  const store = new ContentStore(":memory:");
+  store.putCheap("La", "nfta", { disposition: "ok" }, SHARED_HASH);
+  store.putCheap("Lb", "nftb", { disposition: "ok" }, SHARED_HASH);
+  const flags: ContentFlagEvent[] = [];
+  let visionCalls = 0;
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    apiKey: "k",
+    onFlag: (e) => flags.push(e),
+    fetchImpl: (async () => {
+      visionCalls++;
+      return new Response(
+        JSON.stringify({ responses: [{ safeSearchAnnotation: { adult: "VERY_LIKELY" } }] }),
+        { status: 200 }
+      );
+    }) as typeof fetch,
+  });
+
+  // Both enqueued back-to-back with no await between them, simulating a batch.
+  worker.maybeEnqueue(nftEvent({ launcherId: "La", nftId: "nfta" }));
+  worker.maybeEnqueue(nftEvent({ launcherId: "Lb", nftId: "nftb" }));
+  await flushMicrotasks();
+
+  expect(visionCalls).toBe(1);
+  expect(store.get("La")?.disposition).toBe("sensitive");
+  expect(store.get("Lb")?.disposition).toBe("sensitive");
+  expect(store.get("La")?.safesearchChecked).toBe(true);
+  expect(store.get("Lb")?.safesearchChecked).toBe(true);
+  expect(flags.length).toBe(2);
+  store.close();
+});
