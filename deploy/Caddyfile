@@ -1,7 +1,7 @@
 chia-grove.com {
     reverse_proxy localhost:8080
     header {
-        Content-Security-Policy "default-src 'self'; connect-src 'self' https://gateway.umami.is; img-src 'self' data: https://icons.dexie.space; media-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+        Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://xchtip.app https://esm.sh; style-src 'self' 'unsafe-inline'; connect-src 'self' https://gateway.umami.is https://xchtip.app https://esm.sh https://api.coinset.org https://relay.walletconnect.org wss://relay.walletconnect.org https://verify.walletconnect.org https://pulse.walletconnect.org https://explorer-api.walletconnect.com; frame-src https://verify.walletconnect.org; img-src 'self' data: https://icons.dexie.space https://xchtip.app; media-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
         X-Content-Type-Options "nosniff"
         X-Frame-Options "DENY"
         Referrer-Policy "no-referrer"
