@@ -35,6 +35,10 @@ export class BoundedMap<K, V> {
     this.map.delete(key);
   }
 
+  entries(): IterableIterator<[K, V]> {
+    return this.map.entries();
+  }
+
   get size(): number {
     return this.map.size;
   }

@@ -47,6 +47,9 @@ export interface ContentFilterOptions {
   googleApiKey?: string;
   /** Called when SafeSearch promotes an NFT to sensitive/blocked after the sprout was streamed. */
   onFlag?: (e: ContentFlagEvent) => void;
+  /** How often to sweep MediaIndex for still-unchecked NFTs (0 disables; default 10 min).
+   *  Retries content that lagged Archive ingestion without waiting for a re-spend. */
+  safesearchSweepIntervalMs?: number;
 }
 
 /**
@@ -84,6 +87,7 @@ export class ContentFilter {
   private readonly archiveBaseUrl: string;
   private readonly store?: ContentStore;
   private readonly worker?: SafeSearchWorker;
+  private sweepTimer?: ReturnType<typeof setInterval>;
   private active = 0;
   private readonly waiters: Array<() => void> = [];
 
@@ -113,7 +117,14 @@ export class ContentFilter {
         archiveBaseUrl: opts.archiveBaseUrl,
         archiveCheckAttempts: opts.archiveCheckAttempts,
         archiveCheckDelayMs: opts.archiveCheckDelayMs,
+        thumbnailBaseUrl: THUMBNAIL_BASE_URL,
       });
+      const sweepMs = opts.safesearchSweepIntervalMs ?? 600_000;
+      if (sweepMs > 0) {
+        const worker = this.worker;
+        this.sweepTimer = setInterval(() => worker.sweep(), sweepMs);
+        this.sweepTimer.unref?.();
+      }
     }
   }
 
@@ -140,6 +151,13 @@ export class ContentFilter {
     } finally {
       clearTimeout(timer!);
     }
+  }
+
+  /** Stop the periodic SafeSearch sweep (the unref'd timer never blocks exit,
+   *  but tests and orderly shutdown want it gone deterministically). */
+  close(): void {
+    if (this.sweepTimer) clearInterval(this.sweepTimer);
+    this.sweepTimer = undefined;
   }
 
   private async apply(event: SproutEvent): Promise<void> {

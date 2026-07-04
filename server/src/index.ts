@@ -56,6 +56,7 @@ const contentFilter = new ContentFilter(media, {
   store: contentStore,
   googleApiKey: process.env.GOOGLE_VISION_API_KEY,
   onFlag: (e) => hub.publish([e]),
+  safesearchSweepIntervalMs: envInt("SAFESEARCH_SWEEP_INTERVAL_MS", 600_000),
 }); // MintGarden lookups cached per nftId; SafeSearch async when API key set
 const cats = new CatRegistry();
 await cats.start();

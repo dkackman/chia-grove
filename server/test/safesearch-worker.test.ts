@@ -131,10 +131,7 @@ const visionOk = (): Response =>
   new Response(JSON.stringify({ responses: [{ safeSearchAnnotation: { adult: "UNLIKELY" } }] }), {
     status: 200,
   });
-const archiveReady = (): Response =>
-  new Response(JSON.stringify({ assets: [{ role: "data", fetch_succeeded: true }] }), {
-    status: 200,
-  });
+const headOk = (): Response => new Response(null, { status: 200 });
 
 test("archive readiness waits run concurrently instead of serialized by the Vision gate", async () => {
   const N = 5;
@@ -154,16 +151,15 @@ test("archive readiness waits run concurrently instead of serialized by the Visi
     archiveCheckAttempts: 1,
     archiveCheckDelayMs: 0,
     concurrency: 2,
-    fetchImpl: (async (url: string) => {
-      const s = String(url);
-      if (s.includes("images:annotate")) return visionOk();
-      if (s.includes(`${ARCHIVE}/nfts/`)) {
+    fetchImpl: (async (url: string, init?: RequestInit) => {
+      if (init?.method === "HEAD") {
         archiveActive++;
         archivePeak = Math.max(archivePeak, archiveActive);
         await held;
         archiveActive--;
-        return archiveReady();
+        return headOk();
       }
+      if (String(url).includes("images:annotate")) return visionOk();
       return new Response("{}", { status: 404 });
     }) as typeof fetch,
   });
@@ -231,13 +227,12 @@ test("maybeEnqueue drops work beyond maxPending so the in-flight set stays bound
     archiveCheckDelayMs: 0,
     concurrency: 10, // high enough that only maxPending, not the gate, limits work
     maxPending: 2,
-    fetchImpl: (async (url: string) => {
+    fetchImpl: (async (url: string, init?: RequestInit) => {
       const s = String(url);
-      const m = s.match(/\/nfts\/(L\d+)/);
-      if (m) {
-        polled.add(m[1]);
+      if (init?.method === "HEAD") {
+        polled.add(s);
         await held;
-        return archiveReady();
+        return headOk();
       }
       if (s.includes("images:annotate")) return visionOk();
       return new Response("{}", { status: 404 });
@@ -270,6 +265,7 @@ test("a video NFT is SafeSearch-checked against its thumbnail poster, not the cl
     apiKey: "k",
     onFlag: (e) => flags.push(e),
     fetchImpl: (async (_url: string, init?: RequestInit) => {
+      if (init?.method === "HEAD") return headOk();
       visionUri = JSON.parse((init?.body as string) ?? "{}").requests?.[0]?.image?.source?.imageUri;
       return new Response(
         JSON.stringify({ responses: [{ safeSearchAnnotation: { adult: "VERY_LIKELY" } }] }),
@@ -518,9 +514,12 @@ test("a content hash's archive failure suppresses later launchers instead of eac
     archiveBaseUrl: ARCHIVE,
     archiveCheckAttempts: 2,
     archiveCheckDelayMs: 0,
-    fetchImpl: (async (url: string) => {
-      if (String(url).includes(`${ARCHIVE}/nfts/`)) archiveCalls++;
-      return new Response("{}", { status: 404 }); // never ready
+    fetchImpl: (async (_url: string, init?: RequestInit) => {
+      if (init?.method === "HEAD") {
+        archiveCalls++;
+        return new Response(null, { status: 404 }); // never ready
+      }
+      return new Response("{}", { status: 404 });
     }) as typeof fetch,
   });
 
@@ -535,5 +534,481 @@ test("a content hash's archive failure suppresses later launchers instead of eac
   await flushMicrotasks();
 
   expect(archiveCalls).toBe(2); // only Lp's own archiveCheckAttempts ran
+  store.close();
+});
+
+test("a lookalike domain sharing the archive prefix is not probed", async () => {
+  const media = new MediaIndex(10);
+  media.set("L1", { url: "https://archive.mintgarden.io.evil.example/content/x", kind: "image" });
+  const store = new ContentStore(":memory:");
+  store.putCheap("L1", "nft1", { disposition: "ok" });
+  let headCalls = 0;
+  let visionCalls = 0;
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    apiKey: "k",
+    onFlag: () => {},
+    fetchImpl: (async (url: string, init?: RequestInit) => {
+      if (init?.method === "HEAD") headCalls++;
+      if (String(url).includes("images:annotate")) visionCalls++;
+      return visionOk();
+    }) as typeof fetch,
+  });
+  worker.maybeEnqueue(nftEvent());
+  await flushMicrotasks();
+  expect(headCalls).toBe(0); // not one of our CDNs → no readiness probe
+  expect(visionCalls).toBe(1);
+  store.close();
+});
+
+// ── content-readiness probe: HEAD of the URL Vision will fetch ───────────────
+// The archive answers an immutable 301 (to files.mintgarden.io) for ingested
+// content and 404 otherwise, so a redirect counts as ready. Probing the content
+// URL itself (not /nfts/{launcherId}) means readiness is content-keyed.
+
+test("the readiness probe is a HEAD of the content URL and a redirect counts as ready", async () => {
+  const HASH = "1a".repeat(32);
+  const CONTENT_URL = `${ARCHIVE}/content/${HASH}`;
+  const media = new MediaIndex(10);
+  media.set("L1", { url: CONTENT_URL, kind: "image" });
+  const store = new ContentStore(":memory:");
+  store.putCheap("L1", "nft1", { disposition: "ok" }, HASH);
+  const headUrls: string[] = [];
+  let visionUri: string | undefined;
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    apiKey: "k",
+    onFlag: () => {},
+    archiveBaseUrl: ARCHIVE,
+    archiveCheckAttempts: 3,
+    archiveCheckDelayMs: 0,
+    fetchImpl: (async (url: string, init?: RequestInit) => {
+      if (init?.method === "HEAD") {
+        headUrls.push(String(url));
+        return new Response(null, { status: 301 });
+      }
+      visionUri = JSON.parse((init?.body as string) ?? "{}").requests?.[0]?.image?.source?.imageUri;
+      return visionOk();
+    }) as typeof fetch,
+  });
+  worker.maybeEnqueue(nftEvent());
+  await flushMicrotasks();
+  expect(headUrls).toEqual([CONTENT_URL]); // one probe, of the content URL itself
+  expect(visionUri).toBe(CONTENT_URL);
+  expect(store.get("L1")?.safesearchChecked).toBe(true);
+  store.close();
+});
+
+test("a video poster on the assets CDN is probed for readiness before Vision", async () => {
+  const POSTER = "https://assets.mainnet.mintgarden.io/thumbnails/9f_512.webp";
+  const media = new MediaIndex(10);
+  media.set("V9", { url: "https://ipfs/clip.mp4", kind: "video", thumbnailUrl: POSTER });
+  const store = new ContentStore(":memory:");
+  store.putCheap("V9", "nftv9", { disposition: "ok" });
+  let headCalls = 0;
+  let visionCalls = 0;
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    apiKey: "k",
+    onFlag: () => {},
+    archiveCheckAttempts: 2,
+    archiveCheckDelayMs: 0,
+    fetchImpl: (async (url: string, init?: RequestInit) => {
+      if (init?.method === "HEAD") {
+        headCalls++;
+        return new Response(null, { status: 404 }); // thumbnail not generated yet
+      }
+      if (String(url).includes("images:annotate")) visionCalls++;
+      return new Response("{}", { status: 404 });
+    }) as typeof fetch,
+  });
+  worker.maybeEnqueue(nftEvent({ launcherId: "V9", nftId: "nftv9", mediaKind: "video" }));
+  await flushMicrotasks();
+  expect(headCalls).toBe(2); // probed with retries, like archive URLs
+  expect(visionCalls).toBe(0); // no Vision attempt burned on a missing poster
+  expect(store.get("V9")?.safesearchChecked).toBe(false);
+  store.close();
+});
+
+// ── original-URL fallback when the Archive never ingests the content ─────────
+// The archive URL upgrade exists because ipfs.mintgarden.io blocks Google's IP
+// ranges — so the fallback skips that host, but plain HTTPS art (nftstorage
+// gateways etc.) is worth one Vision attempt instead of giving up entirely.
+
+test("archive never ready + reachable original URL → Vision checks the fallback", async () => {
+  const HASH = "2b".repeat(32);
+  const ORIGINAL = "https://bafy.nftstorage.link/1.png";
+  const media = new MediaIndex(10);
+  media.set("L1", { url: `${ARCHIVE}/content/${HASH}`, kind: "image", fallbackUrl: ORIGINAL });
+  const store = new ContentStore(":memory:");
+  store.putCheap("L1", "nft1", { disposition: "ok" }, HASH);
+  let visionUri: string | undefined;
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    apiKey: "k",
+    onFlag: () => {},
+    archiveBaseUrl: ARCHIVE,
+    archiveCheckAttempts: 2,
+    archiveCheckDelayMs: 0,
+    fetchImpl: (async (url: string, init?: RequestInit) => {
+      if (init?.method === "HEAD") return new Response(null, { status: 404 });
+      visionUri = JSON.parse((init?.body as string) ?? "{}").requests?.[0]?.image?.source?.imageUri;
+      return visionOk();
+    }) as typeof fetch,
+  });
+  worker.maybeEnqueue(nftEvent());
+  await flushMicrotasks();
+  expect(visionUri).toBe(ORIGINAL);
+  expect(store.get("L1")?.safesearchChecked).toBe(true);
+  // checked_uri records the URL actually classified, so URI dedup finds it
+  expect(store.getSafeSearchByUri(ORIGINAL)?.adult).toBe("UNLIKELY");
+  store.close();
+});
+
+test("a fallback on a Google-unreachable gateway is not attempted", async () => {
+  const HASH = "3c".repeat(32);
+  const media = new MediaIndex(10);
+  media.set("L1", {
+    url: `${ARCHIVE}/content/${HASH}`,
+    kind: "image",
+    fallbackUrl: "https://ipfs.mintgarden.io/ipfs/abc",
+  });
+  const store = new ContentStore(":memory:");
+  store.putCheap("L1", "nft1", { disposition: "ok" }, HASH);
+  let visionCalls = 0;
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    apiKey: "k",
+    onFlag: () => {},
+    archiveBaseUrl: ARCHIVE,
+    archiveCheckAttempts: 1,
+    archiveCheckDelayMs: 0,
+    fetchImpl: (async (url: string, init?: RequestInit) => {
+      if (init?.method === "HEAD") return new Response(null, { status: 404 });
+      if (String(url).includes("images:annotate")) visionCalls++;
+      return new Response("{}", { status: 404 });
+    }) as typeof fetch,
+  });
+  worker.maybeEnqueue(nftEvent());
+  await flushMicrotasks();
+  expect(visionCalls).toBe(0); // guaranteed-failure host: fail and back off instead
+  expect(store.get("L1")?.safesearchChecked).toBe(false);
+  store.close();
+});
+
+test("a video NFT never falls back to the raw clip when its poster is not ready", async () => {
+  const POSTER = "https://assets.mainnet.mintgarden.io/thumbnails/4d_512.webp";
+  const media = new MediaIndex(10);
+  media.set("V1", {
+    url: "https://gw.example/clip.mp4",
+    kind: "video",
+    thumbnailUrl: POSTER,
+    fallbackUrl: "https://gw.example/clip.mp4",
+  });
+  const store = new ContentStore(":memory:");
+  store.putCheap("V1", "nftv", { disposition: "ok" });
+  let visionCalls = 0;
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    apiKey: "k",
+    onFlag: () => {},
+    archiveCheckAttempts: 1,
+    archiveCheckDelayMs: 0,
+    fetchImpl: (async (url: string, init?: RequestInit) => {
+      if (init?.method === "HEAD") return new Response(null, { status: 404 });
+      if (String(url).includes("images:annotate")) visionCalls++;
+      return new Response("{}", { status: 404 });
+    }) as typeof fetch,
+  });
+  worker.maybeEnqueue(nftEvent({ launcherId: "V1", nftId: "nftv", mediaKind: "video" }));
+  await flushMicrotasks();
+  expect(visionCalls).toBe(0); // Vision can't decode video frames
+  store.close();
+});
+
+test("coalesced followers of a fallback-checked leader record their own imageUri, not the leader's fallback", async () => {
+  const HASH = "6f".repeat(32);
+  const ARCHIVE_URL = `${ARCHIVE}/content/${HASH}`;
+  const media = new MediaIndex(10);
+  // Same bytes (one content hash, one archive URL), but each launcher preserved
+  // a different on-chain original — only the leader's fallback gets classified.
+  media.set("L1", {
+    url: ARCHIVE_URL,
+    kind: "image",
+    fallbackUrl: "https://original1.example/a.png",
+  });
+  media.set("L2", {
+    url: ARCHIVE_URL,
+    kind: "image",
+    fallbackUrl: "https://original2.example/b.png",
+  });
+  const store = new ContentStore(":memory:");
+  store.putCheap("L1", "nft1", { disposition: "ok" }, HASH);
+  store.putCheap("L2", "nft2", { disposition: "ok" }, HASH);
+  let visionCalls = 0;
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    apiKey: "k",
+    onFlag: () => {},
+    archiveBaseUrl: ARCHIVE,
+    archiveCheckAttempts: 1,
+    archiveCheckDelayMs: 0,
+    fetchImpl: (async (url: string, init?: RequestInit) => {
+      if (init?.method === "HEAD") return new Response(null, { status: 404 }); // never ready
+      if (String(url).includes("images:annotate")) visionCalls++;
+      return visionOk();
+    }) as typeof fetch,
+  });
+  // Same batch, no await between them — L2 joins L1's in-flight check.
+  worker.maybeEnqueue(nftEvent());
+  worker.maybeEnqueue(nftEvent({ launcherId: "L2", nftId: "nft2" }));
+  await flushMicrotasks();
+  expect(visionCalls).toBe(1); // coalesced onto the leader's fallback check
+  expect(store.get("L1")?.safesearchChecked).toBe(true);
+  expect(store.get("L2")?.safesearchChecked).toBe(true);
+  // Leader's checked_uri is the fallback it actually classified; the follower
+  // records its own imageUri (the archive URL), not the leader's fallback.
+  expect(store.getSafeSearchByUri("https://original1.example/a.png")?.adult).toBe("UNLIKELY");
+  expect(store.getSafeSearchByUri(ARCHIVE_URL)?.adult).toBe("UNLIKELY");
+  store.close();
+});
+
+test("a sensitive verdict reached via the fallback URL still emits a content-flag", async () => {
+  const HASH = "5e".repeat(32);
+  const ORIGINAL = "https://bafy.nftstorage.link/2.png";
+  const media = new MediaIndex(10);
+  media.set("L1", { url: `${ARCHIVE}/content/${HASH}`, kind: "image", fallbackUrl: ORIGINAL });
+  const store = new ContentStore(":memory:");
+  store.putCheap("L1", "nft1", { disposition: "ok" }, HASH);
+  const flags: ContentFlagEvent[] = [];
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    apiKey: "k",
+    onFlag: (e) => flags.push(e),
+    archiveBaseUrl: ARCHIVE,
+    archiveCheckAttempts: 1,
+    archiveCheckDelayMs: 0,
+    fetchImpl: (async (_url: string, init?: RequestInit) => {
+      if (init?.method === "HEAD") return new Response(null, { status: 404 });
+      return new Response(
+        JSON.stringify({ responses: [{ safeSearchAnnotation: { adult: "VERY_LIKELY" } }] }),
+        { status: 200 }
+      );
+    }) as typeof fetch,
+  });
+  worker.maybeEnqueue(nftEvent());
+  await flushMicrotasks();
+  expect(flags).toEqual([{ type: "content-flag", launcherId: "L1", mediaFilter: "sensitive" }]);
+  expect(store.get("L1")?.disposition).toBe("sensitive");
+  store.close();
+});
+
+// ── periodic sweep: retry unchecked NFTs without waiting for a re-spend ──────
+
+test("sweep() re-attempts an unchecked NFT without a new spend", async () => {
+  const media = new MediaIndex(10);
+  media.set("L1", { url: "https://e/x.png", kind: "image" });
+  const store = new ContentStore(":memory:");
+  store.putCheap("L1", "nft1", { disposition: "ok" });
+  let visionCalls = 0;
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    apiKey: "k",
+    onFlag: () => {},
+    fetchImpl: (async () => {
+      visionCalls++;
+      return visionOk();
+    }) as typeof fetch,
+  });
+  worker.sweep(); // no maybeEnqueue — the sweep alone finds it
+  await flushMicrotasks();
+  expect(visionCalls).toBe(1);
+  expect(store.get("L1")?.safesearchChecked).toBe(true);
+  store.close();
+});
+
+test("sweep() skips launchers whose cheap disposition is not ok", async () => {
+  const media = new MediaIndex(10);
+  media.set("L1", { url: "https://e/x.png", kind: "image" });
+  const store = new ContentStore(":memory:");
+  store.putCheap("L1", "nft1", { disposition: "sensitive" });
+  let visionCalls = 0;
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    apiKey: "k",
+    onFlag: () => {},
+    fetchImpl: (async () => {
+      visionCalls++;
+      return visionOk();
+    }) as typeof fetch,
+  });
+  worker.sweep();
+  await flushMicrotasks();
+  expect(visionCalls).toBe(0); // SafeSearch can only upgrade ok → sensitive; nothing to gain
+  store.close();
+});
+
+test("sweep() skips already-checked launchers", async () => {
+  const media = new MediaIndex(10);
+  media.set("L1", { url: "https://e/x.png", kind: "image" });
+  const store = new ContentStore(":memory:");
+  store.putCheap("L1", "nft1", { disposition: "ok" });
+  store.putSafeSearch("L1", { sensitive: false, adult: "UNLIKELY", raw: {} }, "https://e/x.png");
+  let visionCalls = 0;
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    apiKey: "k",
+    onFlag: () => {},
+    fetchImpl: (async () => {
+      visionCalls++;
+      return visionOk();
+    }) as typeof fetch,
+  });
+  worker.sweep();
+  await flushMicrotasks();
+  expect(visionCalls).toBe(0);
+  store.close();
+});
+
+test("sweep() respects the failure backoff until the TTL lapses", async () => {
+  const media = new MediaIndex(10);
+  media.set("L1", { url: "https://e/x.png", kind: "image" });
+  const store = new ContentStore(":memory:");
+  store.putCheap("L1", "nft1", { disposition: "ok" });
+  let fakeNow = 0;
+  let fail = true;
+  let visionCalls = 0;
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    apiKey: "k",
+    onFlag: () => {},
+    now: () => fakeNow,
+    failTtlMs: 300_000,
+    fetchImpl: (async () => {
+      if (fail) throw new Error("vision down");
+      visionCalls++;
+      return visionOk();
+    }) as typeof fetch,
+  });
+  worker.maybeEnqueue(nftEvent());
+  await flushMicrotasks(); // fails → backed off until fakeNow + 300000
+  fail = false;
+  worker.sweep();
+  await flushMicrotasks();
+  expect(visionCalls).toBe(0); // still inside the backoff window
+  fakeNow = 300_001;
+  worker.sweep();
+  await flushMicrotasks();
+  expect(visionCalls).toBe(1); // TTL lapsed → the sweep retries
+  expect(store.get("L1")?.safesearchChecked).toBe(true);
+  store.close();
+});
+
+test("sweep() skips a launcher whose cheap classification hasn't been stored yet", async () => {
+  const media = new MediaIndex(10);
+  media.set("L1", { url: "https://e/x.png", kind: "image" }); // no putCheap row yet
+  const store = new ContentStore(":memory:");
+  let visionCalls = 0;
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    apiKey: "k",
+    onFlag: () => {},
+    fetchImpl: (async () => {
+      visionCalls++;
+      return visionOk();
+    }) as typeof fetch,
+  });
+  worker.sweep();
+  await flushMicrotasks();
+  expect(visionCalls).toBe(0); // cheap tier must classify first
+  expect(store.get("L1")).toBeUndefined(); // no row created behind apply()'s back
+  worker.maybeEnqueue(nftEvent());
+  await flushMicrotasks();
+  expect(visionCalls).toBe(1); // spend path keeps its fail-open behavior
+  store.close();
+});
+
+test("repeated failures for the same content double the backoff instead of retrying every sweep", async () => {
+  const media = new MediaIndex(10);
+  media.set("L1", { url: "https://e/x.png", kind: "image" });
+  const store = new ContentStore(":memory:");
+  store.putCheap("L1", "nft1", { disposition: "ok" });
+  let fakeNow = 0;
+  let fetchCalls = 0;
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    apiKey: "k",
+    onFlag: () => {},
+    now: () => fakeNow,
+    failTtlMs: 1000,
+    fetchImpl: (async () => {
+      fetchCalls++;
+      throw new Error("vision down");
+    }) as typeof fetch,
+  });
+  worker.sweep(); // streak 1 → suppressed until 1000
+  await flushMicrotasks();
+  expect(fetchCalls).toBe(1);
+  fakeNow = 1001;
+  worker.sweep(); // streak 2 → suppressed until 1001 + 2000 = 3001
+  await flushMicrotasks();
+  expect(fetchCalls).toBe(2);
+  fakeNow = 2500; // inside the doubled window — flat TTL would already retry here
+  worker.sweep();
+  await flushMicrotasks();
+  expect(fetchCalls).toBe(2);
+  fakeNow = 3002; // doubled window lapsed
+  worker.sweep();
+  await flushMicrotasks();
+  expect(fetchCalls).toBe(3);
+  store.close();
+});
+
+test("a hash-keyed launcher reuses a verdict recorded earlier under the original URI", async () => {
+  const HASH = "6f".repeat(32);
+  const ORIGINAL = "https://gw.example/ipfs/xyz";
+  const store = new ContentStore(":memory:");
+  // Lold was checked before MintGarden resolved a hash: its row has a
+  // checked_uri but a NULL content_hash.
+  store.putCheap("Lold", "nftold", { disposition: "ok" });
+  store.putSafeSearch("Lold", { sensitive: false, adult: "UNLIKELY", raw: {} }, ORIGINAL);
+  // Lnew shares the bytes and DOES have the hash, so its media URL is the
+  // archive content URL and its fallback is the original URI.
+  const media = new MediaIndex(10);
+  media.set("Lnew", { url: `${ARCHIVE}/content/${HASH}`, kind: "image", fallbackUrl: ORIGINAL });
+  store.putCheap("Lnew", "nftnew", { disposition: "ok" }, HASH);
+  let fetchCalls = 0;
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    apiKey: "k",
+    onFlag: () => {},
+    archiveBaseUrl: ARCHIVE,
+    archiveCheckAttempts: 1,
+    archiveCheckDelayMs: 0,
+    fetchImpl: (async () => {
+      fetchCalls++;
+      return new Response("{}", { status: 404 });
+    }) as typeof fetch,
+  });
+  worker.maybeEnqueue(nftEvent({ launcherId: "Lnew", nftId: "nftnew" }));
+  await flushMicrotasks();
+  expect(fetchCalls).toBe(0); // no probe, no Vision: the URI row satisfied the check
+  expect(store.get("Lnew")?.safesearchChecked).toBe(true);
+  expect(store.getSafeSearchByUri(`${ARCHIVE}/content/${HASH}`)?.adult).toBe("UNLIKELY"); // reused verdict's fields landed on Lnew's row
   store.close();
 });

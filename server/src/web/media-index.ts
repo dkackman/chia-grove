@@ -43,4 +43,9 @@ export class MediaIndex {
   delete(launcherId: string): void {
     this.store.delete(launcherId);
   }
+
+  /** Iterate every stored [launcherId, entry] pair (insertion order). */
+  entries(): IterableIterator<[string, MediaEntry]> {
+    return this.store.entries();
+  }
 }

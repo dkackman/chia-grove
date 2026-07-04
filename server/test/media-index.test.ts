@@ -41,3 +41,10 @@ test("delete of an absent key is a no-op", () => {
   const idx = new MediaIndex(10);
   expect(() => idx.delete("nope")).not.toThrow();
 });
+
+test("entries() yields every stored launcherId with its media entry", () => {
+  const media = new MediaIndex(10);
+  media.set("L1", { url: "https://e/a.png", kind: "image" });
+  media.set("L2", { url: "https://e/b.mp4", kind: "video" });
+  expect([...media.entries()].map(([id]) => id)).toEqual(["L1", "L2"]);
+});

@@ -25,6 +25,8 @@ export interface SafeSearchWorkerOpts {
   archiveCheckAttempts?: number;
   /** Milliseconds to wait between Archive poll attempts (0 = no delay). */
   archiveCheckDelayMs?: number;
+  /** Base URL of the assets-CDN poster thumbnails; poster URLs get the same readiness probe. */
+  thumbnailBaseUrl?: string;
 }
 
 /**
@@ -32,21 +34,43 @@ export interface SafeSearchWorkerOpts {
  * whose cheap verdict was `ok` and that hasn't yet been SafeSearch-checked gets a
  * single Vision lookup — images are classified by their art URL, videos by their
  * static poster (best-effort; Vision can't decode video frames, and a video with
- * no resolved thumbnail is skipped). Not limited to mints — re-spends of
- * previously-unseen NFTs are covered too. A `sensitive` result is persisted and
- * pushed to clients as a `content-flag`. Failures leave the NFT permissive and
- * are suppressed for `failTtlMs` so an outage doesn't re-spend the paid quota
- * every block.
+ * no resolved thumbnail is skipped). `sweep()` re-attempts every still-eligible
+ * launcher in MediaIndex on a timer, so a mint whose content lagged Archive
+ * ingestion gets a verdict without waiting for a re-spend.
+ *
+ * URLs on MintGarden's ingestion-lagged CDNs (archive content, assets-CDN
+ * posters) are readiness-probed first: a HEAD of the exact URL Vision will
+ * fetch (2xx/3xx = ready). If the probe exhausts its attempts, image NFTs fall
+ * back to one Vision attempt against the on-chain original URL — unless its
+ * host is unreachable from Google's fetchers — and `checked_uri` records what
+ * was actually classified. Everything is fail-open: an NFT we cannot check
+ * renders permissive, failures back off in memory (`failedUntil` per launcher,
+ * `dedupFailedUntil` per content) and are never persisted.
  *
  * Two limits, deliberately separate: the concurrency gate bounds only the paid,
- * rate-limited Vision call, while the cheap Archive-readiness polling runs
- * unbounded by the gate (it would otherwise occupy a Vision slot while merely
- * sleeping, collapsing throughput to concurrency / archiveWait). `maxPending`
- * caps total in-flight launchers — and therefore concurrent Archive polls — so a
- * large mint drop can't grow the queue (or open sockets) without bound.
+ * rate-limited Vision call, while the cheap readiness probing runs unbounded by
+ * the gate (it would otherwise occupy a Vision slot while merely sleeping,
+ * collapsing throughput to concurrency / probeWait). `maxPending` caps total
+ * in-flight launchers — and therefore concurrent probes — so a large mint drop
+ * can't grow the queue (or open sockets) without bound.
  */
 const FAILED_UNTIL_CAP = 10000;
 const DEFAULT_MAX_PENDING = 256;
+
+/** Ceiling for the doubling per-content failure backoff: a permanently dead
+ *  asset (never ingested, fallback link-rotted) settles at ~4 attempts/day
+ *  instead of one per sweep, forever. */
+const MAX_DEDUP_FAIL_TTL_MS = 6 * 60 * 60 * 1000;
+
+/** Hosts Google's image fetcher cannot reach (the reason the Archive upgrade
+ *  exists) — a Vision call against them is a guaranteed failure, so don't pay
+ *  the attempt. */
+const GOOGLE_UNREACHABLE_HOSTS = new Set(["ipfs.mintgarden.io"]);
+
+interface VisionOutcome {
+  result: SafeSearchResult;
+  checkedUri: string;
+}
 
 export class SafeSearchWorker {
   private readonly fetchImpl: typeof fetch;
@@ -58,6 +82,7 @@ export class SafeSearchWorker {
   private readonly archiveBaseUrl: string;
   private readonly archiveCheckAttempts: number;
   private readonly archiveCheckDelayMs: number;
+  private readonly thumbnailBaseUrl: string;
   private active = 0;
   private readonly waiters: Array<() => void> = [];
   private readonly queued = new Set<string>();
@@ -66,7 +91,7 @@ export class SafeSearchWorker {
    *  in-progress Vision check, so concurrent first-time checks of identical
    *  bytes (e.g. an edition drop landing in one block) coalesce onto a single
    *  paid call instead of each racing the not-yet-persisted DB dedup. */
-  private readonly dedupInflight = new Map<string, Promise<SafeSearchResult>>();
+  private readonly dedupInflight = new Map<string, Promise<VisionOutcome>>();
   /** Same dedup key -> suppression deadline after a failure (Vision error, or
    *  Archive never becoming ready). Bounds the case where the in-flight leader
    *  has already failed and cleaned up before the next launcher sharing this
@@ -74,6 +99,8 @@ export class SafeSearchWorker {
    *  archive-readiness poll from scratch for content already known to be
    *  unready, rather than just inheriting the recent failure. */
   private readonly dedupFailedUntil = new BoundedMap<string, number>(FAILED_UNTIL_CAP);
+  /** Same dedup key -> consecutive-failure count driving the doubling TTL. */
+  private readonly dedupFailStreak = new BoundedMap<string, number>(FAILED_UNTIL_CAP);
 
   constructor(private readonly opts: SafeSearchWorkerOpts) {
     this.fetchImpl = opts.fetchImpl ?? fetch;
@@ -85,12 +112,26 @@ export class SafeSearchWorker {
     this.archiveBaseUrl = opts.archiveBaseUrl ?? "https://archive.mintgarden.io";
     this.archiveCheckAttempts = opts.archiveCheckAttempts ?? 3;
     this.archiveCheckDelayMs = opts.archiveCheckDelayMs ?? 2000;
+    this.thumbnailBaseUrl =
+      opts.thumbnailBaseUrl ?? "https://assets.mainnet.mintgarden.io/thumbnails";
   }
 
   maybeEnqueue(event: SproutEvent): void {
-    if (event.kind !== "nft") return;
-    const launcherId = event.launcherId;
-    if (!launcherId || this.queued.has(launcherId)) return;
+    if (event.kind !== "nft" || !event.launcherId) return;
+    this.tryEnqueue(event.launcherId);
+  }
+
+  /** Re-attempt every launcher still in MediaIndex that remains eligible
+   *  (unchecked, cheap-ok, not backed off). Lets an NFT whose content lagged
+   *  Archive ingestion at mint time get a verdict without waiting for a
+   *  re-spend. All the usual guards apply, so a sweep is cheap when idle:
+   *  one synchronous store point-read per entry. */
+  sweep(): void {
+    for (const [launcherId] of this.opts.media.entries()) this.tryEnqueue(launcherId, true);
+  }
+
+  private tryEnqueue(launcherId: string, fromSweep = false): void {
+    if (this.queued.has(launcherId)) return;
     const media = this.opts.media.get(launcherId);
     if (!media) return;
     // The image Vision classifies: the art itself for images, the static poster
@@ -112,22 +153,41 @@ export class SafeSearchWorker {
       );
       return;
     }
+    // The sweep path has no ContentFilter ok-gate in front of it, so guard here:
+    // SafeSearch can only upgrade ok → sensitive, so anything already flagged
+    // (or blocked) has nothing to gain from a paid check.
+    if (stored && stored.disposition !== "ok") return;
     if (stored?.safesearchChecked) return;
+    // A row-less launcher on the sweep path means classifyBlock has populated
+    // MediaIndex but ContentFilter.apply hasn't run putCheap yet. Checking it
+    // now would create the row via putSafeSearch and permanently skip the
+    // cheap-signal tier (denylist, CHIP-7, MintGarden flags) for this NFT —
+    // wait for the spend path to classify it first; the next sweep picks it up.
+    if (fromSweep && !stored) return;
     const until = this.failedUntil.get(launcherId);
     if (until !== undefined && this.now() < until) return;
     // Bound total in-flight work. Dropped launchers are picked up on a later
-    // spend or after failedUntil lapses — acceptable for an out-of-band path.
+    // spend or sweep, or after failedUntil lapses — acceptable for an
+    // out-of-band path.
     if (this.queued.size >= this.maxPending) return;
 
+    // Only images can fall back to the on-chain original: a video's fallback is
+    // the raw clip, which Vision cannot decode.
+    const fallbackUri = media.kind === "image" ? media.fallbackUrl : undefined;
     this.queued.add(launcherId);
-    // run() is not gated: its Archive-readiness wait is cheap polling that must
+    // run() is not gated: its content-readiness wait is cheap polling that must
     // not occupy a Vision slot. Only the paid Vision call inside run() is gated.
-    void this.run(launcherId, imageUri, stored?.contentHash).finally(() =>
+    void this.run(launcherId, imageUri, stored?.contentHash, fallbackUri).finally(() =>
       this.queued.delete(launcherId)
     );
   }
 
-  private async run(launcherId: string, imageUri: string, contentHash?: string): Promise<void> {
+  private async run(
+    launcherId: string,
+    imageUri: string,
+    contentHash?: string,
+    fallbackUri?: string
+  ): Promise<void> {
     // Distinct NFTs can share identical bytes. Prefer the real content hash for
     // dedup; MintGarden's indexer lags mint time (sometimes indefinitely for a
     // given collection), so when it hasn't resolved one yet, fall back to the
@@ -139,13 +199,25 @@ export class SafeSearchWorker {
     // launcherId — no point re-running the same doomed archive-readiness poll.
     const dedupFailedUntil = this.dedupFailedUntil.get(dedupKey);
     if (dedupFailedUntil !== undefined && this.now() < dedupFailedUntil) {
-      this.failedUntil.set(launcherId, this.now() + this.failTtlMs);
+      // Track the dedup TTL exactly rather than independently extending with a
+      // flat failTtlMs: the dedup backoff now doubles per content, and a flat
+      // per-launcher TTL set here could outlive it, blocking tryEnqueue from
+      // ever re-entering run() to observe that the (shorter-lived) dedup TTL
+      // has since lapsed.
+      this.failedUntil.set(launcherId, dedupFailedUntil);
       return;
     }
     try {
-      const prior = contentHash
-        ? this.opts.store.getSafeSearchByContentHash(contentHash)
-        : this.opts.store.getSafeSearchByUri(imageUri);
+      // Second chance on a hash miss: content checked before MintGarden resolved
+      // its hash sits in a row with a checked_uri and a NULL content_hash. This
+      // launcher's fallbackUri is that same original URI, so one extra indexed
+      // SELECT can save a paid Vision call. (When contentHash is undefined,
+      // fallbackUri is too — media is never Archive-upgraded without a hash.)
+      const prior =
+        (contentHash
+          ? this.opts.store.getSafeSearchByContentHash(contentHash)
+          : this.opts.store.getSafeSearchByUri(imageUri)) ??
+        (fallbackUri ? this.opts.store.getSafeSearchByUri(fallbackUri) : undefined);
       if (prior) {
         this.persistVerdict(
           launcherId,
@@ -161,49 +233,93 @@ export class SafeSearchWorker {
       // identical Vision lookup.
       const inflight = this.dedupInflight.get(dedupKey);
       if (inflight) {
-        this.persistVerdict(launcherId, imageUri, await inflight, "reused");
+        this.persistVerdict(launcherId, imageUri, (await inflight).result, "reused");
         return;
       }
-      const work = this.checkVision(launcherId, imageUri);
+      const work = this.checkVision(imageUri, fallbackUri);
       this.dedupInflight.set(dedupKey, work);
       // .finally() derives a new promise; it must carry its own rejection
       // handler; the "real" rejection is still caught below via `await work`.
       work.finally(() => this.dedupInflight.delete(dedupKey)).catch(() => {});
-      this.persistVerdict(launcherId, imageUri, await work, "vision");
+      const outcome = await work;
+      this.dedupFailStreak.delete(dedupKey);
+      this.dedupFailedUntil.delete(dedupKey);
+      this.persistVerdict(launcherId, outcome.checkedUri, outcome.result, "vision");
     } catch (err) {
       log.warn(
         { launcherId, imageUri, err: err instanceof Error ? err.message : String(err) },
         "safesearch: vision api failed"
       );
       this.failedUntil.set(launcherId, this.now() + this.failTtlMs);
-      this.dedupFailedUntil.set(dedupKey, this.now() + this.failTtlMs);
+      const streak = (this.dedupFailStreak.get(dedupKey) ?? 0) + 1;
+      this.dedupFailStreak.set(dedupKey, streak);
+      // Doubling backoff: the sweep retries content every tick once the TTL
+      // lapses, so a flat TTL would re-spend probe + Vision-attempt on
+      // permanently dead content forever.
+      const ttl = Math.min(this.failTtlMs * 2 ** (streak - 1), MAX_DEDUP_FAIL_TTL_MS);
+      this.dedupFailedUntil.set(dedupKey, this.now() + ttl);
     }
   }
 
-  private async checkVision(launcherId: string, imageUri: string): Promise<SafeSearchResult> {
-    if (imageUri.startsWith(this.archiveBaseUrl)) {
-      await this.waitForArchive(launcherId);
+  private async checkVision(imageUri: string, fallbackUri?: string): Promise<VisionOutcome> {
+    let target = imageUri;
+    if (this.needsReadyProbe(imageUri)) {
+      const ready = await this.waitForContentReady(imageUri);
+      if (!ready) {
+        const fallback = this.usableFallback(imageUri, fallbackUri);
+        if (!fallback) {
+          throw new Error(`content not ready after ${this.archiveCheckAttempts} attempts`);
+        }
+        // MintGarden never ingested these bytes; classify the on-chain original
+        // instead of giving up. checked_uri records what was actually classified.
+        target = fallback;
+      }
     }
-    return this.gate(() =>
-      querySafeSearch(imageUri, {
+    const result = await this.gate(() =>
+      querySafeSearch(target, {
         apiKey: this.opts.apiKey,
         fetchImpl: this.fetchImpl,
         timeoutMs: this.timeoutMs,
       })
+    );
+    return { result, checkedUri: target };
+  }
+
+  /** The original art URL, if it is worth one Vision attempt: http(s), distinct
+   *  from what we already tried, and not on a host Google cannot reach. */
+  private usableFallback(imageUri: string, fallbackUri?: string): string | undefined {
+    if (!fallbackUri || fallbackUri === imageUri) return undefined;
+    try {
+      const u = new URL(fallbackUri);
+      if (u.protocol !== "https:" && u.protocol !== "http:") return undefined;
+      if (GOOGLE_UNREACHABLE_HOSTS.has(u.hostname)) return undefined;
+      return fallbackUri;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** MintGarden's ingestion-lagged CDNs, where a probe from here predicts what
+   *  Google's fetcher will see. Other hosts are checked blind: our reachability
+   *  says nothing about Google's (e.g. gateways that block Google's IP ranges). */
+  private needsReadyProbe(imageUri: string): boolean {
+    return (
+      imageUri.startsWith(this.archiveBaseUrl + "/") ||
+      imageUri.startsWith(this.thumbnailBaseUrl + "/")
     );
   }
 
   /** Persist a SafeSearch verdict, clear failure suppression, and flag if sensitive. */
   private persistVerdict(
     launcherId: string,
-    imageUri: string,
+    checkedUri: string,
     result: SafeSearchResult,
     source: "vision" | "reused"
   ): void {
-    this.opts.store.putSafeSearch(launcherId, result, imageUri);
+    this.opts.store.putSafeSearch(launcherId, result, checkedUri);
     this.failedUntil.delete(launcherId);
     log.info(
-      { launcherId, imageUri, source, verdict: result.sensitive ? "sensitive" : "ok" },
+      { launcherId, imageUri: checkedUri, source, verdict: result.sensitive ? "sensitive" : "ok" },
       "safesearch: verdict"
     );
     if (result.sensitive) {
@@ -213,9 +329,11 @@ export class SafeSearchWorker {
 
   // Runs outside the Vision gate, so a not-yet-ingested NFT sleeps between polls
   // without occupying a paid-call slot; many waits proceed in parallel (capped by
-  // maxPending, which bounds concurrent Archive polls too). On exhaustion it
-  // throws, and run()'s catch sets failedUntil so the next attempt backs off.
-  private async waitForArchive(launcherId: string): Promise<void> {
+  // maxPending, which bounds concurrent probes too). HEAD of the exact URL Vision
+  // will fetch: ingested archive content answers an immutable 301 (to
+  // files.mintgarden.io), existing thumbnails 200, missing content 404 — so any
+  // 2xx/3xx is ready and everything else (incl. network errors) retries.
+  private async waitForContentReady(url: string): Promise<boolean> {
     for (let attempt = 0; attempt < this.archiveCheckAttempts; attempt++) {
       if (attempt > 0 && this.archiveCheckDelayMs > 0) {
         await new Promise<void>((r) => setTimeout(r, this.archiveCheckDelayMs));
@@ -225,22 +343,20 @@ export class SafeSearchWorker {
         const timer = setTimeout(() => controller.abort(), this.timeoutMs);
         let res: Response;
         try {
-          res = await this.fetchImpl(`${this.archiveBaseUrl}/nfts/${launcherId}`, {
+          res = await this.fetchImpl(url, {
+            method: "HEAD",
+            redirect: "manual",
             signal: controller.signal,
           });
         } finally {
           clearTimeout(timer);
         }
-        if (!res.ok) continue;
-        const json = (await res.json()) as {
-          assets?: Array<{ role: string; fetch_succeeded: boolean }>;
-        };
-        if (json.assets?.some((a) => a.role === "data" && a.fetch_succeeded === true)) return;
+        if (res.ok || (res.status >= 300 && res.status < 400)) return true;
       } catch {
         // network error or abort → treat as not ready, retry
       }
     }
-    throw new Error(`archive not ready after ${this.archiveCheckAttempts} attempts`);
+    return false;
   }
 
   private gate<T>(fn: () => Promise<T>): Promise<T> {
