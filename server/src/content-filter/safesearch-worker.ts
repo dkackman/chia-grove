@@ -25,6 +25,8 @@ export interface SafeSearchWorkerOpts {
   archiveCheckAttempts?: number;
   /** Milliseconds to wait between Archive poll attempts (0 = no delay). */
   archiveCheckDelayMs?: number;
+  /** Base URL of the assets-CDN poster thumbnails; poster URLs get the same readiness probe. */
+  thumbnailBaseUrl?: string;
 }
 
 /**
@@ -58,6 +60,7 @@ export class SafeSearchWorker {
   private readonly archiveBaseUrl: string;
   private readonly archiveCheckAttempts: number;
   private readonly archiveCheckDelayMs: number;
+  private readonly thumbnailBaseUrl: string;
   private active = 0;
   private readonly waiters: Array<() => void> = [];
   private readonly queued = new Set<string>();
@@ -85,6 +88,8 @@ export class SafeSearchWorker {
     this.archiveBaseUrl = opts.archiveBaseUrl ?? "https://archive.mintgarden.io";
     this.archiveCheckAttempts = opts.archiveCheckAttempts ?? 3;
     this.archiveCheckDelayMs = opts.archiveCheckDelayMs ?? 2000;
+    this.thumbnailBaseUrl =
+      opts.thumbnailBaseUrl ?? "https://assets.mainnet.mintgarden.io/thumbnails";
   }
 
   maybeEnqueue(event: SproutEvent): void {
@@ -164,7 +169,7 @@ export class SafeSearchWorker {
         this.persistVerdict(launcherId, imageUri, await inflight, "reused");
         return;
       }
-      const work = this.checkVision(launcherId, imageUri);
+      const work = this.checkVision(imageUri);
       this.dedupInflight.set(dedupKey, work);
       // .finally() derives a new promise; it must carry its own rejection
       // handler; the "real" rejection is still caught below via `await work`.
@@ -180,9 +185,12 @@ export class SafeSearchWorker {
     }
   }
 
-  private async checkVision(launcherId: string, imageUri: string): Promise<SafeSearchResult> {
-    if (imageUri.startsWith(this.archiveBaseUrl)) {
-      await this.waitForArchive(launcherId);
+  private async checkVision(imageUri: string): Promise<SafeSearchResult> {
+    if (this.needsReadyProbe(imageUri)) {
+      const ready = await this.waitForContentReady(imageUri);
+      if (!ready) {
+        throw new Error(`content not ready after ${this.archiveCheckAttempts} attempts`);
+      }
     }
     return this.gate(() =>
       querySafeSearch(imageUri, {
@@ -191,6 +199,13 @@ export class SafeSearchWorker {
         timeoutMs: this.timeoutMs,
       })
     );
+  }
+
+  /** MintGarden's ingestion-lagged CDNs, where a probe from here predicts what
+   *  Google's fetcher will see. Other hosts are checked blind: our reachability
+   *  says nothing about Google's (e.g. gateways that block Google's IP ranges). */
+  private needsReadyProbe(imageUri: string): boolean {
+    return imageUri.startsWith(this.archiveBaseUrl) || imageUri.startsWith(this.thumbnailBaseUrl);
   }
 
   /** Persist a SafeSearch verdict, clear failure suppression, and flag if sensitive. */
@@ -213,9 +228,11 @@ export class SafeSearchWorker {
 
   // Runs outside the Vision gate, so a not-yet-ingested NFT sleeps between polls
   // without occupying a paid-call slot; many waits proceed in parallel (capped by
-  // maxPending, which bounds concurrent Archive polls too). On exhaustion it
-  // throws, and run()'s catch sets failedUntil so the next attempt backs off.
-  private async waitForArchive(launcherId: string): Promise<void> {
+  // maxPending, which bounds concurrent probes too). HEAD of the exact URL Vision
+  // will fetch: ingested archive content answers an immutable 301 (to
+  // files.mintgarden.io), existing thumbnails 200, missing content 404 — so any
+  // 2xx/3xx is ready and everything else (incl. network errors) retries.
+  private async waitForContentReady(url: string): Promise<boolean> {
     for (let attempt = 0; attempt < this.archiveCheckAttempts; attempt++) {
       if (attempt > 0 && this.archiveCheckDelayMs > 0) {
         await new Promise<void>((r) => setTimeout(r, this.archiveCheckDelayMs));
@@ -225,22 +242,20 @@ export class SafeSearchWorker {
         const timer = setTimeout(() => controller.abort(), this.timeoutMs);
         let res: Response;
         try {
-          res = await this.fetchImpl(`${this.archiveBaseUrl}/nfts/${launcherId}`, {
+          res = await this.fetchImpl(url, {
+            method: "HEAD",
+            redirect: "manual",
             signal: controller.signal,
           });
         } finally {
           clearTimeout(timer);
         }
-        if (!res.ok) continue;
-        const json = (await res.json()) as {
-          assets?: Array<{ role: string; fetch_succeeded: boolean }>;
-        };
-        if (json.assets?.some((a) => a.role === "data" && a.fetch_succeeded === true)) return;
+        if (res.ok || (res.status >= 300 && res.status < 400)) return true;
       } catch {
         // network error or abort → treat as not ready, retry
       }
     }
-    throw new Error(`archive not ready after ${this.archiveCheckAttempts} attempts`);
+    return false;
   }
 
   private gate<T>(fn: () => Promise<T>): Promise<T> {

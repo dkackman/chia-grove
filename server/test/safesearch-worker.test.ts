@@ -131,10 +131,7 @@ const visionOk = (): Response =>
   new Response(JSON.stringify({ responses: [{ safeSearchAnnotation: { adult: "UNLIKELY" } }] }), {
     status: 200,
   });
-const archiveReady = (): Response =>
-  new Response(JSON.stringify({ assets: [{ role: "data", fetch_succeeded: true }] }), {
-    status: 200,
-  });
+const headOk = (): Response => new Response(null, { status: 200 });
 
 test("archive readiness waits run concurrently instead of serialized by the Vision gate", async () => {
   const N = 5;
@@ -154,16 +151,15 @@ test("archive readiness waits run concurrently instead of serialized by the Visi
     archiveCheckAttempts: 1,
     archiveCheckDelayMs: 0,
     concurrency: 2,
-    fetchImpl: (async (url: string) => {
-      const s = String(url);
-      if (s.includes("images:annotate")) return visionOk();
-      if (s.includes(`${ARCHIVE}/nfts/`)) {
+    fetchImpl: (async (url: string, init?: RequestInit) => {
+      if (init?.method === "HEAD") {
         archiveActive++;
         archivePeak = Math.max(archivePeak, archiveActive);
         await held;
         archiveActive--;
-        return archiveReady();
+        return headOk();
       }
+      if (String(url).includes("images:annotate")) return visionOk();
       return new Response("{}", { status: 404 });
     }) as typeof fetch,
   });
@@ -231,13 +227,12 @@ test("maybeEnqueue drops work beyond maxPending so the in-flight set stays bound
     archiveCheckDelayMs: 0,
     concurrency: 10, // high enough that only maxPending, not the gate, limits work
     maxPending: 2,
-    fetchImpl: (async (url: string) => {
+    fetchImpl: (async (url: string, init?: RequestInit) => {
       const s = String(url);
-      const m = s.match(/\/nfts\/(L\d+)/);
-      if (m) {
-        polled.add(m[1]);
+      if (init?.method === "HEAD") {
+        polled.add(s);
         await held;
-        return archiveReady();
+        return headOk();
       }
       if (s.includes("images:annotate")) return visionOk();
       return new Response("{}", { status: 404 });
@@ -270,6 +265,7 @@ test("a video NFT is SafeSearch-checked against its thumbnail poster, not the cl
     apiKey: "k",
     onFlag: (e) => flags.push(e),
     fetchImpl: (async (_url: string, init?: RequestInit) => {
+      if (init?.method === "HEAD") return headOk();
       visionUri = JSON.parse((init?.body as string) ?? "{}").requests?.[0]?.image?.source?.imageUri;
       return new Response(
         JSON.stringify({ responses: [{ safeSearchAnnotation: { adult: "VERY_LIKELY" } }] }),
@@ -518,9 +514,12 @@ test("a content hash's archive failure suppresses later launchers instead of eac
     archiveBaseUrl: ARCHIVE,
     archiveCheckAttempts: 2,
     archiveCheckDelayMs: 0,
-    fetchImpl: (async (url: string) => {
-      if (String(url).includes(`${ARCHIVE}/nfts/`)) archiveCalls++;
-      return new Response("{}", { status: 404 }); // never ready
+    fetchImpl: (async (_url: string, init?: RequestInit) => {
+      if (init?.method === "HEAD") {
+        archiveCalls++;
+        return new Response(null, { status: 404 }); // never ready
+      }
+      return new Response("{}", { status: 404 });
     }) as typeof fetch,
   });
 
@@ -535,5 +534,76 @@ test("a content hash's archive failure suppresses later launchers instead of eac
   await flushMicrotasks();
 
   expect(archiveCalls).toBe(2); // only Lp's own archiveCheckAttempts ran
+  store.close();
+});
+
+// ── content-readiness probe: HEAD of the URL Vision will fetch ───────────────
+// The archive answers an immutable 301 (to files.mintgarden.io) for ingested
+// content and 404 otherwise, so a redirect counts as ready. Probing the content
+// URL itself (not /nfts/{launcherId}) means readiness is content-keyed.
+
+test("the readiness probe is a HEAD of the content URL and a redirect counts as ready", async () => {
+  const HASH = "1a".repeat(32);
+  const CONTENT_URL = `${ARCHIVE}/content/${HASH}`;
+  const media = new MediaIndex(10);
+  media.set("L1", { url: CONTENT_URL, kind: "image" });
+  const store = new ContentStore(":memory:");
+  store.putCheap("L1", "nft1", { disposition: "ok" }, HASH);
+  const headUrls: string[] = [];
+  let visionUri: string | undefined;
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    apiKey: "k",
+    onFlag: () => {},
+    archiveBaseUrl: ARCHIVE,
+    archiveCheckAttempts: 3,
+    archiveCheckDelayMs: 0,
+    fetchImpl: (async (url: string, init?: RequestInit) => {
+      if (init?.method === "HEAD") {
+        headUrls.push(String(url));
+        return new Response(null, { status: 301 });
+      }
+      visionUri = JSON.parse((init?.body as string) ?? "{}").requests?.[0]?.image?.source?.imageUri;
+      return visionOk();
+    }) as typeof fetch,
+  });
+  worker.maybeEnqueue(nftEvent());
+  await flushMicrotasks();
+  expect(headUrls).toEqual([CONTENT_URL]); // one probe, of the content URL itself
+  expect(visionUri).toBe(CONTENT_URL);
+  expect(store.get("L1")?.safesearchChecked).toBe(true);
+  store.close();
+});
+
+test("a video poster on the assets CDN is probed for readiness before Vision", async () => {
+  const POSTER = "https://assets.mainnet.mintgarden.io/thumbnails/9f_512.webp";
+  const media = new MediaIndex(10);
+  media.set("V9", { url: "https://ipfs/clip.mp4", kind: "video", thumbnailUrl: POSTER });
+  const store = new ContentStore(":memory:");
+  store.putCheap("V9", "nftv9", { disposition: "ok" });
+  let headCalls = 0;
+  let visionCalls = 0;
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    apiKey: "k",
+    onFlag: () => {},
+    archiveCheckAttempts: 2,
+    archiveCheckDelayMs: 0,
+    fetchImpl: (async (url: string, init?: RequestInit) => {
+      if (init?.method === "HEAD") {
+        headCalls++;
+        return new Response(null, { status: 404 }); // thumbnail not generated yet
+      }
+      if (String(url).includes("images:annotate")) visionCalls++;
+      return new Response("{}", { status: 404 });
+    }) as typeof fetch,
+  });
+  worker.maybeEnqueue(nftEvent({ launcherId: "V9", nftId: "nftv9", mediaKind: "video" }));
+  await flushMicrotasks();
+  expect(headCalls).toBe(2); // probed with retries, like archive URLs
+  expect(visionCalls).toBe(0); // no Vision attempt burned on a missing poster
+  expect(store.get("V9")?.safesearchChecked).toBe(false);
   store.close();
 });

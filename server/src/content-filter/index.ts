@@ -113,6 +113,7 @@ export class ContentFilter {
         archiveBaseUrl: opts.archiveBaseUrl,
         archiveCheckAttempts: opts.archiveCheckAttempts,
         archiveCheckDelayMs: opts.archiveCheckDelayMs,
+        thumbnailBaseUrl: THUMBNAIL_BASE_URL,
       });
     }
   }

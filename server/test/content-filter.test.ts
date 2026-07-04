@@ -580,10 +580,8 @@ test("SafeSearch receives Archive CDN URL when data_hash is present", async () =
           { status: 200 }
         );
       }
-      if (new URL(String(url)).hostname === "archive.mintgarden.io") {
-        return new Response(JSON.stringify({ assets: [{ role: "data", fetch_succeeded: true }] }), {
-          status: 200,
-        });
+      if (init?.method === "HEAD") {
+        return new Response(null, { status: 200 });
       }
       // api.mintgarden.io response with data_hash
       return new Response(JSON.stringify({ data: { data_hash: CONTENT_HASH } }), { status: 200 });
@@ -600,7 +598,7 @@ test("SafeSearch receives Archive CDN URL when data_hash is present", async () =
 const ARCHIVE_BASE = "https://archive.mintgarden.io";
 const ARCHIVE_MEDIA_URL = `${ARCHIVE_BASE}/content/${"ab".repeat(32)}`;
 
-test("SafeSearch calls Archive ingestion check before Vision when imageUri is an Archive URL", async () => {
+test("SafeSearch HEAD-probes the content URL before Vision when it is an Archive URL", async () => {
   const media = new MediaIndex(10);
   media.set("cd".repeat(32), { url: ARCHIVE_MEDIA_URL, kind: "image" });
   const store = new ContentStore(":memory:");
@@ -613,7 +611,7 @@ test("SafeSearch calls Archive ingestion check before Vision when imageUri is an
     archiveBaseUrl: ARCHIVE_BASE,
     archiveCheckAttempts: 3,
     archiveCheckDelayMs: 0,
-    fetchImpl: (async (url: string) => {
+    fetchImpl: (async (url: string, init?: RequestInit) => {
       const s = String(url);
       if (s.includes("images:annotate")) {
         visionCalls++;
@@ -622,11 +620,9 @@ test("SafeSearch calls Archive ingestion check before Vision when imageUri is an
           { status: 200 }
         );
       }
-      if (s.includes(`${ARCHIVE_BASE}/nfts/`)) {
+      if (init?.method === "HEAD") {
         archiveCalls++;
-        return new Response(JSON.stringify({ assets: [{ role: "data", fetch_succeeded: true }] }), {
-          status: 200,
-        });
+        return new Response(null, { status: 200 });
       }
       return new Response("{}", { status: 404 });
     }) as typeof fetch,
@@ -651,7 +647,7 @@ test("SafeSearch retries Archive check until ready then calls Vision", async () 
     archiveBaseUrl: ARCHIVE_BASE,
     archiveCheckAttempts: 3,
     archiveCheckDelayMs: 0,
-    fetchImpl: (async (url: string) => {
+    fetchImpl: (async (url: string, init?: RequestInit) => {
       const s = String(url);
       if (s.includes("images:annotate")) {
         visionCalls++;
@@ -660,13 +656,9 @@ test("SafeSearch retries Archive check until ready then calls Vision", async () 
           { status: 200 }
         );
       }
-      if (s.includes(`${ARCHIVE_BASE}/nfts/`)) {
+      if (init?.method === "HEAD") {
         archiveCalls++;
-        const ready = archiveCalls >= 3;
-        return new Response(
-          JSON.stringify({ assets: [{ role: "data", fetch_succeeded: ready }] }),
-          { status: 200 }
-        );
+        return new Response(null, { status: archiveCalls >= 3 ? 200 : 404 });
       }
       return new Response("{}", { status: 404 });
     }) as typeof fetch,
@@ -691,7 +683,7 @@ test("SafeSearch does not call Vision when Archive check is exhausted", async ()
     archiveBaseUrl: ARCHIVE_BASE,
     archiveCheckAttempts: 2,
     archiveCheckDelayMs: 0,
-    fetchImpl: (async (url: string) => {
+    fetchImpl: (async (url: string, init?: RequestInit) => {
       const s = String(url);
       if (s.includes("images:annotate")) {
         visionCalls++;
@@ -700,12 +692,9 @@ test("SafeSearch does not call Vision when Archive check is exhausted", async ()
           { status: 200 }
         );
       }
-      if (s.includes(`${ARCHIVE_BASE}/nfts/`)) {
+      if (init?.method === "HEAD") {
         archiveCalls++;
-        return new Response(
-          JSON.stringify({ assets: [{ role: "data", fetch_succeeded: false }] }),
-          { status: 200 }
-        );
+        return new Response(null, { status: 404 });
       }
       return new Response("{}", { status: 404 });
     }) as typeof fetch,
@@ -730,7 +719,7 @@ test("SafeSearch skips Archive check when imageUri is not an Archive URL", async
     archiveBaseUrl: ARCHIVE_BASE,
     archiveCheckAttempts: 3,
     archiveCheckDelayMs: 0,
-    fetchImpl: (async (url: string) => {
+    fetchImpl: (async (url: string, init?: RequestInit) => {
       const s = String(url);
       if (s.includes("images:annotate")) {
         visionCalls++;
@@ -739,11 +728,9 @@ test("SafeSearch skips Archive check when imageUri is not an Archive URL", async
           { status: 200 }
         );
       }
-      if (s.includes(`${ARCHIVE_BASE}/nfts/`)) {
+      if (init?.method === "HEAD") {
         archiveCalls++;
-        return new Response(JSON.stringify({ assets: [{ role: "data", fetch_succeeded: true }] }), {
-          status: 200,
-        });
+        return new Response(null, { status: 404 });
       }
       return new Response("{}", { status: 404 });
     }) as typeof fetch,
@@ -768,7 +755,7 @@ test("SafeSearch treats Archive network error as not-ready and retries to exhaus
     archiveBaseUrl: ARCHIVE_BASE,
     archiveCheckAttempts: 2,
     archiveCheckDelayMs: 0,
-    fetchImpl: (async (url: string) => {
+    fetchImpl: (async (url: string, init?: RequestInit) => {
       const s = String(url);
       if (s.includes("images:annotate")) {
         visionCalls++;
@@ -777,7 +764,7 @@ test("SafeSearch treats Archive network error as not-ready and retries to exhaus
           { status: 200 }
         );
       }
-      if (s.includes(`${ARCHIVE_BASE}/nfts/`)) {
+      if (init?.method === "HEAD") {
         archiveCalls++;
         throw new Error("network error");
       }
