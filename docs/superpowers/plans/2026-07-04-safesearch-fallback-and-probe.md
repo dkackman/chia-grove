@@ -23,11 +23,11 @@
 
 Per-task dispatch recommendation (cheaper models for well-specified TDD tasks; the orchestrating session reviews between tasks):
 
-| Task | Agent model | Why |
-| ---- | ----------- | --- |
-| 0 | (main session) | One commit, no code authored |
-| 1–4 | `sonnet` | Fully specified TDD tasks with exact code; no design judgment needed |
-| 5 | `haiku` | Documentation text is provided verbatim |
+| Task | Agent model    | Why                                                                  |
+| ---- | -------------- | -------------------------------------------------------------------- |
+| 0    | (main session) | One commit, no code authored                                         |
+| 1–4  | `sonnet`       | Fully specified TDD tasks with exact code; no design judgment needed |
+| 5    | `haiku`        | Documentation text is provided verbatim                              |
 
 ## Explicitly deferred (do NOT implement in this plan)
 
@@ -42,6 +42,7 @@ Per-task dispatch recommendation (cheaper models for well-specified TDD tasks; t
 The working tree already contains a finished, tested change (content-level failure backoff). Commit it as-is so Tasks 1–5 start from a clean tree.
 
 **Files:**
+
 - Commit (no edits): `server/src/content-filter/safesearch-worker.ts`, `server/test/safesearch-worker.test.ts`
 
 - [ ] **Step 1: Verify the pending diff is green**
@@ -67,11 +68,13 @@ Replace `waitForArchive(launcherId)` (GET `${archiveBaseUrl}/nfts/${launcherId}`
 Live-verified CDN behavior (2026-07-04): ingested `archive.mintgarden.io/content/{hash}` → `301` with `location: https://files.mintgarden.io/originals/…` and `cache-control: immutable`; unknown hash → `404`. `assets.mainnet.mintgarden.io/thumbnails/{hash}_512.webp` → `200` HEAD for existing thumbnails. So: **2xx or 3xx = ready; anything else (or a network error) = not ready, retry.** Use `redirect: "manual"` so the probe doesn't pay for a second request following the 301.
 
 **Files:**
+
 - Modify: `server/src/content-filter/safesearch-worker.ts` (opts, `checkVision`, delete `waitForArchive`, add `waitForContentReady` + `needsReadyProbe`)
 - Modify: `server/src/content-filter/index.ts:107-117` (pass `thumbnailBaseUrl` to the worker)
 - Test: `server/test/safesearch-worker.test.ts`, `server/test/content-filter.test.ts`
 
 **Interfaces:**
+
 - Consumes: existing `SafeSearchWorkerOpts`, `querySafeSearch(imageUri, opts)`.
 - Produces (Tasks 2–4 rely on these exact names):
   - `SafeSearchWorkerOpts.thumbnailBaseUrl?: string` (default `"https://assets.mainnet.mintgarden.io/thumbnails"`)
@@ -111,8 +114,7 @@ test("the readiness probe is a HEAD of the content URL and a redirect counts as 
         headUrls.push(String(url));
         return new Response(null, { status: 301 });
       }
-      visionUri = JSON.parse((init?.body as string) ?? "{}").requests?.[0]?.image?.source
-        ?.imageUri;
+      visionUri = JSON.parse((init?.body as string) ?? "{}").requests?.[0]?.image?.source?.imageUri;
       return visionOk();
     }) as typeof fetch,
   });
@@ -181,7 +183,7 @@ In `server/src/content-filter/safesearch-worker.ts`:
 ```
 
 ```typescript
-    this.thumbnailBaseUrl = opts.thumbnailBaseUrl ?? "https://assets.mainnet.mintgarden.io/thumbnails";
+this.thumbnailBaseUrl = opts.thumbnailBaseUrl ?? "https://assets.mainnet.mintgarden.io/thumbnails";
 ```
 
 3c. Replace `checkVision` and `waitForArchive` entirely with:
@@ -324,36 +326,36 @@ In `server/test/content-filter.test.ts`, the four Archive pre-check tests (~line
 4f. "SafeSearch receives Archive CDN URL when data_hash is present" (~line 562) — replace the hostname branch:
 
 ```typescript
-      if (init?.method === "HEAD") {
-        return new Response(null, { status: 200 });
-      }
+if (init?.method === "HEAD") {
+  return new Response(null, { status: 200 });
+}
 ```
 
 4g. "SafeSearch calls Archive ingestion check before Vision…" (~line 603) — rename the test to `"SafeSearch HEAD-probes the content URL before Vision when it is an Archive URL"` and replace the `/nfts/` branch (note the added `init` parameter on the mock):
 
 ```typescript
-      if (init?.method === "HEAD") {
-        archiveCalls++;
-        return new Response(null, { status: 200 });
-      }
+if (init?.method === "HEAD") {
+  archiveCalls++;
+  return new Response(null, { status: 200 });
+}
 ```
 
 4h. "SafeSearch retries Archive check until ready then calls Vision" (~line 641):
 
 ```typescript
-      if (init?.method === "HEAD") {
-        archiveCalls++;
-        return new Response(null, { status: archiveCalls >= 3 ? 200 : 404 });
-      }
+if (init?.method === "HEAD") {
+  archiveCalls++;
+  return new Response(null, { status: archiveCalls >= 3 ? 200 : 404 });
+}
 ```
 
 4i. "SafeSearch does not call Vision when Archive check is exhausted" (~line 681):
 
 ```typescript
-      if (init?.method === "HEAD") {
-        archiveCalls++;
-        return new Response(null, { status: 404 });
-      }
+if (init?.method === "HEAD") {
+  archiveCalls++;
+  return new Response(null, { status: 404 });
+}
 ```
 
 4j. "SafeSearch skips Archive check when imageUri is not an Archive URL" (~line 720) — same HEAD-counting branch as 4i; its media URL (`https://ipfs.mintgarden.io/ipfs/abc`) matches neither probe base, so `archiveCalls` stays 0 as asserted.
@@ -385,10 +387,12 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 When the readiness probe exhausts its attempts for an **image** NFT, retry Vision once with the original on-chain URL preserved in `MediaEntry.fallbackUrl` — unless that URL's host is known-unreachable from Google's fetchers (`ipfs.mintgarden.io`, the reason the Archive upgrade exists). Videos never fall back: the fallback is the raw clip, which Vision cannot decode. The verdict row records the URI actually checked (`checked_uri`), and `content_hash` is untouched (already stored by `putCheap`), so hash-keyed dedup keeps working across the fallback.
 
 **Files:**
+
 - Modify: `server/src/content-filter/safesearch-worker.ts`
 - Test: `server/test/safesearch-worker.test.ts`
 
 **Interfaces:**
+
 - Consumes (from Task 1): `needsReadyProbe(imageUri)`, `waitForContentReady(url): Promise<boolean>`, `thumbnailBaseUrl`.
 - Produces (Task 3 relies on these exact names):
   - `interface VisionOutcome { result: SafeSearchResult; checkedUri: string }` (module-local, not exported)
@@ -425,8 +429,7 @@ test("archive never ready + reachable original URL → Vision checks the fallbac
     archiveCheckDelayMs: 0,
     fetchImpl: (async (url: string, init?: RequestInit) => {
       if (init?.method === "HEAD") return new Response(null, { status: 404 });
-      visionUri = JSON.parse((init?.body as string) ?? "{}").requests?.[0]?.image?.source
-        ?.imageUri;
+      visionUri = JSON.parse((init?.body as string) ?? "{}").requests?.[0]?.image?.source?.imageUri;
       return visionOk();
     }) as typeof fetch,
   });
@@ -567,15 +570,15 @@ interface VisionOutcome {
 fallback is the raw clip) and pass it through. Replace the final `void this.run(...)` block with:
 
 ```typescript
-    // Only images can fall back to the on-chain original: a video's fallback is
-    // the raw clip, which Vision cannot decode.
-    const fallbackUri = media.kind === "image" ? media.fallbackUrl : undefined;
-    this.queued.add(launcherId);
-    // run() is not gated: its content-readiness wait is cheap polling that must
-    // not occupy a Vision slot. Only the paid Vision call inside run() is gated.
-    void this.run(launcherId, imageUri, stored?.contentHash, fallbackUri).finally(() =>
-      this.queued.delete(launcherId)
-    );
+// Only images can fall back to the on-chain original: a video's fallback is
+// the raw clip, which Vision cannot decode.
+const fallbackUri = media.kind === "image" ? media.fallbackUrl : undefined;
+this.queued.add(launcherId);
+// run() is not gated: its content-readiness wait is cheap polling that must
+// not occupy a Vision slot. Only the paid Vision call inside run() is gated.
+void this.run(launcherId, imageUri, stored?.contentHash, fallbackUri).finally(() =>
+  this.queued.delete(launcherId)
+);
 ```
 
 3d. Update `run()` — new signature and the leader/follower persist paths:
@@ -592,23 +595,23 @@ fallback is the raw clip) and pass it through. Replace the final `void this.run(
 Inside the `try`, the follower branch becomes:
 
 ```typescript
-      const inflight = this.dedupInflight.get(dedupKey);
-      if (inflight) {
-        this.persistVerdict(launcherId, imageUri, (await inflight).result, "reused");
-        return;
-      }
+const inflight = this.dedupInflight.get(dedupKey);
+if (inflight) {
+  this.persistVerdict(launcherId, imageUri, (await inflight).result, "reused");
+  return;
+}
 ```
 
 and the leader branch becomes:
 
 ```typescript
-      const work = this.checkVision(imageUri, fallbackUri);
-      this.dedupInflight.set(dedupKey, work);
-      // .finally() derives a new promise; it must carry its own rejection
-      // handler; the "real" rejection is still caught below via `await work`.
-      work.finally(() => this.dedupInflight.delete(dedupKey)).catch(() => {});
-      const outcome = await work;
-      this.persistVerdict(launcherId, outcome.checkedUri, outcome.result, "vision");
+const work = this.checkVision(imageUri, fallbackUri);
+this.dedupInflight.set(dedupKey, work);
+// .finally() derives a new promise; it must carry its own rejection
+// handler; the "real" rejection is still caught below via `await work`.
+work.finally(() => this.dedupInflight.delete(dedupKey)).catch(() => {});
+const outcome = await work;
+this.persistVerdict(launcherId, outcome.checkedUri, outcome.result, "vision");
 ```
 
 3e. Replace `checkVision` (from Task 1) with the fallback-aware version, and add `usableFallback`:
@@ -679,13 +682,15 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 ### Task 3: Second-chance URI dedup when the hash lookup misses
 
-Closes the double-pay window: content checked under its URI before MintGarden resolved a hash (row has `checked_uri`, NULL `content_hash`) is invisible to a later launcher that *does* have the hash — its `imageUri` is the archive URL, so neither lookup matches. Its `fallbackUrl`, however, is the original URI that WAS checked. Try it before paying.
+Closes the double-pay window: content checked under its URI before MintGarden resolved a hash (row has `checked_uri`, NULL `content_hash`) is invisible to a later launcher that _does_ have the hash — its `imageUri` is the archive URL, so neither lookup matches. Its `fallbackUrl`, however, is the original URI that WAS checked. Try it before paying.
 
 **Files:**
+
 - Modify: `server/src/content-filter/safesearch-worker.ts` (the `prior` lookup in `run()`)
 - Test: `server/test/safesearch-worker.test.ts`
 
 **Interfaces:**
+
 - Consumes (from Task 2): `run(launcherId, imageUri, contentHash?, fallbackUri?)`, `store.getSafeSearchByUri(uri)`, `store.getSafeSearchByContentHash(hash)`.
 - Produces: no new names; behavior only.
 
@@ -739,24 +744,24 @@ Expected: FAIL — `fetchCalls` is ≥ 1 (the hash lookup misses, so the worker 
 In `run()`, replace:
 
 ```typescript
-      const prior = contentHash
-        ? this.opts.store.getSafeSearchByContentHash(contentHash)
-        : this.opts.store.getSafeSearchByUri(imageUri);
+const prior = contentHash
+  ? this.opts.store.getSafeSearchByContentHash(contentHash)
+  : this.opts.store.getSafeSearchByUri(imageUri);
 ```
 
 with:
 
 ```typescript
-      // Second chance on a hash miss: content checked before MintGarden resolved
-      // its hash sits in a row with a checked_uri and a NULL content_hash. This
-      // launcher's fallbackUri is that same original URI, so one extra indexed
-      // SELECT can save a paid Vision call. (When contentHash is undefined,
-      // fallbackUri is too — media is never Archive-upgraded without a hash.)
-      const prior =
-        (contentHash
-          ? this.opts.store.getSafeSearchByContentHash(contentHash)
-          : this.opts.store.getSafeSearchByUri(imageUri)) ??
-        (fallbackUri ? this.opts.store.getSafeSearchByUri(fallbackUri) : undefined);
+// Second chance on a hash miss: content checked before MintGarden resolved
+// its hash sits in a row with a checked_uri and a NULL content_hash. This
+// launcher's fallbackUri is that same original URI, so one extra indexed
+// SELECT can save a paid Vision call. (When contentHash is undefined,
+// fallbackUri is too — media is never Archive-upgraded without a hash.)
+const prior =
+  (contentHash
+    ? this.opts.store.getSafeSearchByContentHash(contentHash)
+    : this.opts.store.getSafeSearchByUri(imageUri)) ??
+  (fallbackUri ? this.opts.store.getSafeSearchByUri(fallbackUri) : undefined);
 ```
 
 - [ ] **Step 4: Run the worker tests**
@@ -780,6 +785,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 Today a retry after failure only happens when the same NFT (or one sharing its content) is spent again. A mint whose content lagged Archive ingestion and is never re-spent stays unchecked forever while the server runs. Add `SafeSearchWorker.sweep()` — re-attempt every eligible launcher still in `MediaIndex` — and have `ContentFilter` call it on an unref'd interval (`SAFESEARCH_SWEEP_INTERVAL_MS`, default 10 min, 0 disables). All existing guards (checked flag, failure backoff, `maxPending`, in-flight coalescing) apply to swept launchers automatically; the sweep additionally skips launchers whose cheap disposition is not `ok`, since ContentFilter's ok-gate isn't in front of it. Cost when idle: one synchronous SQLite point-read per MediaIndex entry every interval — negligible at the 10-minute default.
 
 **Files:**
+
 - Modify: `server/src/util/bounded-map.ts` (add `entries()`)
 - Modify: `server/src/web/media-index.ts` (add `entries()`)
 - Modify: `server/src/content-filter/safesearch-worker.ts` (extract `tryEnqueue`, add `sweep()`, disposition guard)
@@ -789,6 +795,7 @@ Today a retry after failure only happens when the same NFT (or one sharing its c
 - Test: `server/test/bounded-map.test.ts`, `server/test/media-index.test.ts`, `server/test/safesearch-worker.test.ts`, `server/test/content-filter.test.ts`
 
 **Interfaces:**
+
 - Consumes (from Tasks 1–3): `tryEnqueue` body is the current `maybeEnqueue` logic including `fallbackUri` capture and `run(launcherId, imageUri, contentHash?, fallbackUri?)`.
 - Produces:
   - `BoundedMap.entries(): IterableIterator<[K, V]>`
@@ -1123,12 +1130,12 @@ In `server/src/content-filter/index.ts`:
 11c. In the constructor, right after the `this.worker = new SafeSearchWorker({...})` block (inside the same `if`):
 
 ```typescript
-      const sweepMs = opts.safesearchSweepIntervalMs ?? 600_000;
-      if (sweepMs > 0) {
-        const worker = this.worker;
-        this.sweepTimer = setInterval(() => worker.sweep(), sweepMs);
-        this.sweepTimer.unref?.();
-      }
+const sweepMs = opts.safesearchSweepIntervalMs ?? 600_000;
+if (sweepMs > 0) {
+  const worker = this.worker;
+  this.sweepTimer = setInterval(() => worker.sweep(), sweepMs);
+  this.sweepTimer.unref?.();
+}
 ```
 
 11d. Add a public method after `enrich`:
@@ -1180,6 +1187,7 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 Bring the three descriptions of the SafeSearch flow (worker header comment, `server/CLAUDE.md`, root `CLAUDE.md` data-flow) in line with the new behavior, and state the fail-open policy explicitly.
 
 **Files:**
+
 - Modify: `server/src/content-filter/safesearch-worker.ts:30-47` (class doc comment)
 - Modify: `server/CLAUDE.md` (ContentFilter bullet, tier 2)
 - Modify: `CLAUDE.md` (data-flow diagram line)
@@ -1223,7 +1231,7 @@ Replace the block comment directly above `const FAILED_UNTIL_CAP` (currently beg
 Replace the tier-2 sentence block (currently beginning "_Google Vision SafeSearch_ async/out-of-band — for any image or video NFT spend…") with:
 
 ```markdown
-  2. _Google Vision SafeSearch_ async/out-of-band — for any image or video NFT spend whose cheap verdict was `ok` and that hasn't yet been SafeSearch-checked (`safesearchChecked` store flag ensures each `launcherId` is checked at most once; `content_hash` and `checked_uri` lookups additionally reuse a prior verdict across distinct NFTs sharing identical bytes, so the paid Vision call runs once per unique content). Images are classified by their art URL; videos by their static poster (best-effort — Vision can't decode video frames, and a video with no resolved thumbnail is skipped). URLs on MintGarden's ingestion-lagged CDNs (archive content, assets-CDN posters) are readiness-probed first via HEAD; on exhaustion, images fall back to one Vision attempt against the on-chain original URL (skipping hosts Google can't reach). A periodic sweep (`SAFESEARCH_SWEEP_INTERVAL_MS`) re-attempts still-unchecked NFTs in MediaIndex so verdicts don't depend on re-spends. adult LIKELY/VERY_LIKELY → `sensitive`. SafeSearch never downloads image bytes; Google fetches the URI directly via `image.source.imageUri`. Verdicts persist per `launcherId` in `store.ts` (SQLite via Node's built-in `node:sqlite`); failures are fail-open (render permissive) with in-memory backoff only. A late verdict is pushed to clients as a `ContentFlagEvent` via Hub→RingBuffer.
+2. _Google Vision SafeSearch_ async/out-of-band — for any image or video NFT spend whose cheap verdict was `ok` and that hasn't yet been SafeSearch-checked (`safesearchChecked` store flag ensures each `launcherId` is checked at most once; `content_hash` and `checked_uri` lookups additionally reuse a prior verdict across distinct NFTs sharing identical bytes, so the paid Vision call runs once per unique content). Images are classified by their art URL; videos by their static poster (best-effort — Vision can't decode video frames, and a video with no resolved thumbnail is skipped). URLs on MintGarden's ingestion-lagged CDNs (archive content, assets-CDN posters) are readiness-probed first via HEAD; on exhaustion, images fall back to one Vision attempt against the on-chain original URL (skipping hosts Google can't reach). A periodic sweep (`SAFESEARCH_SWEEP_INTERVAL_MS`) re-attempts still-unchecked NFTs in MediaIndex so verdicts don't depend on re-spends. adult LIKELY/VERY_LIKELY → `sensitive`. SafeSearch never downloads image bytes; Google fetches the URI directly via `image.source.imageUri`. Verdicts persist per `launcherId` in `store.ts` (SQLite via Node's built-in `node:sqlite`); failures are fail-open (render permissive) with in-memory backoff only. A late verdict is pushed to clients as a `ContentFlagEvent` via Hub→RingBuffer.
 ```
 
 - [ ] **Step 3: Update the root `CLAUDE.md` data-flow line**
