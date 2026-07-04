@@ -14,6 +14,7 @@ import { Hub } from "../src/web/hub.js";
 import { RingBuffer } from "../src/web/ring-buffer.js";
 import { MediaIndex } from "../src/web/media-index.js";
 import { FailureCache } from "../src/web/failure-cache.js";
+import { MediaCache } from "../src/web/media-cache.js";
 import type { GroveEvent } from "@grove/shared";
 
 const silent = pino({ level: "silent" });
@@ -270,5 +271,192 @@ test("falls back to the original url when the primary 5xx-es", async () => {
   expect(res.statusCode).toBe(200);
   expect(res.body).toBe("PNGDATA");
   expect(calls).toEqual(["https://archive.test/content/h", "https://ipfs.test/41.png"]);
+  await app.close();
+});
+
+test("caches a small image on first fetch and serves the second request from cache", async () => {
+  const media = new MediaIndex(10);
+  media.set("img1", { url: "https://cdn.test/a.png", kind: "image" });
+  let calls = 0;
+  const fetcher = async (): Promise<IncomingMessage | null> => {
+    calls++;
+    return fakeUpstream(200, "image/png", "PNGDATA");
+  };
+  const app = fastify();
+  registerImageProxy(app, media, new FailureCache(60_000, 10), fetcher, new MediaCache(1_000_000));
+
+  const first = await app.inject({ method: "GET", url: "/img?nft=img1" });
+  expect(first.statusCode).toBe(200);
+  expect(first.body).toBe("PNGDATA");
+
+  const second = await app.inject({ method: "GET", url: "/img?nft=img1" });
+  expect(second.statusCode).toBe(200);
+  expect(second.body).toBe("PNGDATA");
+  expect(second.headers["content-type"]).toBe("image/png");
+  expect(calls).toBe(1); // second request served from cache, no upstream fetch
+  await app.close();
+});
+
+test("does not cache a video body (streams it, refetches next time)", async () => {
+  const media = new MediaIndex(10);
+  media.set("vid1", { url: "https://cdn.test/clip.mp4", kind: "video" });
+  let calls = 0;
+  const fetcher = async (): Promise<IncomingMessage | null> => {
+    calls++;
+    return fakeUpstream(200, "video/mp4", "VIDEODATA");
+  };
+  const app = fastify();
+  registerImageProxy(app, media, new FailureCache(60_000, 10), fetcher, new MediaCache(1_000_000));
+
+  await app.inject({ method: "GET", url: "/img?nft=vid1" });
+  await app.inject({ method: "GET", url: "/img?nft=vid1" });
+  expect(calls).toBe(2); // videos are never cached
+  await app.close();
+});
+
+test("a ranged request bypasses the cache", async () => {
+  const media = new MediaIndex(10);
+  media.set("img2", { url: "https://cdn.test/b.png", kind: "image" });
+  let calls = 0;
+  const fetcher = async (): Promise<IncomingMessage | null> => {
+    calls++;
+    return fakeUpstream(200, "image/png", "PNGDATA");
+  };
+  const app = fastify();
+  registerImageProxy(app, media, new FailureCache(60_000, 10), fetcher, new MediaCache(1_000_000));
+
+  await app.inject({ method: "GET", url: "/img?nft=img2" }); // primes the cache (fetch 1)
+  await app.inject({ method: "GET", url: "/img?nft=img2", headers: { range: "bytes=0-3" } });
+  expect(calls).toBe(2); // ranged request must not be served the full cached body
+  await app.close();
+});
+
+test("a failed fetch leaves the cache empty", async () => {
+  const media = new MediaIndex(10);
+  media.set("fail2", { url: "https://nonexistent.invalid/x.png", kind: "image" });
+  const cache = new MediaCache(1_000_000);
+  const app = fastify();
+  registerImageProxy(app, media, new FailureCache(60_000, 10), undefined, cache);
+  const res = await app.inject({ method: "GET", url: "/img?nft=fail2" });
+  expect(res.statusCode).toBe(504);
+  expect(cache.get("img:fail2")).toBeUndefined();
+  await app.close();
+});
+
+test("an upstream error mid-stream on a cacheable image aborts cleanly, no hang, partial not cached", async () => {
+  const media = new MediaIndex(10);
+  media.set("errimg", { url: "https://cdn.test/e.png", kind: "image" });
+  let calls = 0;
+  const fetcher = async (): Promise<IncomingMessage | null> => {
+    calls++;
+    if (calls === 1) {
+      const s = new PassThrough() as unknown as IncomingMessage & PassThrough;
+      s.statusCode = 200;
+      s.headers = { "content-type": "image/png" };
+      process.nextTick(() => {
+        s.write("PART");
+        s.destroy(new Error("upstream reset")); // reset after some bytes
+      });
+      return s;
+    }
+    return fakeUpstream(200, "image/png", "PNGDATA"); // a later request succeeds
+  };
+  const cache = new MediaCache(1_000_000);
+  const app = fastify();
+  registerImageProxy(app, media, new FailureCache(60_000, 10), fetcher, cache);
+
+  // The reset aborts the response, so inject rejects — but it must SETTLE, not
+  // hang. If the collector weren't torn down, this await never returns and the
+  // test times out. The .catch swallows the expected abort rejection.
+  await app.inject({ method: "GET", url: "/img?nft=errimg" }).catch(() => {});
+  expect(cache.get("img:errimg")).toBeUndefined(); // a partial body is never cached
+
+  // The endpoint still serves after an aborted stream.
+  const ok = await app.inject({ method: "GET", url: "/img?nft=errimg" });
+  expect(ok.statusCode).toBe(200);
+  expect(ok.body).toBe("PNGDATA");
+  expect(calls).toBe(2);
+  await app.close();
+});
+
+test("coalesces concurrent requests for the same nft into one upstream fetch", async () => {
+  const media = new MediaIndex(10);
+  media.set("img3", { url: "https://cdn.test/c.png", kind: "image" });
+  let calls = 0;
+  // A deferred fetcher: the fetch stays pending until we release it, so the
+  // second request provably arrives while the first is still fetching.
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  const fetcher = async (): Promise<IncomingMessage | null> => {
+    calls++;
+    await gate;
+    return fakeUpstream(200, "image/png", "PNGDATA");
+  };
+  const app = fastify();
+  registerImageProxy(app, media, new FailureCache(60_000, 10), fetcher, new MediaCache(1_000_000));
+
+  const p1 = app.inject({ method: "GET", url: "/img?nft=img3" });
+  const p2 = app.inject({ method: "GET", url: "/img?nft=img3" });
+  await new Promise((r) => setTimeout(r, 20)); // let both handlers reach the fetch/await
+  release();
+  const [r1, r2] = await Promise.all([p1, p2]);
+
+  expect(r1.body).toBe("PNGDATA");
+  expect(r2.body).toBe("PNGDATA");
+  expect(calls).toBe(1); // one leader fetch shared by both requests
+  await app.close();
+});
+
+test("caches a thumbnail on first fetch and serves the second from cache", async () => {
+  const media = new MediaIndex(10);
+  media.set("thumb1", {
+    url: "https://cdn.test/a.png",
+    kind: "video",
+    thumbnailUrl: "https://cdn.test/a_512.webp",
+  });
+  let calls = 0;
+  const fetcher = async (): Promise<IncomingMessage | null> => {
+    calls++;
+    return fakeUpstream(200, "image/webp", "WEBPDATA");
+  };
+  const app = fastify();
+  registerImageProxy(app, media, new FailureCache(60_000, 10), fetcher, new MediaCache(1_000_000));
+
+  const first = await app.inject({ method: "GET", url: "/thumbnail?nft=thumb1" });
+  expect(first.statusCode).toBe(200);
+  expect(first.body).toBe("WEBPDATA");
+  const second = await app.inject({ method: "GET", url: "/thumbnail?nft=thumb1" });
+  expect(second.body).toBe("WEBPDATA");
+  expect(second.headers["content-type"]).toBe("image/webp");
+  expect(calls).toBe(1);
+  await app.close();
+});
+
+test("coalesces concurrent thumbnail requests into one fetch", async () => {
+  const media = new MediaIndex(10);
+  media.set("thumb2", {
+    url: "https://cdn.test/b.png",
+    kind: "video",
+    thumbnailUrl: "https://cdn.test/b_512.webp",
+  });
+  let calls = 0;
+  let release!: () => void;
+  const gate = new Promise<void>((r) => (release = r));
+  const fetcher = async (): Promise<IncomingMessage | null> => {
+    calls++;
+    await gate;
+    return fakeUpstream(200, "image/webp", "WEBPDATA");
+  };
+  const app = fastify();
+  registerImageProxy(app, media, new FailureCache(60_000, 10), fetcher, new MediaCache(1_000_000));
+
+  const p1 = app.inject({ method: "GET", url: "/thumbnail?nft=thumb2" });
+  const p2 = app.inject({ method: "GET", url: "/thumbnail?nft=thumb2" });
+  await new Promise((r) => setTimeout(r, 20));
+  release();
+  const [r1, r2] = await Promise.all([p1, p2]);
+  expect(r1.body).toBe("WEBPDATA");
+  expect(r2.body).toBe("WEBPDATA");
+  expect(calls).toBe(1);
   await app.close();
 });

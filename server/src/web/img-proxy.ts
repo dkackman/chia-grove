@@ -4,10 +4,11 @@ import { Transform } from "node:stream";
 import { lookup as dnsLookup, type LookupAddress } from "node:dns";
 import { isIP, type LookupFunction } from "node:net";
 import type { IncomingMessage } from "node:http";
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyReply } from "fastify";
 import type { MediaIndex } from "./media-index.js";
 import { FailureCache } from "./failure-cache.js";
 import { RateLimiter } from "./rate-limiter.js";
+import { MediaCache, type CachedResponse } from "./media-cache.js";
 
 const MAX_REDIRECTS = 4;
 // Short idle timeout: art that hangs (unpinned IPFS CID, slow gateway) frees the
@@ -40,6 +41,14 @@ const MAX_INFLIGHT = 32;
 const FAIL_BASE_TTL_MS = 30 * 1000;
 const FAIL_MAX_TTL_MS = 10 * 60 * 1000;
 const FAIL_CAPACITY = 10_000;
+
+// In-memory response cache for bounded media (thumbnails + small images). Large
+// videos and ranged requests are never cached — they stream through the hardened
+// path unchanged. Total heap held at/below the budget; oldest evicts first.
+const CACHE_BYTE_BUDGET = 64 * 1024 * 1024;
+const CACHE_ENTRY_MAX_BYTES = 4 * 1024 * 1024; // == THUMB_MAX_BYTES
+// Real transient RSS ≈ (MAX_INFLIGHT × CACHE_ENTRY_MAX_BYTES) + CACHE_BYTE_BUDGET
+// ≈ 32×4MB + 64MB ≈ 192MB, since each cacheable leader also buffers its body.
 
 // hostnames refused outright; IP-literal and DNS-resolved addresses are checked
 // against private ranges separately (isPrivateAddress / safeLookup)
@@ -182,6 +191,58 @@ function byteCap(max: number): Transform {
 }
 
 /**
+ * A pass-through that forwards every chunk unchanged (so client delivery is
+ * exactly the streamed path) while accumulating the body up to `cap` bytes for
+ * caching. If the body exceeds `cap`, accumulation is abandoned (the buffer is
+ * dropped) but forwarding continues. `result()` returns the full body only if the
+ * stream ended cleanly within the cap, else null.
+ */
+function cachingCollector(cap: number): { stream: Transform; result(): Buffer | null } {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  let truncated = false;
+  let ended = false;
+  const stream = new Transform({
+    transform(chunk: Buffer, _enc, cb) {
+      if (!truncated) {
+        size += chunk.length;
+        if (size > cap) {
+          truncated = true;
+          chunks.length = 0; // don't hold a partial body
+        } else {
+          chunks.push(chunk);
+        }
+      }
+      cb(null, chunk);
+    },
+    flush(cb) {
+      ended = true;
+      cb();
+    },
+  });
+  return { stream, result: () => (ended && !truncated ? Buffer.concat(chunks) : null) };
+}
+
+/** A promise with its resolver exposed, for the single-flight in-flight map. */
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((r) => (resolve = r));
+  return { promise, resolve };
+}
+
+/** Serve a cached body with the same headers a fresh serve would set. */
+function serveCached(reply: FastifyReply, resp: CachedResponse): FastifyReply {
+  reply.code(200);
+  reply.header("access-control-allow-origin", "*");
+  reply.header("cache-control", "public, max-age=86400");
+  reply.header("content-type", resp.contentType);
+  reply.header("x-content-type-options", "nosniff");
+  reply.header("content-security-policy", "sandbox; default-src 'none'");
+  reply.header("content-length", String(resp.body.length));
+  return reply.send(resp.body);
+}
+
+/**
  * GET /img?nft=… — resolve the NFT launcher id through the server-side MediaIndex
  * to the on-chain art URL the server decoded, then fetch it server-side and stream
  * it back with permissive CORS so the WebGL gallery can texture media from hosts
@@ -207,10 +268,17 @@ export function registerImageProxy(
     Date.now,
     FAIL_MAX_TTL_MS
   ),
-  fetchUpstream: UpstreamFetcher = fetchFollowingSafeRedirects
+  fetchUpstream: UpstreamFetcher = fetchFollowingSafeRedirects,
+  cache: MediaCache = new MediaCache(CACHE_BYTE_BUDGET)
 ): void {
   const limiter = new RateLimiter(RATE_WINDOW_MS, RATE_MAX_PER_IP);
   let inflight = 0;
+
+  // Single-flight: concurrent cold requests for the same key await one leader's
+  // fetch instead of each opening their own. Resolves with the cached body, or
+  // null when the leader's body turned out uncacheable (waiters then fall
+  // through to their own fetch — same as today for videos).
+  const inFlightLeaders = new Map<string, Promise<CachedResponse | null>>();
 
   // periodically drop stale buckets so the maps can't grow without bound
   const sweep = setInterval(() => {
@@ -225,6 +293,19 @@ export function registerImageProxy(
     const launcherId = (request.query as { nft?: string }).nft;
     const entry = launcherId ? media.get(launcherId) : undefined;
     if (!entry) return reply.code(404).send("unknown nft");
+
+    const key = `img:${launcherId!}`;
+    const hasRange = typeof request.headers.range === "string";
+    if (!hasRange) {
+      const cached = cache.get(key);
+      if (cached) return serveCached(reply, cached);
+      const pending = inFlightLeaders.get(key);
+      if (pending) {
+        const shared = await pending;
+        if (shared) return serveCached(reply, shared);
+        // leader's body was uncacheable → fall through to an independent fetch
+      }
+    }
 
     // a recently-failed target short-circuits here — before consuming an inflight
     // slot or re-incurring the upstream stall on every viewer / snapshot replay
@@ -241,6 +322,22 @@ export function registerImageProxy(
       .map(validateProxyTarget)
       .filter((u): u is URL => u !== null);
     if (candidates.length === 0) return reply.code(400).send("disallowed nft url");
+
+    // Become the single-flight leader for this key so concurrent cold requests
+    // coalesce onto this fetch. Only non-ranged requests participate.
+    const lead = !hasRange ? deferred<CachedResponse | null>() : null;
+    if (lead) inFlightLeaders.set(key, lead.promise);
+    let settled = false;
+    const settle = (value: CachedResponse | null): void => {
+      if (lead && !settled) {
+        settled = true;
+        // Only remove our own entry: a waiter that fell through (leader
+        // resolved null) may have already re-registered as the new leader, so
+        // deleting unconditionally would orphan its still-live promise.
+        if (inFlightLeaders.get(key) === lead.promise) inFlightLeaders.delete(key);
+        lead.resolve(value);
+      }
+    };
 
     inflight++;
     let released = false;
@@ -277,6 +374,7 @@ export function registerImageProxy(
     if (!upstream) {
       release();
       failures.mark(launcherId!);
+      settle(null);
       return sawError
         ? reply.code(504).send("upstream fetch failed")
         : reply.code(502).send("upstream unavailable");
@@ -288,6 +386,7 @@ export function registerImageProxy(
       upstream.destroy();
       release();
       failures.mark(launcherId!);
+      settle(null);
       return reply.code(502).send("upstream too large");
     }
 
@@ -299,7 +398,8 @@ export function registerImageProxy(
       reply.header("cache-control", "public, max-age=86400");
       failures.clear(launcherId!); // recovered → drop any prior backoff streak
     }
-    reply.header("content-type", safeContentType(upstream.headers["content-type"]));
+    const ct = safeContentType(upstream.headers["content-type"]);
+    reply.header("content-type", ct);
     reply.header("x-content-type-options", "nosniff");
     reply.header("content-security-policy", "sandbox; default-src 'none'");
     for (const name of PASS_THROUGH) {
@@ -308,10 +408,38 @@ export function registerImageProxy(
     }
 
     // enforce the cap mid-stream too — content-length can lie or be absent.
-    // tearing down either end propagates to the other and frees the inflight slot.
+    // Each stage's error tears down the others; the inflight slot is freed when
+    // the delivered stream closes (the collector's close for a cached image, or
+    // capped's close otherwise).
     const capped = byteCap(MAX_BODY_BYTES);
-    capped.on("error", () => upstream.destroy());
     upstream.on("error", () => capped.destroy());
+
+    // Cache only a full 200 image with no range: tee the streamed bytes into a
+    // collector that fills the cache on a clean end. Everything else (videos,
+    // ranged/partial responses) streams through the hardened path unchanged.
+    const cacheable = !hasRange && status === 200 && ct.startsWith("image/");
+    if (cacheable) {
+      const collector = cachingCollector(CACHE_ENTRY_MAX_BYTES);
+      capped.on("error", () => upstream.destroy()); // capped's byte-cap error must tear down upstream too
+      capped.on("error", () => collector.stream.destroy());
+      upstream.on("error", () => collector.stream.destroy()); // upstream error must tear down the collector (release rides on its close)
+      collector.stream.on("error", () => capped.destroy());
+      // Single finalization point: `close` fires on clean completion and on
+      // client abort. result() is non-null only after a clean end within the
+      // cap, so this fills the cache, frees the slot, and settles waiters at
+      // once (on abort, body is null → not cached and waiters fall through).
+      collector.stream.on("close", () => {
+        release();
+        const body = collector.result();
+        if (body) cache.set(key, { body, contentType: ct });
+        settle(body ? { body, contentType: ct } : null);
+      });
+      upstream.pipe(capped).pipe(collector.stream);
+      return reply.send(collector.stream);
+    }
+
+    settle(null); // this body won't be cached (video/partial); waiters fall through
+    capped.on("error", () => upstream.destroy());
     capped.on("close", release);
     upstream.pipe(capped);
     return reply.send(capped);
@@ -329,7 +457,30 @@ export function registerImageProxy(
     const target = validateProxyTarget(entry.thumbnailUrl);
     if (!target) return reply.code(400).send("disallowed thumbnail url");
 
+    const key = `thumb:${launcherId!}`;
+    const cachedThumb = cache.get(key);
+    if (cachedThumb) return serveCached(reply, cachedThumb);
+    const pendingThumb = inFlightLeaders.get(key);
+    if (pendingThumb) {
+      const shared = await pendingThumb;
+      if (shared) return serveCached(reply, shared);
+      // leader uncacheable → fall through
+    }
+
     if (inflight >= MAX_INFLIGHT) return reply.code(503).send("proxy busy");
+
+    const lead = deferred<CachedResponse | null>();
+    inFlightLeaders.set(key, lead.promise);
+    let settled = false;
+    const settle = (value: CachedResponse | null): void => {
+      if (!settled) {
+        settled = true;
+        // Only clear the map if it still holds OUR promise — a later leader may
+        // have overwritten it; deleting their live entry would defeat coalescing.
+        if (inFlightLeaders.get(key) === lead.promise) inFlightLeaders.delete(key);
+        lead.resolve(value);
+      }
+    };
 
     inflight++;
     let released = false;
@@ -345,12 +496,14 @@ export function registerImageProxy(
       upstream = await fetchUpstream(target, undefined);
     } catch {
       release();
+      settle(null);
       return reply.code(504).send("upstream fetch failed");
     }
 
     if (!upstream || (upstream.statusCode ?? 0) >= 400) {
       upstream?.resume();
       release();
+      settle(null);
       return reply.code(502).send("upstream unavailable");
     }
 
@@ -358,6 +511,7 @@ export function registerImageProxy(
     if (Number.isFinite(declared) && declared > THUMB_MAX_BYTES) {
       upstream.destroy();
       release();
+      settle(null);
       return reply.code(502).send("upstream too large");
     }
 
@@ -365,13 +519,33 @@ export function registerImageProxy(
     reply.code(status);
     reply.header("access-control-allow-origin", "*");
     if (status === 200) reply.header("cache-control", "public, max-age=86400");
-    reply.header("content-type", safeContentType(upstream.headers["content-type"]));
+    const ct = safeContentType(upstream.headers["content-type"]);
+    reply.header("content-type", ct);
     reply.header("x-content-type-options", "nosniff");
     reply.header("content-security-policy", "sandbox; default-src 'none'");
 
     const capped = byteCap(THUMB_MAX_BYTES);
-    capped.on("error", () => upstream!.destroy());
     upstream.on("error", () => capped.destroy());
+
+    const cacheable = status === 200 && ct.startsWith("image/");
+    if (cacheable) {
+      const collector = cachingCollector(CACHE_ENTRY_MAX_BYTES);
+      capped.on("error", () => upstream!.destroy()); // capped's byte-cap error must tear down upstream too
+      capped.on("error", () => collector.stream.destroy());
+      upstream.on("error", () => collector.stream.destroy()); // upstream error must tear down the collector (release rides on its close)
+      collector.stream.on("error", () => capped.destroy());
+      collector.stream.on("close", () => {
+        release();
+        const body = collector.result();
+        if (body) cache.set(key, { body, contentType: ct });
+        settle(body ? { body, contentType: ct } : null);
+      });
+      upstream.pipe(capped).pipe(collector.stream);
+      return reply.send(collector.stream);
+    }
+
+    settle(null);
+    capped.on("error", () => upstream!.destroy());
     capped.on("close", release);
     upstream.pipe(capped);
     return reply.send(capped);
