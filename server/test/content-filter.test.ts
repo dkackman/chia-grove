@@ -7,6 +7,7 @@ import {
 import { ContentFilter } from "../src/content-filter/index.js";
 import { MediaIndex } from "../src/web/media-index.js";
 import { buildDenylistMap } from "../src/content-filter/signals/denylist.js";
+import { buildWhitelistSet } from "../src/content-filter/signals/whitelist.js";
 import { ContentStore } from "../src/content-filter/store.js";
 import type { GroveEvent, SproutEvent } from "@grove/shared";
 
@@ -300,6 +301,68 @@ test("mapMintgardenSignals chip7 metadata sensitive_content returns sensitive", 
 
 test("mapMintgardenSignals clean json returns ok", () => {
   const v = mapMintgardenSignals({ name: "a calm landscape" });
+  expect(v).toEqual({ disposition: "ok" });
+});
+
+test("mapMintgardenSignals: allow-list match on an otherwise-clean NFT sets whitelisted", () => {
+  const whitelist = buildWhitelistSet([{ creatorDid: "did:chia:good", collectionId: "col_good" }]);
+  const v = mapMintgardenSignals(
+    { creator: { encoded_id: "did:chia:good" }, collection: { id: "col_good" } },
+    { whitelist }
+  );
+  expect(v).toEqual({ disposition: "ok", whitelisted: true });
+});
+
+test("mapMintgardenSignals: allow-list does not suppress a lexicon hit", () => {
+  const whitelist = buildWhitelistSet([{ creatorDid: "did:chia:good", collectionId: "col_good" }]);
+  const v = mapMintgardenSignals(
+    {
+      name: "explicit piece",
+      creator: { encoded_id: "did:chia:good" },
+      collection: { id: "col_good" },
+    },
+    { whitelist }
+  );
+  expect(v).toEqual({ disposition: "sensitive" });
+});
+
+test("mapMintgardenSignals: allow-list does not suppress a denylist entry", () => {
+  const whitelist = buildWhitelistSet([{ creatorDid: "did:chia:good", collectionId: "col_good" }]);
+  const denylist = buildDenylistMap([{ collectionId: "col_good", disposition: "blocked" }]);
+  const v = mapMintgardenSignals(
+    { creator: { encoded_id: "did:chia:good" }, collection: { id: "col_good" } },
+    { whitelist, denylist }
+  );
+  expect(v).toEqual({ disposition: "blocked" });
+});
+
+test("mapMintgardenSignals: allow-list does not suppress a sensitive_content flag", () => {
+  const whitelist = buildWhitelistSet([{ creatorDid: "did:chia:good", collectionId: "col_good" }]);
+  const v = mapMintgardenSignals(
+    {
+      creator: { encoded_id: "did:chia:good" },
+      collection: { id: "col_good", sensitive_content: true },
+    },
+    { whitelist }
+  );
+  expect(v).toEqual({ disposition: "sensitive" });
+});
+
+test("mapMintgardenSignals: allow-list does not suppress MintGarden authoritative blocked", () => {
+  const whitelist = buildWhitelistSet([{ creatorDid: "did:chia:good", collectionId: "col_good" }]);
+  const v = mapMintgardenSignals(
+    { is_blocked: true, creator: { encoded_id: "did:chia:good" }, collection: { id: "col_good" } },
+    { whitelist }
+  );
+  expect(v).toEqual({ disposition: "blocked" });
+});
+
+test("mapMintgardenSignals: partial match (collection id only, different creator) is not whitelisted", () => {
+  const whitelist = buildWhitelistSet([{ creatorDid: "did:chia:good", collectionId: "col_good" }]);
+  const v = mapMintgardenSignals(
+    { creator: { encoded_id: "did:chia:other" }, collection: { id: "col_good" } },
+    { whitelist }
+  );
   expect(v).toEqual({ disposition: "ok" });
 });
 

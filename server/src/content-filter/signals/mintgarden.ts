@@ -2,6 +2,7 @@ import type { Disposition, Verdict } from "../types.js";
 import { combine } from "../verdict.js";
 import { LEXICON, matchesLexicon } from "./lexicon.js";
 import { DENYLIST_MAP, dispositionForCollection } from "./denylist.js";
+import { WHITELIST_SET, isWhitelisted } from "./whitelist.js";
 
 const asRecord = (v: unknown): Record<string, unknown> =>
   typeof v === "object" && v !== null ? (v as Record<string, unknown>) : {};
@@ -25,6 +26,8 @@ export interface MapMintgardenOpts {
   lexicon?: string[];
   /** Override the collection denylist map (test injection). Defaults to DENYLIST_MAP. */
   denylist?: Map<string, Disposition>;
+  /** Override the collection allow-list (test injection). Defaults to WHITELIST_SET. */
+  whitelist?: Set<string>;
 }
 
 /**
@@ -35,6 +38,7 @@ export interface MapMintgardenOpts {
 export function mapMintgardenSignals(json: unknown, opts: MapMintgardenOpts = {}): Verdict {
   const lexicon = opts.lexicon ?? LEXICON;
   const denylist = opts.denylist ?? DENYLIST_MAP;
+  const whitelist = opts.whitelist ?? WHITELIST_SET;
 
   const nft = asRecord(json);
   const collection = asRecord(nft.collection);
@@ -71,7 +75,20 @@ export function mapMintgardenSignals(json: unknown, opts: MapMintgardenOpts = {}
     .join(" ");
   if (matchesLexicon(text, lexicon)) parts.push({ disposition: "sensitive" });
 
-  return combine(parts);
+  const verdict = combine(parts);
+
+  // Curated allow-list: consulted last, only once every other signal has
+  // already resolved to "ok". Never overrides a blocked/sensitive result —
+  // it exists purely to skip the Vision SafeSearch check for known-safe
+  // collections (see whitelist.ts).
+  if (verdict.disposition === "ok") {
+    const creatorDid = typeof creator.encoded_id === "string" ? creator.encoded_id : undefined;
+    if (isWhitelisted(whitelist, creatorDid, collectionId)) {
+      return { disposition: "ok", whitelisted: true };
+    }
+  }
+
+  return verdict;
 }
 
 /** Disposition-only convenience (back-compat with existing call sites/tests). */
