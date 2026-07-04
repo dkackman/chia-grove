@@ -63,3 +63,14 @@ test("size reflects the number of live entries and never exceeds capacity", () =
   m.set("c", 3);
   expect(m.size).toBe(2);
 });
+
+test("entries() iterates insertion order and reflects eviction", () => {
+  const m = new BoundedMap<string, number>(2);
+  m.set("a", 1);
+  m.set("b", 2);
+  m.set("c", 3); // evicts "a"
+  expect([...m.entries()]).toEqual([
+    ["b", 2],
+    ["c", 3],
+  ]);
+});

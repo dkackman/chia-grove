@@ -23,13 +23,14 @@ Node/Fastify process that polls the Chia blockchain, classifies coin spends, fil
 
 ## Environment variables
 
-| Var                     | Default                        | Notes                                                 |
-| ----------------------- | ------------------------------ | ----------------------------------------------------- |
-| `PORT`                  | `8080`                         |                                                       |
-| `POLL_INTERVAL_MS`      | `3000`                         |                                                       |
-| `BACKFILL_BLOCKS`       | `150`                          |                                                       |
-| `GOOGLE_VISION_API_KEY` | (unset)                        | Enables Vision SafeSearch; unset = cheap signals only |
-| `CONTENT_DB_PATH`       | `./data/content-filter.sqlite` | SQLite verdict store path                             |
+| Var                            | Default                        | Notes                                                                 |
+| ------------------------------ | ------------------------------ | --------------------------------------------------------------------- |
+| `PORT`                         | `8080`                         |                                                                       |
+| `POLL_INTERVAL_MS`             | `3000`                         |                                                                       |
+| `BACKFILL_BLOCKS`              | `150`                          |                                                                       |
+| `GOOGLE_VISION_API_KEY`        | (unset)                        | Enables Vision SafeSearch; unset = cheap signals only                 |
+| `CONTENT_DB_PATH`              | `./data/content-filter.sqlite` | SQLite verdict store path                                             |
+| `SAFESEARCH_SWEEP_INTERVAL_MS` | `600000`                       | Re-check cadence for still-unchecked NFTs in MediaIndex; `0` disables |
 
 ## Tests
 

@@ -103,9 +103,21 @@ export class SafeSearchWorker {
   }
 
   maybeEnqueue(event: SproutEvent): void {
-    if (event.kind !== "nft") return;
-    const launcherId = event.launcherId;
-    if (!launcherId || this.queued.has(launcherId)) return;
+    if (event.kind !== "nft" || !event.launcherId) return;
+    this.tryEnqueue(event.launcherId);
+  }
+
+  /** Re-attempt every launcher still in MediaIndex that remains eligible
+   *  (unchecked, cheap-ok, not backed off). Lets an NFT whose content lagged
+   *  Archive ingestion at mint time get a verdict without waiting for a
+   *  re-spend. All the usual guards apply, so a sweep is cheap when idle:
+   *  one synchronous store point-read per entry. */
+  sweep(): void {
+    for (const [launcherId] of this.opts.media.entries()) this.tryEnqueue(launcherId);
+  }
+
+  private tryEnqueue(launcherId: string): void {
+    if (this.queued.has(launcherId)) return;
     const media = this.opts.media.get(launcherId);
     if (!media) return;
     // The image Vision classifies: the art itself for images, the static poster
@@ -127,11 +139,16 @@ export class SafeSearchWorker {
       );
       return;
     }
+    // The sweep path has no ContentFilter ok-gate in front of it, so guard here:
+    // SafeSearch can only upgrade ok → sensitive, so anything already flagged
+    // (or blocked) has nothing to gain from a paid check.
+    if (stored && stored.disposition !== "ok") return;
     if (stored?.safesearchChecked) return;
     const until = this.failedUntil.get(launcherId);
     if (until !== undefined && this.now() < until) return;
     // Bound total in-flight work. Dropped launchers are picked up on a later
-    // spend or after failedUntil lapses — acceptable for an out-of-band path.
+    // spend or sweep, or after failedUntil lapses — acceptable for an
+    // out-of-band path.
     if (this.queued.size >= this.maxPending) return;
 
     // Only images can fall back to the on-chain original: a video's fallback is

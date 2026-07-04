@@ -786,6 +786,111 @@ test("a sensitive verdict reached via the fallback URL still emits a content-fla
   store.close();
 });
 
+// ── periodic sweep: retry unchecked NFTs without waiting for a re-spend ──────
+
+test("sweep() re-attempts an unchecked NFT without a new spend", async () => {
+  const media = new MediaIndex(10);
+  media.set("L1", { url: "https://e/x.png", kind: "image" });
+  const store = new ContentStore(":memory:");
+  store.putCheap("L1", "nft1", { disposition: "ok" });
+  let visionCalls = 0;
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    apiKey: "k",
+    onFlag: () => {},
+    fetchImpl: (async () => {
+      visionCalls++;
+      return visionOk();
+    }) as typeof fetch,
+  });
+  worker.sweep(); // no maybeEnqueue — the sweep alone finds it
+  await flushMicrotasks();
+  expect(visionCalls).toBe(1);
+  expect(store.get("L1")?.safesearchChecked).toBe(true);
+  store.close();
+});
+
+test("sweep() skips launchers whose cheap disposition is not ok", async () => {
+  const media = new MediaIndex(10);
+  media.set("L1", { url: "https://e/x.png", kind: "image" });
+  const store = new ContentStore(":memory:");
+  store.putCheap("L1", "nft1", { disposition: "sensitive" });
+  let visionCalls = 0;
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    apiKey: "k",
+    onFlag: () => {},
+    fetchImpl: (async () => {
+      visionCalls++;
+      return visionOk();
+    }) as typeof fetch,
+  });
+  worker.sweep();
+  await flushMicrotasks();
+  expect(visionCalls).toBe(0); // SafeSearch can only upgrade ok → sensitive; nothing to gain
+  store.close();
+});
+
+test("sweep() skips already-checked launchers", async () => {
+  const media = new MediaIndex(10);
+  media.set("L1", { url: "https://e/x.png", kind: "image" });
+  const store = new ContentStore(":memory:");
+  store.putCheap("L1", "nft1", { disposition: "ok" });
+  store.putSafeSearch("L1", { sensitive: false, adult: "UNLIKELY", raw: {} }, "https://e/x.png");
+  let visionCalls = 0;
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    apiKey: "k",
+    onFlag: () => {},
+    fetchImpl: (async () => {
+      visionCalls++;
+      return visionOk();
+    }) as typeof fetch,
+  });
+  worker.sweep();
+  await flushMicrotasks();
+  expect(visionCalls).toBe(0);
+  store.close();
+});
+
+test("sweep() respects the failure backoff until the TTL lapses", async () => {
+  const media = new MediaIndex(10);
+  media.set("L1", { url: "https://e/x.png", kind: "image" });
+  const store = new ContentStore(":memory:");
+  store.putCheap("L1", "nft1", { disposition: "ok" });
+  let fakeNow = 0;
+  let fail = true;
+  let visionCalls = 0;
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    apiKey: "k",
+    onFlag: () => {},
+    now: () => fakeNow,
+    failTtlMs: 300_000,
+    fetchImpl: (async () => {
+      if (fail) throw new Error("vision down");
+      visionCalls++;
+      return visionOk();
+    }) as typeof fetch,
+  });
+  worker.maybeEnqueue(nftEvent());
+  await flushMicrotasks(); // fails → backed off until fakeNow + 300000
+  fail = false;
+  worker.sweep();
+  await flushMicrotasks();
+  expect(visionCalls).toBe(0); // still inside the backoff window
+  fakeNow = 300_001;
+  worker.sweep();
+  await flushMicrotasks();
+  expect(visionCalls).toBe(1); // TTL lapsed → the sweep retries
+  expect(store.get("L1")?.safesearchChecked).toBe(true);
+  store.close();
+});
+
 test("a hash-keyed launcher reuses a verdict recorded earlier under the original URI", async () => {
   const HASH = "6f".repeat(32);
   const ORIGINAL = "https://gw.example/ipfs/xyz";

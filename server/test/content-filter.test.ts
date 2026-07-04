@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import {
   mapMintgarden,
   mapMintgardenSignals,
@@ -803,4 +803,46 @@ test("enrich leaves thumbnailUrl unset for an image NFT", async () => {
   });
   await filter.enrich([nftEvent()]);
   expect(media.get("cd".repeat(32))?.thumbnailUrl).toBeUndefined();
+});
+
+// ── periodic SafeSearch sweep wiring ─────────────────────────────────────────
+
+test("the sweep interval re-checks an unchecked NFT without a new spend, and close() stops it", async () => {
+  vi.useFakeTimers();
+  try {
+    const media = new MediaIndex(10);
+    media.set("cd".repeat(32), { url: "https://e/x.png", kind: "image" });
+    const store = new ContentStore(":memory:");
+    store.putCheap("cd".repeat(32), "nft1", { disposition: "ok" });
+    let visionCalls = 0;
+    const filter = new ContentFilter(media, {
+      store,
+      googleApiKey: "k",
+      onFlag: () => {},
+      safesearchSweepIntervalMs: 1000,
+      fetchImpl: (async (url: string) => {
+        if (String(url).includes("images:annotate")) {
+          visionCalls++;
+          return new Response(
+            JSON.stringify({ responses: [{ safeSearchAnnotation: { adult: "UNLIKELY" } }] }),
+            { status: 200 }
+          );
+        }
+        return new Response("{}", { status: 404 });
+      }) as typeof fetch,
+    });
+    await vi.advanceTimersByTimeAsync(1000); // first tick → sweep → Vision
+    expect(visionCalls).toBe(1);
+    filter.close();
+    // a fresh, unchecked launcher that a further tick WOULD pick up if the
+    // timer were still alive (the first launcher is now safesearchChecked, so
+    // it alone can't distinguish a stopped timer from the checked-flag guard)
+    media.set("ef".repeat(32), { url: "https://e/y.png", kind: "image" });
+    store.putCheap("ef".repeat(32), "nft2", { disposition: "ok" });
+    await vi.advanceTimersByTimeAsync(5000);
+    expect(visionCalls).toBe(1); // closed → no further sweeps
+    store.close();
+  } finally {
+    vi.useRealTimers();
+  }
 });
