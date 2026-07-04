@@ -40,7 +40,10 @@ class FakeRpc implements RpcView {
     return { height, headerHash: b.headerHash, prevHash: "", timestamp: b.timestamp, fees: 25n };
   }
 
+  spendsError: Error | null = null;
+
   async getSpends(headerHash: string): Promise<CoinSpend[]> {
+    if (this.spendsError) throw this.spendsError;
     for (const b of this.blocks.values()) if (b.headerHash === headerHash) return b.spends;
     return [];
   }
@@ -111,6 +114,21 @@ test("a transaction block with a real spend classifies it and calls contentFilte
   expect(body.events[0]).toMatchObject({ type: "block", height: 200, spendCount: 1 });
   expect(body.events[1]).toMatchObject({ type: "sprout", kind: "xch", height: 200 });
   expect(enrich).toHaveBeenCalledTimes(1);
+  await app.close();
+});
+
+test("a getSpends failure after a successful getBlockInfo still returns a zero-spend block event, not a 500", async () => {
+  const rpc = new FakeRpc();
+  rpc.set(300, { timestamp: 1_700_000_000n });
+  rpc.spendsError = new Error("transient RPC blip");
+  const app = fastify();
+  registerBlockLookup(app, deps(rpc), new MediaIndex(10));
+  const res = await app.inject({ method: "GET", url: "/block/300" });
+  expect(res.statusCode).toBe(200);
+  const body = res.json() as { events: GroveEvent[] };
+  expect(body.events).toEqual([
+    { type: "block", height: 300, headerHash: "", timestamp: 0, spendCount: 0, fees: "0" },
+  ]);
   await app.close();
 });
 

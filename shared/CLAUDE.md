@@ -17,4 +17,4 @@ Entry point: `shared/src/index.ts`
 | `Snapshot`         | Sent after `Hello` on connect (full ring buffer)               |
 | `Batch`            | Live streaming: one or more events per frame                   |
 
-`SproutEvent` carries `mediaFilter` and optional `signals?: string[]` stamped inline by the ContentFilter cheap-signals tier before the event reaches the Hub.
+`SproutEvent` carries `mediaFilter` stamped inline by the ContentFilter cheap-signals tier before the event reaches the Hub. (The per-signal `signals?: string[]` field was removed in protocol v5 — clients never consumed it.)

@@ -47,7 +47,7 @@ GroveFeed  (web/src/net/feed.ts)
 active Visualization  (web/src/themes/)
 ```
 
-New WebSocket clients first receive a `Hello` handshake (protocol version check), then a `Snapshot` of the last 10,000 events from `RingBuffer`, drained at 60 events/frame by `DrainQueue` (~3 s at 60 fps). After that, events stream live as `Batch` messages.
+New WebSocket clients first receive a `Hello` handshake (protocol version check), then a `Snapshot` of the last 10,000 events from `RingBuffer`, drained at 120 events/frame by `DrainQueue` (~1.5 s at 60 fps). After that, events stream live as `Batch` messages.
 
 ## Deployment
 

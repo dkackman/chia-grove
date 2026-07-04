@@ -37,7 +37,7 @@ separate inflight budgets for `/img` vs `/thumbnail`.
 
 **Explicitly not doing:** caching large video bodies, disk persistence, or an
 edge/Caddy cache. Large videos keep streaming uncached exactly as today. An
-edge cache remains a viable *future* layer that composes in front of this one;
+edge cache remains a viable _future_ layer that composes in front of this one;
 it is not a one-way door.
 
 ## Approach
@@ -49,7 +49,7 @@ because:
   `MediaIndex`, and the proxy's existing `fetchUpstream`/`failures` injection
   seams extend naturally to it, so the whole path stays unit-testable offline.
 - The single-flight half of the work requires app-level state (`Map<key,
-  Promise>`) anyway; the cache rides alongside it nearly for free.
+Promise>`) anyway; the cache rides alongside it nearly for free.
 - The cache stores bytes that have already passed SSRF validation,
   `safeContentType`, and the byte cap — it can only ever hold sanitized image
   bodies.
@@ -98,8 +98,8 @@ independently refuses an over-budget body as a safety net.
 The single-flight coordination lives in the `registerImageProxy` closure as an
 `inFlight = new Map<string, Promise<CachedResponse | null>>()`, alongside the
 existing `inflight` counter and `limiter`. It is not part of `MediaCache`
-because the leader produces the cached value *while streaming that same body to
-its own client* through a tee (below) — an interleaving a generic
+because the leader produces the cached value _while streaming that same body to
+its own client_ through a tee (below) — an interleaving a generic
 `load(key, fetchFn)` helper cannot encapsulate. A leader creates a deferred,
 registers it under the key, resolves it from the collector's finalize step, and
 clears the map entry in a `finally`. Coalescing is covered by the proxy's
@@ -176,9 +176,9 @@ fetch, not around the failure bookkeeping.
 - Cached bytes are stored only after passing SSRF validation, `safeContentType`,
   and the byte cap, so the cache holds sanitized image bodies exclusively.
 - A cache hit replays the same response headers a fresh serve would: `access-
-  control-allow-origin: *`, `cache-control: public, max-age=86400`, the sanitized
+control-allow-origin: *`, `cache-control: public, max-age=86400`, the sanitized
   `content-type`, `x-content-type-options: nosniff`, `content-security-policy:
-  sandbox; default-src 'none'`, and `content-length = body.length`. Ranged
+sandbox; default-src 'none'`, and `content-length = body.length`. Ranged
   passthrough headers (`content-range`, `accept-ranges`) are not stored because
   only full 200 bodies are cached.
 - The rate limiter still runs first on every request, including cache hits, so
@@ -187,7 +187,7 @@ fetch, not around the failure bookkeeping.
 ### No TTL / no explicit invalidation
 
 `launcherId → art bytes` is immutable (an NFT's on-chain art does not change), so
-a cached entry is never *wrong* — only eventually evicted by the byte-LRU. This
+a cached entry is never _wrong_ — only eventually evicted by the byte-LRU. This
 removes the need for a TTL or app→cache purge wiring:
 
 - A late SafeSearch `sensitive` flip still fetches and blurs client-side
