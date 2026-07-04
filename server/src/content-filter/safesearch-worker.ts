@@ -62,6 +62,10 @@ export class SafeSearchWorker {
   private readonly waiters: Array<() => void> = [];
   private readonly queued = new Set<string>();
   private readonly failedUntil = new BoundedMap<string, number>(FAILED_UNTIL_CAP);
+  /** contentHash -> in-progress Vision check, so concurrent first-time checks of
+   *  identical bytes (e.g. an edition drop landing in one block) coalesce onto a
+   *  single paid call instead of each racing the not-yet-persisted DB dedup. */
+  private readonly contentHashInflight = new Map<string, Promise<SafeSearchResult>>();
 
   constructor(private readonly opts: SafeSearchWorkerOpts) {
     this.fetchImpl = opts.fetchImpl ?? fetch;
@@ -131,18 +135,24 @@ export class SafeSearchWorker {
           );
           return;
         }
+        // The DB check above is a snapshot, not a lock — another run() for the
+        // same content hash may already be checking it but hasn't persisted a
+        // verdict yet. Join it instead of independently paying for a second
+        // identical Vision lookup.
+        const inflight = this.contentHashInflight.get(contentHash);
+        if (inflight) {
+          this.persistVerdict(launcherId, imageUri, await inflight, "reused");
+          return;
+        }
       }
-      if (imageUri.startsWith(this.archiveBaseUrl)) {
-        await this.waitForArchive(launcherId);
+      const work = this.checkVision(launcherId, imageUri);
+      if (contentHash) {
+        this.contentHashInflight.set(contentHash, work);
+        // .finally() derives a new promise; it must carry its own rejection
+        // handler; the "real" rejection is still caught below via `await work`.
+        work.finally(() => this.contentHashInflight.delete(contentHash)).catch(() => {});
       }
-      const result = await this.gate(() =>
-        querySafeSearch(imageUri, {
-          apiKey: this.opts.apiKey,
-          fetchImpl: this.fetchImpl,
-          timeoutMs: this.timeoutMs,
-        })
-      );
-      this.persistVerdict(launcherId, imageUri, result, "vision");
+      this.persistVerdict(launcherId, imageUri, await work, "vision");
     } catch (err) {
       log.warn(
         { launcherId, imageUri, err: err instanceof Error ? err.message : String(err) },
@@ -150,6 +160,19 @@ export class SafeSearchWorker {
       );
       this.failedUntil.set(launcherId, this.now() + this.failTtlMs);
     }
+  }
+
+  private async checkVision(launcherId: string, imageUri: string): Promise<SafeSearchResult> {
+    if (imageUri.startsWith(this.archiveBaseUrl)) {
+      await this.waitForArchive(launcherId);
+    }
+    return this.gate(() =>
+      querySafeSearch(imageUri, {
+        apiKey: this.opts.apiKey,
+        fetchImpl: this.fetchImpl,
+        timeoutMs: this.timeoutMs,
+      })
+    );
   }
 
   /** Persist a SafeSearch verdict, clear failure suppression, and flag if sensitive. */
