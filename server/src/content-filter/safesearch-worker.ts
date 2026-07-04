@@ -57,6 +57,11 @@ export interface SafeSearchWorkerOpts {
 const FAILED_UNTIL_CAP = 10000;
 const DEFAULT_MAX_PENDING = 256;
 
+/** Ceiling for the doubling per-content failure backoff: a permanently dead
+ *  asset (never ingested, fallback link-rotted) settles at ~4 attempts/day
+ *  instead of one per sweep, forever. */
+const MAX_DEDUP_FAIL_TTL_MS = 6 * 60 * 60 * 1000;
+
 /** Hosts Google's image fetcher cannot reach (the reason the Archive upgrade
  *  exists) — a Vision call against them is a guaranteed failure, so don't pay
  *  the attempt. */
@@ -94,6 +99,8 @@ export class SafeSearchWorker {
    *  archive-readiness poll from scratch for content already known to be
    *  unready, rather than just inheriting the recent failure. */
   private readonly dedupFailedUntil = new BoundedMap<string, number>(FAILED_UNTIL_CAP);
+  /** Same dedup key -> consecutive-failure count driving the doubling TTL. */
+  private readonly dedupFailStreak = new BoundedMap<string, number>(FAILED_UNTIL_CAP);
 
   constructor(private readonly opts: SafeSearchWorkerOpts) {
     this.fetchImpl = opts.fetchImpl ?? fetch;
@@ -120,10 +127,10 @@ export class SafeSearchWorker {
    *  re-spend. All the usual guards apply, so a sweep is cheap when idle:
    *  one synchronous store point-read per entry. */
   sweep(): void {
-    for (const [launcherId] of this.opts.media.entries()) this.tryEnqueue(launcherId);
+    for (const [launcherId] of this.opts.media.entries()) this.tryEnqueue(launcherId, true);
   }
 
-  private tryEnqueue(launcherId: string): void {
+  private tryEnqueue(launcherId: string, fromSweep = false): void {
     if (this.queued.has(launcherId)) return;
     const media = this.opts.media.get(launcherId);
     if (!media) return;
@@ -151,6 +158,12 @@ export class SafeSearchWorker {
     // (or blocked) has nothing to gain from a paid check.
     if (stored && stored.disposition !== "ok") return;
     if (stored?.safesearchChecked) return;
+    // A row-less launcher on the sweep path means classifyBlock has populated
+    // MediaIndex but ContentFilter.apply hasn't run putCheap yet. Checking it
+    // now would create the row via putSafeSearch and permanently skip the
+    // cheap-signal tier (denylist, CHIP-7, MintGarden flags) for this NFT —
+    // wait for the spend path to classify it first; the next sweep picks it up.
+    if (fromSweep && !stored) return;
     const until = this.failedUntil.get(launcherId);
     if (until !== undefined && this.now() < until) return;
     // Bound total in-flight work. Dropped launchers are picked up on a later
@@ -186,7 +199,12 @@ export class SafeSearchWorker {
     // launcherId — no point re-running the same doomed archive-readiness poll.
     const dedupFailedUntil = this.dedupFailedUntil.get(dedupKey);
     if (dedupFailedUntil !== undefined && this.now() < dedupFailedUntil) {
-      this.failedUntil.set(launcherId, this.now() + this.failTtlMs);
+      // Track the dedup TTL exactly rather than independently extending with a
+      // flat failTtlMs: the dedup backoff now doubles per content, and a flat
+      // per-launcher TTL set here could outlive it, blocking tryEnqueue from
+      // ever re-entering run() to observe that the (shorter-lived) dedup TTL
+      // has since lapsed.
+      this.failedUntil.set(launcherId, dedupFailedUntil);
       return;
     }
     try {
@@ -224,6 +242,8 @@ export class SafeSearchWorker {
       // handler; the "real" rejection is still caught below via `await work`.
       work.finally(() => this.dedupInflight.delete(dedupKey)).catch(() => {});
       const outcome = await work;
+      this.dedupFailStreak.delete(dedupKey);
+      this.dedupFailedUntil.delete(dedupKey);
       this.persistVerdict(launcherId, outcome.checkedUri, outcome.result, "vision");
     } catch (err) {
       log.warn(
@@ -231,7 +251,13 @@ export class SafeSearchWorker {
         "safesearch: vision api failed"
       );
       this.failedUntil.set(launcherId, this.now() + this.failTtlMs);
-      this.dedupFailedUntil.set(dedupKey, this.now() + this.failTtlMs);
+      const streak = (this.dedupFailStreak.get(dedupKey) ?? 0) + 1;
+      this.dedupFailStreak.set(dedupKey, streak);
+      // Doubling backoff: the sweep retries content every tick once the TTL
+      // lapses, so a flat TTL would re-spend probe + Vision-attempt on
+      // permanently dead content forever.
+      const ttl = Math.min(this.failTtlMs * 2 ** (streak - 1), MAX_DEDUP_FAIL_TTL_MS);
+      this.dedupFailedUntil.set(dedupKey, this.now() + ttl);
     }
   }
 
@@ -277,20 +303,23 @@ export class SafeSearchWorker {
    *  Google's fetcher will see. Other hosts are checked blind: our reachability
    *  says nothing about Google's (e.g. gateways that block Google's IP ranges). */
   private needsReadyProbe(imageUri: string): boolean {
-    return imageUri.startsWith(this.archiveBaseUrl) || imageUri.startsWith(this.thumbnailBaseUrl);
+    return (
+      imageUri.startsWith(this.archiveBaseUrl + "/") ||
+      imageUri.startsWith(this.thumbnailBaseUrl + "/")
+    );
   }
 
   /** Persist a SafeSearch verdict, clear failure suppression, and flag if sensitive. */
   private persistVerdict(
     launcherId: string,
-    imageUri: string,
+    checkedUri: string,
     result: SafeSearchResult,
     source: "vision" | "reused"
   ): void {
-    this.opts.store.putSafeSearch(launcherId, result, imageUri);
+    this.opts.store.putSafeSearch(launcherId, result, checkedUri);
     this.failedUntil.delete(launcherId);
     log.info(
-      { launcherId, imageUri, source, verdict: result.sensitive ? "sensitive" : "ok" },
+      { launcherId, imageUri: checkedUri, source, verdict: result.sensitive ? "sensitive" : "ok" },
       "safesearch: verdict"
     );
     if (result.sensitive) {

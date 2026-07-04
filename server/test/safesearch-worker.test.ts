@@ -537,6 +537,31 @@ test("a content hash's archive failure suppresses later launchers instead of eac
   store.close();
 });
 
+test("a lookalike domain sharing the archive prefix is not probed", async () => {
+  const media = new MediaIndex(10);
+  media.set("L1", { url: "https://archive.mintgarden.io.evil.example/content/x", kind: "image" });
+  const store = new ContentStore(":memory:");
+  store.putCheap("L1", "nft1", { disposition: "ok" });
+  let headCalls = 0;
+  let visionCalls = 0;
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    apiKey: "k",
+    onFlag: () => {},
+    fetchImpl: (async (url: string, init?: RequestInit) => {
+      if (init?.method === "HEAD") headCalls++;
+      if (String(url).includes("images:annotate")) visionCalls++;
+      return visionOk();
+    }) as typeof fetch,
+  });
+  worker.maybeEnqueue(nftEvent());
+  await flushMicrotasks();
+  expect(headCalls).toBe(0); // not one of our CDNs → no readiness probe
+  expect(visionCalls).toBe(1);
+  store.close();
+});
+
 // ── content-readiness probe: HEAD of the URL Vision will fetch ───────────────
 // The archive answers an immutable 301 (to files.mintgarden.io) for ingested
 // content and 404 otherwise, so a redirect counts as ready. Probing the content
@@ -891,6 +916,68 @@ test("sweep() respects the failure backoff until the TTL lapses", async () => {
   store.close();
 });
 
+test("sweep() skips a launcher whose cheap classification hasn't been stored yet", async () => {
+  const media = new MediaIndex(10);
+  media.set("L1", { url: "https://e/x.png", kind: "image" }); // no putCheap row yet
+  const store = new ContentStore(":memory:");
+  let visionCalls = 0;
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    apiKey: "k",
+    onFlag: () => {},
+    fetchImpl: (async () => {
+      visionCalls++;
+      return visionOk();
+    }) as typeof fetch,
+  });
+  worker.sweep();
+  await flushMicrotasks();
+  expect(visionCalls).toBe(0); // cheap tier must classify first
+  expect(store.get("L1")).toBeUndefined(); // no row created behind apply()'s back
+  worker.maybeEnqueue(nftEvent());
+  await flushMicrotasks();
+  expect(visionCalls).toBe(1); // spend path keeps its fail-open behavior
+  store.close();
+});
+
+test("repeated failures for the same content double the backoff instead of retrying every sweep", async () => {
+  const media = new MediaIndex(10);
+  media.set("L1", { url: "https://e/x.png", kind: "image" });
+  const store = new ContentStore(":memory:");
+  store.putCheap("L1", "nft1", { disposition: "ok" });
+  let fakeNow = 0;
+  let fetchCalls = 0;
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    apiKey: "k",
+    onFlag: () => {},
+    now: () => fakeNow,
+    failTtlMs: 1000,
+    fetchImpl: (async () => {
+      fetchCalls++;
+      throw new Error("vision down");
+    }) as typeof fetch,
+  });
+  worker.sweep(); // streak 1 → suppressed until 1000
+  await flushMicrotasks();
+  expect(fetchCalls).toBe(1);
+  fakeNow = 1001;
+  worker.sweep(); // streak 2 → suppressed until 1001 + 2000 = 3001
+  await flushMicrotasks();
+  expect(fetchCalls).toBe(2);
+  fakeNow = 2500; // inside the doubled window — flat TTL would already retry here
+  worker.sweep();
+  await flushMicrotasks();
+  expect(fetchCalls).toBe(2);
+  fakeNow = 3002; // doubled window lapsed
+  worker.sweep();
+  await flushMicrotasks();
+  expect(fetchCalls).toBe(3);
+  store.close();
+});
+
 test("a hash-keyed launcher reuses a verdict recorded earlier under the original URI", async () => {
   const HASH = "6f".repeat(32);
   const ORIGINAL = "https://gw.example/ipfs/xyz";
@@ -922,5 +1009,6 @@ test("a hash-keyed launcher reuses a verdict recorded earlier under the original
   await flushMicrotasks();
   expect(fetchCalls).toBe(0); // no probe, no Vision: the URI row satisfied the check
   expect(store.get("Lnew")?.safesearchChecked).toBe(true);
+  expect(store.getSafeSearchByUri(`${ARCHIVE}/content/${HASH}`)?.adult).toBe("UNLIKELY"); // reused verdict's fields landed on Lnew's row
   store.close();
 });
