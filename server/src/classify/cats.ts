@@ -1,3 +1,5 @@
+import { log } from "../logger.js";
+
 interface CatInfo {
   name: string;
   ticker: string;
@@ -19,9 +21,9 @@ export class CatRegistry {
   private timer: ReturnType<typeof setInterval> | null = null;
 
   async start(): Promise<void> {
-    await this.refresh().catch((e) => console.warn("cat registry initial load failed:", e));
+    await this.refresh().catch((err) => log.warn({ err }, "cat registry initial load failed"));
     this.timer = setInterval(() => {
-      this.refresh().catch((e) => console.warn("cat registry refresh failed:", e));
+      this.refresh().catch((err) => log.warn({ err }, "cat registry refresh failed"));
     }, REFRESH_MS);
   }
 
@@ -56,6 +58,6 @@ export class CatRegistry {
     }
 
     this.map = next;
-    console.log(`cat registry: ${next.size} CATs loaded`);
+    log.info({ count: next.size }, "cat registry loaded");
   }
 }

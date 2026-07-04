@@ -4,6 +4,7 @@ import type { Verdict } from "./types.js";
 import { mapMintgardenSignals, extractContentHash } from "./signals/mintgarden.js";
 import type { ContentStore } from "./store.js";
 import { SafeSearchWorker } from "./safesearch-worker.js";
+import { log } from "../logger.js";
 
 export type { Disposition } from "./types.js";
 export { mapMintgarden, mapMintgardenSignals, extractContentHash } from "./signals/mintgarden.js";
@@ -145,7 +146,7 @@ export class ContentFilter {
           try {
             return this.store?.get(launcherId);
           } catch (err) {
-            console.warn("content-filter store.get failed (cache miss):", err);
+            log.warn({ err }, "content-filter store.get failed (cache miss)");
             return undefined;
           }
         })()
@@ -165,7 +166,7 @@ export class ContentFilter {
       try {
         this.store?.putCheap(launcherId, event.nftId, verdict, contentHash);
       } catch (err) {
-        console.warn("content-filter store.putCheap failed (verdict not persisted):", err);
+        log.warn({ err }, "content-filter store.putCheap failed (verdict not persisted)");
       }
     }
 
