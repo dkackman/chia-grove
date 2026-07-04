@@ -34,18 +34,25 @@ export interface SafeSearchWorkerOpts {
  * whose cheap verdict was `ok` and that hasn't yet been SafeSearch-checked gets a
  * single Vision lookup — images are classified by their art URL, videos by their
  * static poster (best-effort; Vision can't decode video frames, and a video with
- * no resolved thumbnail is skipped). Not limited to mints — re-spends of
- * previously-unseen NFTs are covered too. A `sensitive` result is persisted and
- * pushed to clients as a `content-flag`. Failures leave the NFT permissive and
- * are suppressed for `failTtlMs` so an outage doesn't re-spend the paid quota
- * every block.
+ * no resolved thumbnail is skipped). `sweep()` re-attempts every still-eligible
+ * launcher in MediaIndex on a timer, so a mint whose content lagged Archive
+ * ingestion gets a verdict without waiting for a re-spend.
+ *
+ * URLs on MintGarden's ingestion-lagged CDNs (archive content, assets-CDN
+ * posters) are readiness-probed first: a HEAD of the exact URL Vision will
+ * fetch (2xx/3xx = ready). If the probe exhausts its attempts, image NFTs fall
+ * back to one Vision attempt against the on-chain original URL — unless its
+ * host is unreachable from Google's fetchers — and `checked_uri` records what
+ * was actually classified. Everything is fail-open: an NFT we cannot check
+ * renders permissive, failures back off in memory (`failedUntil` per launcher,
+ * `dedupFailedUntil` per content) and are never persisted.
  *
  * Two limits, deliberately separate: the concurrency gate bounds only the paid,
- * rate-limited Vision call, while the cheap Archive-readiness polling runs
- * unbounded by the gate (it would otherwise occupy a Vision slot while merely
- * sleeping, collapsing throughput to concurrency / archiveWait). `maxPending`
- * caps total in-flight launchers — and therefore concurrent Archive polls — so a
- * large mint drop can't grow the queue (or open sockets) without bound.
+ * rate-limited Vision call, while the cheap readiness probing runs unbounded by
+ * the gate (it would otherwise occupy a Vision slot while merely sleeping,
+ * collapsing throughput to concurrency / probeWait). `maxPending` caps total
+ * in-flight launchers — and therefore concurrent probes — so a large mint drop
+ * can't grow the queue (or open sockets) without bound.
  */
 const FAILED_UNTIL_CAP = 10000;
 const DEFAULT_MAX_PENDING = 256;

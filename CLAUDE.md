@@ -39,7 +39,7 @@ classifyBlock  (server/src/classify/classify.ts)
     ↓ GroveEvent[]
 ContentFilter  (server/src/content-filter/)
     ↓ cheap signals stamp NFT SproutEvents with mediaFilter + signals[] inline
-    ↓ async SafeSearch (image NFT spends, cheap verdict ok, not yet checked) → ContentFlagEvent
+    ↓ async SafeSearch (image/video-poster spends + periodic sweep; cheap verdict ok, not yet checked) → ContentFlagEvent
 Hub + RingBuffer  (server/src/web/)
     ↓ WebSocket (JSON)
 GroveFeed  (web/src/net/feed.ts)
