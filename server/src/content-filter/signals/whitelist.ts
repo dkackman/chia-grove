@@ -20,6 +20,7 @@ export interface WhitelistEntry {
 export const WHITELIST: WhitelistEntry[] = [
   { collectionId: "col1s8fwfqdl3x77h7rn40m0mzhkgp7kajdwu56me36glv0ez8w79heqst90mh" },
   { collectionId: "col1apvkk4tz48l9qfj5znygzrugfhzjmfu8lykalvzeqn6au38g7mcs4gwxx6" },
+  { collectionId: "col1ufu33cchmfgge9hm9ehupy3thux66ehaum9gglqewldzkus4s3mq9yc289" },
 ];
 
 /** Index entries into a Set of raw identifiers (creator DIDs and collection ids
