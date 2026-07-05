@@ -482,6 +482,89 @@ test("enrich queues SafeSearch for a clean image mint and emits a flag", async (
   store.close();
 });
 
+test("enrich skips SafeSearch entirely for a whitelisted collection", async () => {
+  const media = new MediaIndex(10);
+  media.set("Wl", { url: "https://e/w.png", kind: "image" });
+  const store = new ContentStore(":memory:");
+  const flags: import("@grove/shared").ContentFlagEvent[] = [];
+  let visionCalls = 0;
+  const whitelist = buildWhitelistSet([{ creatorDid: "did:chia:good", collectionId: "col_good" }]);
+  const filter = new ContentFilter(media, {
+    store,
+    googleApiKey: "k",
+    onFlag: (e) => flags.push(e),
+    whitelist,
+    fetchImpl: (async (url: string) => {
+      if (String(url).includes("images:annotate")) {
+        visionCalls++;
+        return new Response(
+          JSON.stringify({ responses: [{ safeSearchAnnotation: { adult: "VERY_LIKELY" } }] }),
+          { status: 200 }
+        );
+      }
+      return okJson({ creator: { encoded_id: "did:chia:good" }, collection: { id: "col_good" } });
+    }) as typeof fetch,
+  });
+  const event: SproutEvent = {
+    type: "sprout",
+    kind: "nft",
+    height: 1,
+    coinId: "c",
+    amount: "1",
+    mint: true,
+    launcherId: "Wl",
+    nftId: "nft1w",
+    mediaKind: "image",
+  };
+  await filter.enrich([event]);
+  await tick();
+  expect(event.mediaFilter).toBeUndefined();
+  expect(visionCalls).toBe(0);
+  expect(flags).toEqual([]);
+  expect(store.get("Wl")?.safesearchChecked).toBe(true);
+  store.close();
+});
+
+test("enrich still runs SafeSearch when the NFT is not on the allow-list", async () => {
+  const media = new MediaIndex(10);
+  media.set("Nw", { url: "https://e/n.png", kind: "image" });
+  const store = new ContentStore(":memory:");
+  let visionCalls = 0;
+  const whitelist = buildWhitelistSet([{ creatorDid: "did:chia:good", collectionId: "col_good" }]);
+  const filter = new ContentFilter(media, {
+    store,
+    googleApiKey: "k",
+    onFlag: () => {},
+    whitelist,
+    fetchImpl: (async (url: string) => {
+      if (String(url).includes("images:annotate")) {
+        visionCalls++;
+        return new Response(
+          JSON.stringify({ responses: [{ safeSearchAnnotation: { adult: "UNLIKELY" } }] }),
+          { status: 200 }
+        );
+      }
+      // different creator/collection than the whitelist entry above
+      return okJson({ creator: { encoded_id: "did:chia:other" }, collection: { id: "col_other" } });
+    }) as typeof fetch,
+  });
+  const event: SproutEvent = {
+    type: "sprout",
+    kind: "nft",
+    height: 1,
+    coinId: "c",
+    amount: "1",
+    mint: true,
+    launcherId: "Nw",
+    nftId: "nft1n",
+    mediaKind: "image",
+  };
+  await filter.enrich([event]);
+  await tick();
+  expect(visionCalls).toBe(1);
+  store.close();
+});
+
 test("enrich does not throw and still stamps verdict when store.get throws", async () => {
   // construct a fake store whose get() and putCheap() both throw to simulate
   // an SQLite IO failure; the filter should degrade gracefully (cache miss path)
