@@ -7,6 +7,7 @@ import {
 import { ContentFilter } from "../src/content-filter/index.js";
 import { MediaIndex } from "../src/web/media-index.js";
 import { buildDenylistMap } from "../src/content-filter/signals/denylist.js";
+import { buildWhitelistSet } from "../src/content-filter/signals/whitelist.js";
 import { ContentStore } from "../src/content-filter/store.js";
 import type { GroveEvent, SproutEvent } from "@grove/shared";
 
@@ -303,6 +304,86 @@ test("mapMintgardenSignals clean json returns ok", () => {
   expect(v).toEqual({ disposition: "ok" });
 });
 
+test("mapMintgardenSignals: allow-list match on an otherwise-clean NFT sets whitelisted", () => {
+  const whitelist = buildWhitelistSet([{ creatorDid: "did:chia:good", collectionId: "col_good" }]);
+  const v = mapMintgardenSignals(
+    { creator: { encoded_id: "did:chia:good" }, collection: { id: "col_good" } },
+    { whitelist }
+  );
+  expect(v).toEqual({ disposition: "ok", whitelisted: true });
+});
+
+test("mapMintgardenSignals: allow-list does not suppress a lexicon hit", () => {
+  const whitelist = buildWhitelistSet([{ creatorDid: "did:chia:good", collectionId: "col_good" }]);
+  const v = mapMintgardenSignals(
+    {
+      name: "explicit piece",
+      creator: { encoded_id: "did:chia:good" },
+      collection: { id: "col_good" },
+    },
+    { whitelist }
+  );
+  expect(v).toEqual({ disposition: "sensitive" });
+});
+
+test("mapMintgardenSignals: allow-list does not suppress a denylist entry", () => {
+  const whitelist = buildWhitelistSet([{ creatorDid: "did:chia:good", collectionId: "col_good" }]);
+  const denylist = buildDenylistMap([{ collectionId: "col_good", disposition: "blocked" }]);
+  const v = mapMintgardenSignals(
+    { creator: { encoded_id: "did:chia:good" }, collection: { id: "col_good" } },
+    { whitelist, denylist }
+  );
+  expect(v).toEqual({ disposition: "blocked" });
+});
+
+test("mapMintgardenSignals: allow-list does not suppress a sensitive_content flag", () => {
+  const whitelist = buildWhitelistSet([{ creatorDid: "did:chia:good", collectionId: "col_good" }]);
+  const v = mapMintgardenSignals(
+    {
+      creator: { encoded_id: "did:chia:good" },
+      collection: { id: "col_good", sensitive_content: true },
+    },
+    { whitelist }
+  );
+  expect(v).toEqual({ disposition: "sensitive" });
+});
+
+test("mapMintgardenSignals: allow-list does not suppress MintGarden authoritative blocked", () => {
+  const whitelist = buildWhitelistSet([{ creatorDid: "did:chia:good", collectionId: "col_good" }]);
+  const v = mapMintgardenSignals(
+    { is_blocked: true, creator: { encoded_id: "did:chia:good" }, collection: { id: "col_good" } },
+    { whitelist }
+  );
+  expect(v).toEqual({ disposition: "blocked" });
+});
+
+test("mapMintgardenSignals: collection id alone is enough to whitelist (OR semantics)", () => {
+  const whitelist = buildWhitelistSet([{ collectionId: "col_good" }]);
+  const v = mapMintgardenSignals(
+    { creator: { encoded_id: "did:chia:other" }, collection: { id: "col_good" } },
+    { whitelist }
+  );
+  expect(v).toEqual({ disposition: "ok", whitelisted: true });
+});
+
+test("mapMintgardenSignals: creator DID alone is enough to whitelist (OR semantics)", () => {
+  const whitelist = buildWhitelistSet([{ creatorDid: "did:chia:good" }]);
+  const v = mapMintgardenSignals(
+    { creator: { encoded_id: "did:chia:good" }, collection: { id: "col_unknown" } },
+    { whitelist }
+  );
+  expect(v).toEqual({ disposition: "ok", whitelisted: true });
+});
+
+test("mapMintgardenSignals: neither identifier on the list leaves the verdict plain ok", () => {
+  const whitelist = buildWhitelistSet([{ collectionId: "col_good" }]);
+  const v = mapMintgardenSignals(
+    { creator: { encoded_id: "did:chia:other" }, collection: { id: "col_other" } },
+    { whitelist }
+  );
+  expect(v).toEqual({ disposition: "ok" });
+});
+
 // ── ContentStore content_hash persistence ───────────────────────────────────
 
 test("putCheap persists contentHash and get() returns it", () => {
@@ -416,6 +497,89 @@ test("enrich queues SafeSearch for a clean image mint and emits a flag", async (
   await new Promise((r) => setTimeout(r, 0));
   expect(event.mediaFilter).toBeUndefined(); // streamed permissive
   expect(flags).toEqual([{ type: "content-flag", launcherId: "Lg", mediaFilter: "sensitive" }]);
+  store.close();
+});
+
+test("enrich skips SafeSearch entirely for a whitelisted collection", async () => {
+  const media = new MediaIndex(10);
+  media.set("Wl", { url: "https://e/w.png", kind: "image" });
+  const store = new ContentStore(":memory:");
+  const flags: import("@grove/shared").ContentFlagEvent[] = [];
+  let visionCalls = 0;
+  const whitelist = buildWhitelistSet([{ creatorDid: "did:chia:good", collectionId: "col_good" }]);
+  const filter = new ContentFilter(media, {
+    store,
+    googleApiKey: "k",
+    onFlag: (e) => flags.push(e),
+    whitelist,
+    fetchImpl: (async (url: string) => {
+      if (String(url).includes("images:annotate")) {
+        visionCalls++;
+        return new Response(
+          JSON.stringify({ responses: [{ safeSearchAnnotation: { adult: "VERY_LIKELY" } }] }),
+          { status: 200 }
+        );
+      }
+      return okJson({ creator: { encoded_id: "did:chia:good" }, collection: { id: "col_good" } });
+    }) as typeof fetch,
+  });
+  const event: SproutEvent = {
+    type: "sprout",
+    kind: "nft",
+    height: 1,
+    coinId: "c",
+    amount: "1",
+    mint: true,
+    launcherId: "Wl",
+    nftId: "nft1w",
+    mediaKind: "image",
+  };
+  await filter.enrich([event]);
+  await tick();
+  expect(event.mediaFilter).toBeUndefined();
+  expect(visionCalls).toBe(0);
+  expect(flags).toEqual([]);
+  expect(store.get("Wl")?.safesearchChecked).toBe(true);
+  store.close();
+});
+
+test("enrich still runs SafeSearch when the NFT is not on the allow-list", async () => {
+  const media = new MediaIndex(10);
+  media.set("Nw", { url: "https://e/n.png", kind: "image" });
+  const store = new ContentStore(":memory:");
+  let visionCalls = 0;
+  const whitelist = buildWhitelistSet([{ creatorDid: "did:chia:good", collectionId: "col_good" }]);
+  const filter = new ContentFilter(media, {
+    store,
+    googleApiKey: "k",
+    onFlag: () => {},
+    whitelist,
+    fetchImpl: (async (url: string) => {
+      if (String(url).includes("images:annotate")) {
+        visionCalls++;
+        return new Response(
+          JSON.stringify({ responses: [{ safeSearchAnnotation: { adult: "UNLIKELY" } }] }),
+          { status: 200 }
+        );
+      }
+      // different creator/collection than the whitelist entry above
+      return okJson({ creator: { encoded_id: "did:chia:other" }, collection: { id: "col_other" } });
+    }) as typeof fetch,
+  });
+  const event: SproutEvent = {
+    type: "sprout",
+    kind: "nft",
+    height: 1,
+    coinId: "c",
+    amount: "1",
+    mint: true,
+    launcherId: "Nw",
+    nftId: "nft1n",
+    mediaKind: "image",
+  };
+  await filter.enrich([event]);
+  await tick();
+  expect(visionCalls).toBe(1);
   store.close();
 });
 

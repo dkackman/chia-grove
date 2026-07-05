@@ -41,6 +41,10 @@ export interface ContentFilterOptions {
   archiveCheckAttempts?: number;
   /** Milliseconds to wait between Archive poll attempts. */
   archiveCheckDelayMs?: number;
+  /** Override the collection allow-list used by the cheap-signal check (test
+   *  injection); passed through to mapMintgardenSignals, which defaults to
+   *  WHITELIST_SET when this is undefined. */
+  whitelist?: Set<string>;
   /** Persistent verdict store keyed by launcherId; a hit skips the MintGarden network fetch. */
   store?: ContentStore;
   /** Google Vision API key; enables out-of-band SafeSearch when combined with store + onFlag. */
@@ -85,6 +89,7 @@ export class ContentFilter {
   private readonly failTtlMs: number;
   private readonly now: () => number;
   private readonly archiveBaseUrl: string;
+  private readonly whitelist?: Set<string>;
   private readonly store?: ContentStore;
   private readonly worker?: SafeSearchWorker;
   private sweepTimer?: ReturnType<typeof setInterval>;
@@ -106,6 +111,7 @@ export class ContentFilter {
     this.failTtlMs = opts.failTtlMs ?? 60000;
     this.now = opts.now ?? Date.now;
     this.archiveBaseUrl = opts.archiveBaseUrl ?? "https://archive.mintgarden.io";
+    this.whitelist = opts.whitelist;
     this.store = opts.store;
     if (opts.store && opts.googleApiKey && opts.onFlag) {
       this.worker = new SafeSearchWorker({
@@ -185,7 +191,7 @@ export class ContentFilter {
 
     if (!stored && launcherId) {
       try {
-        this.store?.putCheap(launcherId, event.nftId, verdict, contentHash);
+        this.store?.putCheap(launcherId, event.nftId, verdict, contentHash, verdict.whitelisted);
       } catch (err) {
         log.warn({ err }, "content-filter store.putCheap failed (verdict not persisted)");
       }
@@ -219,7 +225,18 @@ export class ContentFilter {
       }
     }
 
-    if (verdict.disposition === "ok") this.worker?.maybeEnqueue(event);
+    if (verdict.disposition === "ok") {
+      if (verdict.whitelisted) {
+        log.info(
+          { launcherId, nftId: event.nftId },
+          "content-filter: allow-list hit, skipping SafeSearch"
+        );
+      }
+      // maybeEnqueue self-skips a whitelisted NFT via the store's skip-stamp;
+      // still call it so the store stamp stays the single source of truth
+      // (and Vision runs anyway on the fail-open path where putCheap failed).
+      this.worker?.maybeEnqueue(event);
+    }
 
     if (verdict.disposition === "blocked") {
       event.mediaFilter = "blocked";
@@ -273,7 +290,10 @@ export class ContentFilter {
       if (res.status === 404) return { verdict: { disposition: "ok" } }; // genuinely unknown to MintGarden → cacheable permissive
       if (!res.ok) throw new Error(`mintgarden ${res.status}`); // 5xx/429/etc → transient, don't poison the cache
       const json = await res.json();
-      return { verdict: mapMintgardenSignals(json), contentHash: extractContentHash(json) };
+      return {
+        verdict: mapMintgardenSignals(json, { whitelist: this.whitelist }),
+        contentHash: extractContentHash(json),
+      };
     } finally {
       clearTimeout(timer);
     }

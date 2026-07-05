@@ -16,6 +16,34 @@ test("putCheap then get round-trips disposition, safesearch not yet checked", ()
   store.close();
 });
 
+test("putCheap with skipSafesearch stamps safesearchChecked immediately", () => {
+  const store = new ContentStore(":memory:");
+  store.putCheap("lid4", "nft1d", { disposition: "ok", whitelisted: true }, undefined, true);
+  const v = store.get("lid4");
+  expect(v?.disposition).toBe("ok");
+  expect(v?.safesearchChecked).toBe(true);
+  store.close();
+});
+
+test("putCheap without skipSafesearch does not clobber an already-stamped safesearchChecked", () => {
+  const store = new ContentStore(":memory:");
+  store.putCheap("lid5", "nft1e", { disposition: "ok" }, undefined, true);
+  // a later re-spend re-runs putCheap without the flag (e.g. cache-miss path) —
+  // must not un-stamp a row that was already marked checked
+  store.putCheap("lid5", "nft1e", { disposition: "ok" });
+  const v = store.get("lid5");
+  expect(v?.safesearchChecked).toBe(true);
+  store.close();
+});
+
+test("putCheap without skipSafesearch on a fresh row leaves safesearchChecked false", () => {
+  const store = new ContentStore(":memory:");
+  store.putCheap("lid6", "nft1f", { disposition: "ok" });
+  const v = store.get("lid6");
+  expect(v?.safesearchChecked).toBe(false);
+  store.close();
+});
+
 test("putSafeSearch sensitive upgrades an ok row and records the check", () => {
   const store = new ContentStore(":memory:");
   store.putCheap("l", "nft1", { disposition: "ok" });
@@ -60,6 +88,20 @@ test("getSafeSearchByContentHash ignores rows that are only cheap-checked", () =
   store.close();
 });
 
+test("getSafeSearchByContentHash ignores allow-list skip-stamped rows (no real Vision check ran)", () => {
+  // Regression test: putCheap(..., skipSafesearch: true) stamps safesearch_checked_at
+  // for whitelisted NFTs without ever calling Vision, so safesearch_adult stays NULL.
+  // A different, non-whitelisted NFT that happens to share this content_hash (e.g. a
+  // duplicate/plagiarized mint) must NOT reuse this row as if it were a real verdict —
+  // otherwise it would skip its own Vision check and could persist a fake "UNKNOWN".
+  const store = new ContentStore(":memory:");
+  const HASH = "10".repeat(32);
+  store.putCheap("Lwl", "nftwl", { disposition: "ok", whitelisted: true }, HASH, true);
+  expect(store.get("Lwl")?.safesearchChecked).toBe(true); // sanity: skip-stamp took effect
+  expect(store.getSafeSearchByContentHash(HASH)).toBeUndefined();
+  store.close();
+});
+
 test("getSafeSearchByUri returns a prior checked verdict for the same image URI", () => {
   const store = new ContentStore(":memory:");
   const URI = "https://gw.example/ipfs/abc";
@@ -75,6 +117,28 @@ test("getSafeSearchByUri ignores rows that are only cheap-checked and unrelated 
   store.putCheap("L1", "nft1", { disposition: "ok" }); // no SafeSearch yet
   expect(store.getSafeSearchByUri(URI)).toBeUndefined();
   expect(store.getSafeSearchByUri("https://gw.example/ipfs/other")).toBeUndefined();
+  store.close();
+});
+
+test("getSafeSearchByUri ignores a skip-stamped row with checked_uri set but no real Vision check", () => {
+  // putCheap never sets checked_uri today, so this exact path isn't reachable via the
+  // same bug as the content_hash case above — but the query shares the identical
+  // shape, so defend it the same way against future changes that might set checked_uri
+  // at skip-stamp time. Simulate that hypothetical row directly via a raw insert.
+  const path = join(mkdtempSync(join(tmpdir(), "cstore-")), "c.sqlite");
+  const URI = "https://gw.example/ipfs/skip-stamped";
+  new ContentStore(path).close(); // create schema via the real migration path
+  const raw = new DatabaseSync(path);
+  raw
+    .prepare(
+      `INSERT INTO nft (launcher_id, nft_id, disposition, checked_at, safesearch_checked_at, checked_uri)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    )
+    .run("Lwu", "nftwu", "ok", Date.now(), Date.now(), URI);
+  raw.close();
+
+  const store = new ContentStore(path);
+  expect(store.getSafeSearchByUri(URI)).toBeUndefined();
   store.close();
 });
 

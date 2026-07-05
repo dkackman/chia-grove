@@ -71,19 +71,32 @@ export class ContentStore {
     launcherId: string,
     nftId: string | undefined,
     verdict: Verdict,
-    contentHash?: string
+    contentHash?: string,
+    skipSafesearch?: boolean
   ): void {
+    const now = Date.now();
     this.db
       .prepare(
-        `INSERT INTO nft (launcher_id, nft_id, disposition, content_hash, checked_at)
-         VALUES (?, ?, ?, ?, ?)
+        `INSERT INTO nft (launcher_id, nft_id, disposition, content_hash, checked_at, safesearch_checked_at)
+         VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT(launcher_id) DO UPDATE SET
            nft_id = excluded.nft_id,
            disposition = excluded.disposition,
            content_hash = COALESCE(excluded.content_hash, nft.content_hash),
-           checked_at = excluded.checked_at`
+           checked_at = excluded.checked_at,
+           -- nft.safesearch_checked_at first: once a row is stamped (real check or
+           -- allow-list skip-stamp), a later un-flagged putCheap (e.g. a re-spend
+           -- cache-miss with skipSafesearch left undefined) must never un-check it.
+           safesearch_checked_at = COALESCE(nft.safesearch_checked_at, excluded.safesearch_checked_at)`
       )
-      .run(launcherId, nftId ?? null, verdict.disposition, contentHash ?? null, Date.now());
+      .run(
+        launcherId,
+        nftId ?? null,
+        verdict.disposition,
+        contentHash ?? null,
+        now,
+        skipSafesearch ? now : null
+      );
   }
 
   putSafeSearch(
@@ -130,7 +143,7 @@ export class ContentStore {
     const row = this.db
       .prepare(
         `SELECT safesearch_adult, safesearch_raw_json FROM nft
-         WHERE content_hash = ? AND safesearch_checked_at IS NOT NULL
+         WHERE content_hash = ? AND safesearch_checked_at IS NOT NULL AND safesearch_adult IS NOT NULL
          ORDER BY safesearch_checked_at DESC LIMIT 1`
       )
       .get(contentHash) as
@@ -154,7 +167,7 @@ export class ContentStore {
     const row = this.db
       .prepare(
         `SELECT safesearch_adult, safesearch_raw_json FROM nft
-         WHERE checked_uri = ? AND safesearch_checked_at IS NOT NULL
+         WHERE checked_uri = ? AND safesearch_checked_at IS NOT NULL AND safesearch_adult IS NOT NULL
          ORDER BY safesearch_checked_at DESC LIMIT 1`
       )
       .get(uri) as
