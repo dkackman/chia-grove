@@ -225,7 +225,18 @@ export class ContentFilter {
       }
     }
 
-    if (verdict.disposition === "ok") this.worker?.maybeEnqueue(event);
+    if (verdict.disposition === "ok") {
+      if (verdict.whitelisted) {
+        log.info(
+          { launcherId, nftId: event.nftId },
+          "content-filter: allow-list hit, skipping SafeSearch"
+        );
+      }
+      // maybeEnqueue self-skips a whitelisted NFT via the store's skip-stamp;
+      // still call it so the store stamp stays the single source of truth
+      // (and Vision runs anyway on the fail-open path where putCheap failed).
+      this.worker?.maybeEnqueue(event);
+    }
 
     if (verdict.disposition === "blocked") {
       event.mediaFilter = "blocked";

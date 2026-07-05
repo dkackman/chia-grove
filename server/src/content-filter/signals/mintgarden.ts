@@ -34,8 +34,9 @@ export interface MapMintgardenOpts {
  * Collapse a MintGarden GET /nfts/:id response into a Verdict, reporting which
  * of the cheap signals fired. Blocked (hard takedown) wins over sensitive (NSFW).
  * Anything unrecognized or malformed contributes nothing (permissive). A curated
- * collection allow-list is consulted last and can stamp `whitelisted: true` on an
- * otherwise-ok verdict, but it never overrides a blocked/sensitive result.
+ * allow-list (creator DID or collection id) is consulted last and can stamp
+ * `whitelisted: true` on an otherwise-ok verdict, but it never overrides a
+ * blocked/sensitive result.
  */
 export function mapMintgardenSignals(json: unknown, opts: MapMintgardenOpts = {}): Verdict {
   const lexicon = opts.lexicon ?? LEXICON;

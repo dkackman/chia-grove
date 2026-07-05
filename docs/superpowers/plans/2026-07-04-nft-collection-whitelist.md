@@ -20,10 +20,12 @@
 ### Task 1: Whitelist data module
 
 **Files:**
+
 - Create: `server/src/content-filter/signals/whitelist.ts`
 - Test: `server/test/whitelist.test.ts`
 
 **Interfaces:**
+
 - Produces: `WhitelistEntry { creatorDid: string; collectionId: string; note?: string }`, `WHITELIST: WhitelistEntry[]` (ships empty), `buildWhitelistSet(entries: WhitelistEntry[]): Set<string>`, `WHITELIST_SET: Set<string>`, `isWhitelisted(set: Set<string>, creatorDid: string | undefined, collectionId: string | undefined): boolean`.
 
 - [ ] **Step 1: Write the failing test**
@@ -141,11 +143,13 @@ git commit -m "Add curated NFT collection whitelist data module"
 ### Task 2: Wire the allow-list into `mapMintgardenSignals` precedence
 
 **Files:**
+
 - Modify: `server/src/content-filter/types.ts`
 - Modify: `server/src/content-filter/signals/mintgarden.ts`
 - Test: `server/test/content-filter.test.ts`
 
 **Interfaces:**
+
 - Consumes: `buildWhitelistSet`, `isWhitelisted`, `WHITELIST_SET` from Task 1 (`../src/content-filter/signals/whitelist.js`).
 - Produces: `Verdict { disposition: Disposition; whitelisted?: boolean }`; `MapMintgardenOpts` gains `whitelist?: Set<string>`; `mapMintgardenSignals` consults the allow-list last, only when the combined disposition from every other signal is already `"ok"`.
 
@@ -354,10 +358,12 @@ git commit -m "Consult NFT collection allow-list last in cheap-signal precedence
 ### Task 3: `ContentStore.putCheap` gains a SafeSearch-skip flag
 
 **Files:**
+
 - Modify: `server/src/content-filter/store.ts`
 - Test: `server/test/content-store.test.ts`
 
 **Interfaces:**
+
 - Consumes: `Verdict` (now with optional `whitelisted`) from Task 2.
 - Produces: `ContentStore.putCheap(launcherId, nftId, verdict, contentHash?, skipSafesearch?: boolean): void` — when `skipSafesearch` is true, the row's `safesearch_checked_at` is stamped at insert time (as if already Vision-checked), without ever calling Vision.
 
@@ -457,11 +463,13 @@ git commit -m "Add skipSafesearch flag to ContentStore.putCheap"
 ### Task 4: Thread the allow-list through `ContentFilter`, skip Vision end-to-end
 
 **Files:**
+
 - Modify: `server/src/content-filter/index.ts`
 - Modify: `server/CLAUDE.md`
 - Test: `server/test/content-filter.test.ts`
 
 **Interfaces:**
+
 - Consumes: `mapMintgardenSignals(json, { whitelist })` from Task 2; `store.putCheap(launcherId, nftId, verdict, contentHash, skipSafesearch)` from Task 3.
 - Produces: `ContentFilterOptions.whitelist?: Set<string>` (test/config injection, defaults to `WHITELIST_SET` inside `mapMintgardenSignals`); whitelisted NFTs are persisted with `safesearch_checked_at` already stamped, so `SafeSearchWorker` never enqueues them.
 
@@ -587,8 +595,8 @@ Add a private field (after `private readonly archiveBaseUrl: string;`):
 Set it in the constructor (after the `this.archiveBaseUrl = ...` line):
 
 ```ts
-    this.archiveBaseUrl = opts.archiveBaseUrl ?? "https://archive.mintgarden.io";
-    this.whitelist = opts.whitelist;
+this.archiveBaseUrl = opts.archiveBaseUrl ?? "https://archive.mintgarden.io";
+this.whitelist = opts.whitelist;
 ```
 
 Change `fetchVerdict` to pass the whitelist through:
@@ -617,13 +625,13 @@ Change `fetchVerdict` to pass the whitelist through:
 Change the `putCheap` call inside `apply()` to thread the flag through:
 
 ```ts
-    if (!stored && launcherId) {
-      try {
-        this.store?.putCheap(launcherId, event.nftId, verdict, contentHash, verdict.whitelisted);
-      } catch (err) {
-        log.warn({ err }, "content-filter store.putCheap failed (verdict not persisted)");
-      }
-    }
+if (!stored && launcherId) {
+  try {
+    this.store?.putCheap(launcherId, event.nftId, verdict, contentHash, verdict.whitelisted);
+  } catch (err) {
+    log.warn({ err }, "content-filter store.putCheap failed (verdict not persisted)");
+  }
+}
 ```
 
 (This is the only change inside `apply()` — the `this.worker?.maybeEnqueue(event)` call a few lines below is unchanged; `SafeSearchWorker.tryEnqueue()` already re-reads the store and bails on `stored.safesearchChecked`, which the line above just made `true`.)

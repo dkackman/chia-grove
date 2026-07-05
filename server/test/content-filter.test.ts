@@ -357,10 +357,28 @@ test("mapMintgardenSignals: allow-list does not suppress MintGarden authoritativ
   expect(v).toEqual({ disposition: "blocked" });
 });
 
-test("mapMintgardenSignals: partial match (collection id only, different creator) is not whitelisted", () => {
-  const whitelist = buildWhitelistSet([{ creatorDid: "did:chia:good", collectionId: "col_good" }]);
+test("mapMintgardenSignals: collection id alone is enough to whitelist (OR semantics)", () => {
+  const whitelist = buildWhitelistSet([{ collectionId: "col_good" }]);
   const v = mapMintgardenSignals(
     { creator: { encoded_id: "did:chia:other" }, collection: { id: "col_good" } },
+    { whitelist }
+  );
+  expect(v).toEqual({ disposition: "ok", whitelisted: true });
+});
+
+test("mapMintgardenSignals: creator DID alone is enough to whitelist (OR semantics)", () => {
+  const whitelist = buildWhitelistSet([{ creatorDid: "did:chia:good" }]);
+  const v = mapMintgardenSignals(
+    { creator: { encoded_id: "did:chia:good" }, collection: { id: "col_unknown" } },
+    { whitelist }
+  );
+  expect(v).toEqual({ disposition: "ok", whitelisted: true });
+});
+
+test("mapMintgardenSignals: neither identifier on the list leaves the verdict plain ok", () => {
+  const whitelist = buildWhitelistSet([{ collectionId: "col_good" }]);
+  const v = mapMintgardenSignals(
+    { creator: { encoded_id: "did:chia:other" }, collection: { id: "col_other" } },
     { whitelist }
   );
   expect(v).toEqual({ disposition: "ok" });
