@@ -103,6 +103,16 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
     }
   }
 
+  // A flag can land while its piece is focused with the play button armed
+  // (paused, or already playing). Either way the button's bound <video> and
+  // onFirstPlay closure are now stale — hide() unbinds them so a click can't
+  // resurrect playback or corrupt the placeholder markSensitive just hung.
+  function hidePlayButtonIf(launcher: string): void {
+    if (focusedObject && pieces.metaFor(focusedObject)?.launcherId === launcher) {
+      playButton.hide();
+    }
+  }
+
   let dustThrottle = 0;
 
   feed.onEvent((event) => {
@@ -171,6 +181,7 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
       case "content-flag": {
         if (pieces.markSensitive(event.launcherId, sensitivePlaceholderTexture().clone())) {
           refreshPlacardIf(event.launcherId);
+          hidePlayButtonIf(event.launcherId);
         }
         break;
       }
