@@ -7,6 +7,11 @@ import { startDemo } from "./demo.js";
 export type FeedStatus = "connecting" | "live" | "stale" | "demo";
 
 const STALE_AFTER_MS = 2 * 60 * 1000;
+// A connection can open without ever completing the Hello handshake (a hung
+// reverse proxy, a server that accepted the socket but never wrote). Without
+// this, nothing ever arms resetStaleTimer() and onclose never fires either,
+// leaving the client stuck on "connecting" forever with no retry.
+const HANDSHAKE_TIMEOUT_MS = 10 * 1000;
 const RELOAD_KEY = "grove.proto-reloaded";
 // Events released per animation frame: ~120 keeps a 10k-event snapshot filling
 // in over ~1.5 s at 60 fps while smoothing big live blocks across a few frames.
@@ -48,7 +53,13 @@ export class GroveFeed {
     const proto = location.protocol === "https:" ? "wss" : "ws";
     const ws = new WebSocket(`${proto}://${location.host}/ws`);
 
+    let handshakeTimer: number | undefined;
+    ws.onopen = () => {
+      handshakeTimer = window.setTimeout(() => ws.close(), HANDSHAKE_TIMEOUT_MS);
+    };
+
     ws.onmessage = (message) => {
+      clearTimeout(handshakeTimer);
       let parsed: WireMessage;
       try {
         parsed = JSON.parse(message.data as string) as WireMessage;
@@ -63,7 +74,12 @@ export class GroveFeed {
     };
 
     ws.onclose = () => {
+      clearTimeout(handshakeTimer);
       clearTimeout(this.staleTimer);
+      // Drop anything left un-drained from this connection — the reconnect
+      // below enqueues a fresh, self-contained Snapshot, which would
+      // otherwise land behind these leftovers and get dispatched twice.
+      this.queue.clear();
       this.setStatus("stale");
       setTimeout(() => this.connect(), this.retryMs + Math.random() * 1000);
       this.retryMs = Math.min(this.retryMs * 2, 30_000);
