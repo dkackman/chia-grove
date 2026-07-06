@@ -20,6 +20,8 @@ export interface BlockInfo {
 export interface RpcView {
   getState(): Promise<ChainState>;
   getBlockInfo(height: number): Promise<BlockInfo>;
+  /** Like getBlockInfo, but resolves to null instead of throwing when the height isn't mined yet. */
+  tryGetBlockInfo(height: number): Promise<BlockInfo | null>;
   getSpends(headerHash: string): Promise<CoinSpend[]>;
 }
 

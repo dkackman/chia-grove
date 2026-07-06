@@ -4,7 +4,7 @@ Node/Fastify process that polls the Chia blockchain, classifies coin spends, fil
 
 ## Internals
 
-- **`CoinsetPoller`** (`src/ingest/`) polls `coinset.org` on `POLL_INTERVAL_MS` (default 3 s) via `coinsetView`, which wraps `chia-wallet-sdk`'s `RpcClient`.
+- **`CoinsetPoller`** (`src/ingest/`) polls `coinset.org` on `POLL_INTERVAL_MS` (default 10 s) via `coinsetView`, which wraps `chia-wallet-sdk`'s `RpcClient`. Each tick first tries a direct `getBlockRecordByHeight` lookup for the next height (`tryGetBlockInfo`, the poller's "fast forward" path) and only falls back to `getBlockchainState` when that height isn't mined yet — this elides most `getBlockchainState` calls, since blocks land roughly every 18.75s. Set `LOG_LEVEL=debug` to see per-call method/args/latency logging from `coinsetView`.
 
 - **`classifyBlock`** (`src/classify/classify.ts`) uses `chia-wallet-sdk`'s `Clvm` + `puzzle.parseNft/parseCat/parseDid` to classify every `CoinSpend` into a `SproutEvent`. Launcher-hash spends are skipped (they become the `mint` flag on child spends).
 
@@ -26,7 +26,7 @@ Node/Fastify process that polls the Chia blockchain, classifies coin spends, fil
 | Var                            | Default                        | Notes                                                                 |
 | ------------------------------ | ------------------------------ | --------------------------------------------------------------------- |
 | `PORT`                         | `8080`                         |                                                                       |
-| `POLL_INTERVAL_MS`             | `3000`                         |                                                                       |
+| `POLL_INTERVAL_MS`             | `10000`                        |                                                                       |
 | `BACKFILL_BLOCKS`              | `150`                          |                                                                       |
 | `GOOGLE_VISION_API_KEY`        | (unset)                        | Enables Vision SafeSearch; unset = cheap signals only                 |
 | `CONTENT_DB_PATH`              | `./data/content-filter.sqlite` | SQLite verdict store path                                             |

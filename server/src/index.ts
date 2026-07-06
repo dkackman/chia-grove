@@ -32,7 +32,9 @@ function envInt(name: string, fallback: number): number {
 }
 
 const PORT = envInt("PORT", 8080);
-const POLL_INTERVAL_MS = envInt("POLL_INTERVAL_MS", 3000);
+// Chia mainnet blocks land every ~18.75s on average; polling much faster than
+// that just burns getBlockchainState calls that come back with nothing new.
+const POLL_INTERVAL_MS = envInt("POLL_INTERVAL_MS", 10_000);
 // backfill ~150 blocks on boot so a fresh deploy (which clears the in-memory
 // buffer) already has some history — NFT mints are sparse (~1 per 18 blocks),
 // so a deep backfill is what keeps the gallery from starting empty
