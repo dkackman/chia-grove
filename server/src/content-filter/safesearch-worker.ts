@@ -323,7 +323,20 @@ export class SafeSearchWorker {
       "safesearch: verdict"
     );
     if (result.sensitive) {
-      this.opts.onFlag({ type: "content-flag", launcherId, mediaFilter: "sensitive" });
+      // The verdict is already durably persisted above — a failure to notify
+      // connected clients (e.g. a Hub publish error) is a delivery problem,
+      // not a classification failure. Letting it propagate to run()'s catch
+      // would mislabel it as a Vision failure and poison the dedup backoff
+      // for other launchers sharing this content, blocking them from reusing
+      // a verdict that's already correct and sitting in the store.
+      try {
+        this.opts.onFlag({ type: "content-flag", launcherId, mediaFilter: "sensitive" });
+      } catch (err) {
+        log.warn(
+          { launcherId, err: err instanceof Error ? err.message : String(err) },
+          "safesearch: onFlag failed (verdict persisted, client notification dropped)"
+        );
+      }
     }
   }
 

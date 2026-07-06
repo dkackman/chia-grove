@@ -23,7 +23,17 @@ export class LoadPool {
   private head = 0; // index of the next job to consider
   private active = 0;
 
-  constructor(private readonly concurrency: number) {}
+  /**
+   * @param timeoutMs Optional safety net: a job whose start() never calls
+   * done() (a stalled fetch, a video whose loadedmetadata/seeked/error never
+   * fires) would otherwise hold its slot forever, silently shrinking the
+   * pool's effective concurrency for the rest of the session. Left
+   * undefined, a stalled job holds its slot indefinitely (prior behavior).
+   */
+  constructor(
+    private readonly concurrency: number,
+    private readonly timeoutMs?: number
+  ) {}
 
   submit(job: PooledLoad): void {
     this.queue.push(job);
@@ -39,12 +49,16 @@ export class LoadPool {
       }
       this.active++;
       let settled = false;
-      job.start(() => {
-        if (settled) return; // ignore a double done()
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const finish = (): void => {
+        if (settled) return; // ignore a double done() (or a timeout after done())
         settled = true;
+        clearTimeout(timer);
         this.active--;
         this.pump();
-      });
+      };
+      if (this.timeoutMs !== undefined) timer = setTimeout(finish, this.timeoutMs);
+      job.start(finish);
     }
     // fully consumed → release the backing array. Advancing a head index rather
     // than Array.shift keeps draining a snapshot-replay burst O(n) overall.

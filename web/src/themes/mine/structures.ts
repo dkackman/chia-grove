@@ -14,6 +14,10 @@ import { LoadPool } from "../shared/load-pool.js";
 // a slot is usually recycled before a queued load reaches the front — collapses
 // them to roughly the handful of paintings that actually stay on screen.
 const ART_LOAD_CONCURRENCY = 10;
+// Safety net for a load that never settles (a stalled fetch, a video whose
+// loadedmetadata/seeked/error never fires) — without it, the job would hold
+// its LoadPool slot forever, silently shrinking effective concurrency.
+const ART_LOAD_TIMEOUT_MS = 20_000;
 
 const VILLAGER_CAP = 80;
 
@@ -109,7 +113,7 @@ export class Paintings {
   /** launcher id -> slot index, so a repeat lineage spend doesn't hang a duplicate */
   private readonly byLauncher = new Map<string, number>();
   private next = 0;
-  private readonly loads = new LoadPool(ART_LOAD_CONCURRENCY);
+  private readonly loads = new LoadPool(ART_LOAD_CONCURRENCY, ART_LOAD_TIMEOUT_MS);
 
   constructor(
     scene: THREE.Scene,

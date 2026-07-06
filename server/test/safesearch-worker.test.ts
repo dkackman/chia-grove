@@ -537,6 +537,48 @@ test("a content hash's archive failure suppresses later launchers instead of eac
   store.close();
 });
 
+test("onFlag throwing after a verdict is persisted doesn't poison dedup backoff for launchers sharing that content", async () => {
+  const media = new MediaIndex(10);
+  const SHARED_URL = "https://e/shared.png";
+  media.set("A", { url: SHARED_URL, kind: "image" });
+  media.set("B", { url: SHARED_URL, kind: "image" }); // same bytes, no hash yet — dedup keys off imageUri
+  const store = new ContentStore(":memory:");
+  store.putCheap("A", "nftA", { disposition: "ok" });
+  store.putCheap("B", "nftB", { disposition: "ok" });
+
+  let onFlagCalls = 0;
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    apiKey: "k",
+    onFlag: () => {
+      onFlagCalls++;
+      throw new Error("hub publish failed"); // a downstream delivery failure, not a Vision failure
+    },
+    fetchImpl: (async () =>
+      new Response(
+        JSON.stringify({ responses: [{ safeSearchAnnotation: { adult: "VERY_LIKELY" } }] }),
+        { status: 200 }
+      )) as typeof fetch,
+  });
+
+  worker.maybeEnqueue(nftEvent({ launcherId: "A", nftId: "nftA" }));
+  await flushMicrotasks();
+  // A's verdict is durably persisted despite onFlag throwing
+  expect(store.get("A")?.disposition).toBe("sensitive");
+  expect(store.get("A")?.safesearchChecked).toBe(true);
+
+  worker.maybeEnqueue(nftEvent({ launcherId: "B", nftId: "nftB" }));
+  await flushMicrotasks();
+  // B shares A's (unhashed) imageUri dedup key — it must reuse the
+  // already-correct verdict rather than being blocked by a backoff that was
+  // only poisoned by onFlag's failure, not a real classification failure.
+  expect(store.get("B")?.disposition).toBe("sensitive");
+  expect(store.get("B")?.safesearchChecked).toBe(true);
+  expect(onFlagCalls).toBe(2); // both A and B got their own (failing) flag attempt
+  store.close();
+});
+
 test("a lookalike domain sharing the archive prefix is not probed", async () => {
   const media = new MediaIndex(10);
   media.set("L1", { url: "https://archive.mintgarden.io.evil.example/content/x", kind: "image" });

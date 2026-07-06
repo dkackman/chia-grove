@@ -146,9 +146,12 @@ export class CoinsetPoller implements ChainSource {
       return; // caller re-fetches from fork + 1 on its next iteration
     }
 
-    this.known.set(height, info.headerHash);
-    this.trimKnown();
-
+    // Commit (known + lastHeight) only after the fallible work below succeeds.
+    // Recording the hash first would let trimKnown() evict older history to
+    // make room for a height that turns out never to have been processed —
+    // permanently losing memory a later reorg might have needed — while also
+    // leaving lastHeight behind known on failure, an inconsistent state that
+    // serves no purpose since a retry re-fetches this height from scratch either way.
     if (info.timestamp !== null) {
       const spends = await this.rpc.getSpends(info.headerHash);
       await this.handlers.onBlock({
@@ -159,6 +162,8 @@ export class CoinsetPoller implements ChainSource {
         spends,
       });
     }
+    this.known.set(height, info.headerHash);
+    this.trimKnown();
     this.lastHeight = height;
   }
 
