@@ -26,3 +26,39 @@ test("the floor uses the custom blur shader (soft wet-sheen, not a crisp mirror)
   expect(material.uniforms.blurSize.value).toBeGreaterThan(0);
   expect(material.uniforms.fresnelPower.value).toBeGreaterThan(0);
 });
+
+// The backdrop is a fixed-width plane; a long session (or a mint burst) can
+// push the camera's x well past its original span, which would otherwise
+// leave pieces hanging in front of nothing. follow() recenters it around the
+// camera so that can never happen, regardless of how far a session runs.
+
+test("follow() leaves the backdrop alone while the camera is still well within its span", () => {
+  const scene = new THREE.Scene();
+  const wall = createWall(scene);
+  const floor = scene.children.find((o) => o instanceof Reflector) as Reflector;
+  const startX = floor.position.x;
+  wall.follow(startX + 50); // small drift, nowhere near the edge
+  expect(floor.position.x).toBe(startX);
+});
+
+test("follow() recenters the backdrop once the camera drifts near its edge", () => {
+  const scene = new THREE.Scene();
+  const wall = createWall(scene);
+  const floor = scene.children.find((o) => o instanceof Reflector) as Reflector;
+  const startX = floor.position.x;
+  const farX = startX + 10_000; // many mints later, far past the original span
+  wall.follow(farX);
+  expect(floor.position.x).toBe(farX);
+});
+
+test("follow() moves the wall and its glow plane in lockstep with the floor", () => {
+  const scene = new THREE.Scene();
+  const wall = createWall(scene);
+  const planes = scene.children.filter(
+    (o) => o instanceof THREE.Mesh && o.geometry instanceof THREE.PlaneGeometry
+  ) as THREE.Mesh[];
+  expect(planes.length).toBeGreaterThanOrEqual(2); // the wall + its top-glow plane
+  const farX = planes[0].position.x + 10_000;
+  wall.follow(farX);
+  for (const plane of planes) expect(plane.position.x).toBe(farX);
+});

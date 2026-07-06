@@ -1,5 +1,9 @@
-import { expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import { LoadPool } from "../src/themes/shared/load-pool.js";
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 test("skips a job whose slot was recycled before it reached the front", () => {
   const started: string[] = [];
@@ -89,4 +93,65 @@ test("never runs more jobs at once than the concurrency limit", () => {
   expect(dones.length - finished.length).toBe(2);
   complete();
   expect(dones.length - finished.length).toBe(1); // queue drained, last one finishing
+});
+
+// A job whose start() never calls done() (a stalled fetch, a video whose
+// loadedmetadata/seeked/error never fires) would otherwise hold its
+// concurrency slot forever with no recourse. timeoutMs is an opt-in safety
+// net that reclaims it.
+
+test("reclaims a stalled job's slot via timeout so queued work behind it can proceed", () => {
+  vi.useFakeTimers();
+  const started: string[] = [];
+  const pool = new LoadPool(1, 5000);
+  pool.submit({
+    stillWanted: () => true,
+    start: () => started.push("stalled"), // never calls done()
+  });
+  pool.submit({
+    stillWanted: () => true,
+    start: (done) => {
+      started.push("B");
+      done();
+    },
+  });
+
+  expect(started).toEqual(["stalled"]); // B stuck behind the stalled job
+  vi.advanceTimersByTime(5000);
+  expect(started).toEqual(["stalled", "B"]); // timeout reclaimed the slot
+});
+
+test("without a timeoutMs, a stalled job holds its slot forever (opt-in only)", () => {
+  const started: string[] = [];
+  const pool = new LoadPool(1); // no timeout configured — matches prior behavior
+  pool.submit({ stillWanted: () => true, start: () => started.push("stalled") });
+  pool.submit({
+    stillWanted: () => true,
+    start: (done) => {
+      started.push("B");
+      done();
+    },
+  });
+  expect(started).toEqual(["stalled"]); // B never gets a turn
+});
+
+test("a job that completes normally doesn't get double-reclaimed when its timeout later fires", () => {
+  vi.useFakeTimers();
+  const pool = new LoadPool(1, 1000);
+  let releaseA!: () => void;
+  const started: string[] = [];
+  pool.submit({
+    stillWanted: () => true,
+    start: (done) => {
+      started.push("A");
+      releaseA = done;
+    },
+  });
+  pool.submit({ stillWanted: () => true, start: () => started.push("B") });
+
+  releaseA(); // A finishes normally, well before its timeout
+  expect(started).toEqual(["A", "B"]);
+
+  vi.advanceTimersByTime(10_000); // A's (already-cleared) timer would have fired by now
+  expect(started).toEqual(["A", "B"]); // no extra effect — no double pump / crash
 });

@@ -150,6 +150,18 @@ test("a content-flag that arrives while art is still loading blurs the piece onc
   expect(pieces.metaFor(image)?.mediaFilter).toBe("sensitive");
 });
 
+test("markSensitive pauses and releases a video already swapped to a live VideoTexture", () => {
+  const pieces = new Pieces(new THREE.Scene(), 28);
+  const fakeVideo = { pause: vi.fn(), removeAttribute: vi.fn(), load: vi.fn(), play: vi.fn() };
+  const videoTex = new THREE.Texture();
+  videoTex.image = fakeVideo; // stand in for a VideoTexture after swapToVideo() has run
+  pieces.add(nft(id(1), lid(1)), videoTex);
+
+  expect(pieces.markSensitive(lid(1), new THREE.Texture())).toBe(true);
+  expect(fakeVideo.pause).toHaveBeenCalledTimes(1);
+  expect(fakeVideo.removeAttribute).toHaveBeenCalledWith("src");
+});
+
 test("videoFor returns the backing <video> for a video piece, null otherwise", () => {
   const pieces = new Pieces(new THREE.Scene(), 28);
 

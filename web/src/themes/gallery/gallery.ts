@@ -28,6 +28,10 @@ const FOV = 45;
 // below drops loads for NFTs that newer arrivals would wrap straight off the
 // wall — collapsing the flood to the pieces that actually stay hung.
 const ART_LOAD_CONCURRENCY = 10;
+// Safety net for a load that never settles (a stalled fetch, a video whose
+// loadedmetadata/seeked/error never fires) — without it, the job would hold
+// its LoadPool slot forever, silently shrinking effective concurrency.
+const ART_LOAD_TIMEOUT_MS = 20_000;
 const REST_Y = 4.2; // vertical center of the 3-row grid
 const REST_Z = 12; // pulled back so ~10–15 pieces are in frame at once
 const VIEW_AHEAD = 5; // keep the newest column right-of-center while auto-following
@@ -62,7 +66,7 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
     bloomThreshold: 1.0,
   });
 
-  createWall(scene);
+  const wall = createWall(scene);
   const pieces = new Pieces(scene, reducedMotion ? 24 : 60);
   const dust = new SpendDust(scene, glowTexture(), reducedMotion ? 80 : 220);
   const placard = new Placard$();
@@ -94,12 +98,22 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
   // burst of events for the same brand-new NFT doesn't hang duplicate frames
   const pending = new Set<string>();
   // paces and coalesces art fetches so a snapshot flood can't 429 the proxy
-  const artLoads = new LoadPool(ART_LOAD_CONCURRENCY);
+  const artLoads = new LoadPool(ART_LOAD_CONCURRENCY, ART_LOAD_TIMEOUT_MS);
   let nftSeq = 0; // monotonic order of NFTs queued for hanging
 
   function refreshPlacardIf(launcher: string): void {
     if (focusedObject && pieces.metaFor(focusedObject)?.launcherId === launcher) {
       placard.show(pieces.metaFor(focusedObject)!, pieces.eventCountFor(focusedObject));
+    }
+  }
+
+  // A flag can land while its piece is focused with the play button armed
+  // (paused, or already playing). Either way the button's bound <video> and
+  // onFirstPlay closure are now stale — hide() unbinds them so a click can't
+  // resurrect playback or corrupt the placeholder markSensitive just hung.
+  function hidePlayButtonIf(launcher: string): void {
+    if (focusedObject && pieces.metaFor(focusedObject)?.launcherId === launcher) {
+      playButton.hide();
     }
   }
 
@@ -171,6 +185,7 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
       case "content-flag": {
         if (pieces.markSensitive(event.launcherId, sensitivePlaceholderTexture().clone())) {
           refreshPlacardIf(event.launcherId);
+          hidePlayButtonIf(event.launcherId);
         }
         break;
       }
@@ -222,7 +237,11 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
     downY = e.clientY;
     dragging = false;
     fling.reset(e.timeStamp);
-    manualX = camera.position.x; // seed manual control from where the view is now
+    // Panning has no effect while zoomed into a piece (frame()'s focused
+    // branch ignores manual/manualX entirely) — don't seed it from the
+    // close-up camera position, which uses a different framing distance than
+    // worldPerPixel() assumes and would corrupt the pan resumed on unfocus.
+    if (!focused) manualX = camera.position.x;
     canvas.setPointerCapture?.(e.pointerId);
   });
   canvas.addEventListener("pointermove", (e) => {
@@ -234,8 +253,10 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
       }
       if (dragging) {
         const step = -dx * worldPerPixel();
-        manualX = clampPan(manualX + step);
-        manualUntil = nowT + IDLE_RESUME_S;
+        if (!focused) {
+          manualX = clampPan(manualX + step);
+          manualUntil = nowT + IDLE_RESUME_S;
+        }
         fling.sample(step, e.timeStamp);
         canvas.style.cursor = "grabbing";
       }
@@ -252,7 +273,7 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
       // carry the release velocity into a momentum glide; the camera's lerp
       // decelerates into the projected landing (reduced-motion users skip it)
       const glide = reducedMotion ? 0 : fling.release(e.timeStamp);
-      if (glide !== 0) {
+      if (glide !== 0 && !focused) {
         manualX = clampPan(manualX + glide);
         manualUntil = nowT + IDLE_RESUME_S;
       }
@@ -265,7 +286,10 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
   addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
       unfocus();
-    } else if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+    } else if (!focused && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+      // Same reasoning as the pointer handlers above: panning has no effect
+      // while zoomed into a piece, so don't touch manualX/manualUntil then —
+      // camera.position.x is a close-up framing position, not a wall-pan one.
       const from = nowT < manualUntil ? manualX : camera.position.x;
       manualX = clampPan(from + (e.key === "ArrowLeft" ? -1 : 1) * WALL.colStep * 2);
       manualUntil = nowT + IDLE_RESUME_S;
@@ -319,6 +343,7 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
     camera.position.lerp(panTarget, ease);
     tmpLook.lerp(lookTarget, ease);
     camera.lookAt(tmpLook);
+    wall.follow(camera.position.x);
 
     for (const fn of frameCallbacks) fn();
     postfx.render();

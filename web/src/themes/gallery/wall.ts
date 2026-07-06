@@ -4,19 +4,33 @@ import { GALLERY } from "./palette.js";
 import { WALL } from "./layout.js";
 import { floorReflectionShader } from "./floor-shader.js";
 
+export interface WallHandle {
+  /**
+   * Recenter the backdrop around this x once the camera drifts near its
+   * edge. The backdrop is a fixed-width plane; without this, a long-running
+   * session (or a mint burst) eventually pans the camera past its original
+   * span, leaving pieces hanging in front of nothing. Solid-colored with no
+   * texture, so recentering it is visually seamless.
+   */
+  follow(cameraX: number): void;
+}
+
 /**
  * The salon backdrop: a long dark wall behind the pieces, a reflective floor that
  * mirrors the cards and picture-lights in a subtle wet-sheen, and a far backdrop.
- * Wide on x so the panning camera never runs off the end within a session.
+ * Wide on x so the panning camera doesn't visibly cross it; follow() keeps it
+ * centered for sessions (or mint bursts) that outrun that width.
  */
-export function createWall(scene: THREE.Scene): void {
+export function createWall(scene: THREE.Scene): WallHandle {
   const span = 600;
+  // Recenter once the camera gets this close to the edge of the current span,
+  // rather than the instant it drifts off-center — avoids constant repositioning.
+  const edgeMargin = 100;
 
   const wall = new THREE.Mesh(
     new THREE.PlaneGeometry(span, 40),
     new THREE.MeshStandardMaterial({ color: GALLERY.wallBottom, roughness: 0.95 })
   );
-  wall.position.set(span / 2 - 20, 8, WALL.z - 0.3);
   scene.add(wall);
 
   // subtle vertical gradient: a second, lighter plane fading in at the top
@@ -24,7 +38,6 @@ export function createWall(scene: THREE.Scene): void {
     new THREE.PlaneGeometry(span, 24),
     new THREE.MeshBasicMaterial({ color: GALLERY.wallTop, transparent: true, opacity: 0.5 })
   );
-  topGlow.position.set(span / 2 - 20, 16, WALL.z - 0.25);
   scene.add(topGlow);
 
   // a real planar mirror: renders the scene from a mirrored virtual camera each
@@ -43,8 +56,23 @@ export function createWall(scene: THREE.Scene): void {
     GALLERY.floor
   );
   floor.rotation.x = -Math.PI / 2;
-  floor.position.set(span / 2 - 20, 0, WALL.z + 14);
   scene.add(floor);
 
   scene.fog = new THREE.FogExp2(GALLERY.backdrop, 0.012);
+
+  let centerX = span / 2 - 20; // matches the original fixed placement
+  const place = (x: number): void => {
+    wall.position.set(x, 8, WALL.z - 0.3);
+    topGlow.position.set(x, 16, WALL.z - 0.25);
+    floor.position.set(x, 0, WALL.z + 14);
+  };
+  place(centerX);
+
+  return {
+    follow(cameraX: number): void {
+      if (Math.abs(cameraX - centerX) < span / 2 - edgeMargin) return;
+      centerX = cameraX;
+      place(centerX);
+    },
+  };
 }

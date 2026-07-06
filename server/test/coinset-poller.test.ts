@@ -159,6 +159,39 @@ test("reorg deeper than hash memory resets and re-backfills", async () => {
   expect(tail).toEqual(["h8b", "h9b", "h10b"]);
 });
 
+test("a failed onBlock at the known-hash capacity does not evict history it hasn't earned yet", async () => {
+  const rpc = new FakeRpc();
+  // Anchor lands at height 6; heights 7..70 exactly fill `known`'s 64-entry cap.
+  rpc.chain(Array.from({ length: 71 }, (_, i) => ({ h: i, hash: `h${i}` })));
+  const sink = collect();
+  let failAt: number | null = 70;
+  const handlers = {
+    ...sink.handlers,
+    onBlock: (b: BlockData) => {
+      if (b.height === failAt) throw new Error("boom");
+      sink.blocks.push(b);
+    },
+  };
+  const poller = new CoinsetPoller(rpc, handlers, { backfillBlocks: 64 });
+
+  // Height 70 fails on its first attempt, after 6..69 committed successfully
+  // (64 entries — `known` is exactly at capacity).
+  await expect(poller.tick()).rejects.toThrow("boom");
+
+  // The chain reorganizes: heights 7..70 all get new hashes, forking at
+  // height 6 (untouched) — the true, shallow fork point.
+  failAt = null;
+  rpc.chain(Array.from({ length: 64 }, (_, i) => ({ h: i + 7, hash: `h${i + 7}b` })));
+
+  await poller.tick();
+  // The true fork (6) must still be findable. If the failed attempt at height
+  // 70 had already evicted height 6's hash from `known` before confirming
+  // success, findFork would run out of memory and misreport this as a deep
+  // reorg (-1), forcing a full reset + re-backfill instead of a clean,
+  // shallow re-walk from height 6.
+  expect(sink.reorgs).toEqual([6]);
+});
+
 test("backs off exponentially on failure and recovers", async () => {
   vi.useFakeTimers();
   const rpc = new FakeRpc();

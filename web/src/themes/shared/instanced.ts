@@ -120,6 +120,7 @@ export class InstancedKind {
     slot.swayPhase = pose.swayPhase;
     // always write: clears any leftover highlight from the recycled slot
     this.mesh.setColorAt(i, slot.baseColor);
+    this.mesh.instanceColor!.addUpdateRange(i * 3, 3);
     this.mesh.instanceColor!.needsUpdate = true;
     return i;
   }
@@ -131,19 +132,32 @@ export class InstancedKind {
       ? this.highlightColor.copy(slot.baseColor).multiplyScalar(HIGHLIGHT_BOOST)
       : slot.baseColor;
     this.mesh.setColorAt(index, color);
+    this.mesh.instanceColor!.addUpdateRange(index * 3, 3);
     this.mesh.instanceColor!.needsUpdate = true;
   }
 
   /** Release every active slot whose metadata matches — used by reorg culling. */
   clearWhere(predicate: (meta: SproutEvent) => boolean): void {
+    let highestActive = -1;
+    let clearedAny = false;
     for (let i = 0; i < this.slots.length; i++) {
       const slot = this.slots[i];
       if (slot.meta && predicate(slot.meta)) {
         slot.meta = null;
         this.matrix.makeScale(0, 0, 0);
         this.mesh.setMatrixAt(i, this.matrix);
+        this.mesh.instanceMatrix.addUpdateRange(i * 16, 16);
+        clearedAny = true;
+      } else if (slot.meta) {
+        highestActive = i;
       }
     }
+    if (!clearedAny) return;
+    // The GPU draws every instance below `count` every frame regardless of
+    // whether its matrix is degenerate — shrink to the highest still-active
+    // slot so a mass clear (reorg) doesn't leave it drawing dead tail slots
+    // forever.
+    this.mesh.count = Math.min(this.mesh.count, highestActive + 1);
     this.matrixDirty = true;
     this.mesh.instanceMatrix.needsUpdate = true;
   }
@@ -187,6 +201,7 @@ export class InstancedKind {
         this.scale.set(width, eased * slot.height * gustDip, width)
       );
       this.mesh.setMatrixAt(i, this.matrix);
+      this.mesh.instanceMatrix.addUpdateRange(i * 16, 16);
     }
     this.mesh.instanceMatrix.needsUpdate = true;
     this.matrixDirty = false;

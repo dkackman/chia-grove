@@ -109,6 +109,60 @@ test("a swaying mesh uploads every frame", () => {
   expect(kind.mesh.instanceMatrix.version).toBeGreaterThan(version);
 });
 
+// InstancedBufferAttribute.needsUpdate alone forces a full-buffer GPU reupload
+// every time. addUpdateRange scopes the upload to just the touched instances —
+// costly to skip at the 2,000–6,000-slot caps mine/terrain use.
+
+test("plant() marks only the new instance's color range dirty, not the whole buffer", () => {
+  const kind = makeKind(6);
+  kind.plant(meta(1), 0, 0, 0, { ...FLAT });
+  expect(kind.mesh.instanceColor!.updateRanges).toEqual([{ start: 0, count: 3 }]);
+});
+
+test("setHighlight marks only that instance's color range dirty", () => {
+  const kind = makeKind(6);
+  kind.plant(meta(1), 0, 0, 0, { ...FLAT });
+  kind.mesh.instanceColor!.clearUpdateRanges(); // discard the range plant() just added
+  kind.setHighlight(0, true);
+  expect(kind.mesh.instanceColor!.updateRanges).toEqual([{ start: 0, count: 3 }]);
+});
+
+test("update() marks only touched instances' matrix ranges dirty, not the whole buffer", () => {
+  const kind = makeKind(8); // cap 8, but only 2 instances ever planted
+  kind.plant(meta(1), 0, 0, 0, { ...FLAT });
+  kind.plant(meta(2), 1, 0, 0, { ...FLAT });
+  kind.update(5, 1); // settle both — writes each instance's matrix once
+  const starts = kind.mesh.instanceMatrix.updateRanges.map((r) => r.start).sort((a, b) => a - b);
+  expect(starts).toEqual([0, 16]); // instances 0 and 1 (16 floats/matrix) — not all 8 cap slots
+});
+
+test("clearWhere() marks only the zeroed instance's matrix range dirty", () => {
+  const kind = makeKind(8);
+  kind.plant(meta(8), 0, 0, 0, { ...FLAT, y: 1 });
+  kind.plant(meta(9), 0, 0, 0, { ...FLAT, y: 2 });
+  kind.update(5, 1);
+  kind.mesh.instanceMatrix.clearUpdateRanges(); // discard ranges from the settle above
+  kind.clearWhere((m) => m.height === 9); // only instance 1 cleared
+  expect(kind.mesh.instanceMatrix.updateRanges).toEqual([{ start: 16, count: 16 }]);
+});
+
+test("clearWhere() shrinks mesh.count to the highest still-active slot", () => {
+  const kind = makeKind(4);
+  kind.plant(meta(8), 0, 0, 0, { ...FLAT, y: 1 }); // index 0 — survives
+  kind.plant(meta(9), 0, 0, 0, { ...FLAT, y: 2 }); // index 1 — cleared
+  expect(kind.mesh.count).toBe(2);
+  kind.clearWhere((m) => m.height === 9);
+  expect(kind.mesh.count).toBe(1); // the GPU no longer draws the dead tail slot forever
+});
+
+test("clearWhere() that matches everything shrinks count to 0", () => {
+  const kind = makeKind(4);
+  kind.plant(meta(8), 0, 0, 0, { ...FLAT, y: 1 });
+  kind.plant(meta(9), 0, 0, 0, { ...FLAT, y: 2 });
+  kind.clearWhere(() => true);
+  expect(kind.mesh.count).toBe(0);
+});
+
 test("custom bounds set the instanced mesh bounding sphere", () => {
   const scene = new THREE.Scene();
   const kind = new InstancedKind(

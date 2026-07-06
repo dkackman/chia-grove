@@ -139,6 +139,31 @@ export class Pieces {
     return true;
   }
 
+  /**
+   * Stop and release whichever video is backing this slot — the lazily-held
+   * pre-play element (thumbnail-poster path), or (after swapToVideo) the one
+   * the current texture wraps (VideoTexture after a swap, or the legacy seek
+   * path). A slot can only ever have one or the other live at a time, but a
+   * caller may not know which.
+   */
+  private releaseVideo(slotId: number, mat: THREE.MeshBasicMaterial): void {
+    const lazyVideo = this.videoBySlot.get(slotId);
+    if (lazyVideo) {
+      lazyVideo.pause();
+      lazyVideo.removeAttribute("src");
+      lazyVideo.load();
+      this.videoBySlot.delete(slotId);
+    }
+    const media = mat.map?.image as
+      | { pause?: () => void; removeAttribute?: (name: string) => void; load?: () => void }
+      | undefined;
+    if (media && typeof media.pause === "function") {
+      media.pause();
+      media.removeAttribute?.("src");
+      media.load?.();
+    }
+  }
+
   private retire(slotId: number): void {
     const old = this.slots[slotId];
     if (!old) return;
@@ -152,24 +177,7 @@ export class Pieces {
     (old.frame.material as THREE.Material).dispose();
     old.image.geometry.dispose();
     const mat = old.image.material as THREE.MeshBasicMaterial;
-    // Release any lazily-held video from the thumbnail-poster path
-    const lazyVideo = this.videoBySlot.get(slotId);
-    if (lazyVideo) {
-      lazyVideo.pause();
-      lazyVideo.removeAttribute("src");
-      lazyVideo.load();
-      this.videoBySlot.delete(slotId);
-    }
-    // If the texture itself wraps a <video> (VideoTexture after a swap or the
-    // legacy seek path), stop and release that too
-    const media = mat.map?.image as
-      | { pause?: () => void; removeAttribute?: (name: string) => void; load?: () => void }
-      | undefined;
-    if (media && typeof media.pause === "function") {
-      media.pause();
-      media.removeAttribute?.("src");
-      media.load?.();
-    }
+    this.releaseVideo(slotId, mat);
     mat.map?.dispose();
     mat.dispose();
     // drop a stale hover pointer so the next piece to occupy this slot isn't
@@ -289,15 +297,11 @@ export class Pieces {
       return false;
     }
     piece.event = { ...piece.event, mediaFilter: "sensitive" };
-    // Release any lazily-held video so it can't be played after flagging
-    const video = this.videoBySlot.get(slotId);
-    if (video) {
-      video.pause();
-      video.removeAttribute("src");
-      video.load();
-      this.videoBySlot.delete(slotId);
-    }
     const mat = piece.image.material as THREE.MeshBasicMaterial;
+    // Release whichever video is backing this slot so it can't keep playing
+    // (or be resumed) after flagging, whether it's still the lazy pre-play
+    // element or has already been swapped to a live VideoTexture.
+    this.releaseVideo(slotId, mat);
     (mat.map as THREE.Texture | null)?.dispose();
     mat.map = placeholder;
     mat.color.set(0xffffff);

@@ -3,8 +3,24 @@ export interface FrameScheduler {
   schedule(cb: () => void): void;
 }
 
+// requestAnimationFrame is throttled — or fully suspended — in a hidden or
+// backgrounded tab. A live feed keeps receiving batches the whole time, so
+// without a fallback the queue would grow unbounded until the tab regains
+// focus. This guarantees draining still ticks, just at a coarser cadence,
+// even when rAF never fires.
+const HIDDEN_TICK_MS = 1000;
+
 export const rafScheduler: FrameScheduler = {
-  schedule: (cb) => requestAnimationFrame(cb),
+  schedule: (cb) => {
+    let fired = false;
+    const fire = (): void => {
+      if (fired) return;
+      fired = true;
+      cb();
+    };
+    requestAnimationFrame(fire);
+    setTimeout(fire, HIDDEN_TICK_MS);
+  },
 };
 
 /**
@@ -27,6 +43,17 @@ export class DrainQueue<T> {
   enqueue(items: T[]): void {
     for (const item of items) this.items.push(item);
     this.ensureScheduled();
+  }
+
+  /** Drop everything not yet drained. A caller that's about to enqueue a
+   * fresh, self-contained batch (e.g. a reconnect's Snapshot replay) calls
+   * this first so leftovers from before don't get dispatched a second time
+   * once appended behind the new batch. Safe even with a frame already
+   * scheduled: drainFrame() re-checks the (now empty) state when it runs. */
+  clear(): void {
+    this.items = [];
+    this.head = 0;
+    this.scheduled = false;
   }
 
   private ensureScheduled(): void {
