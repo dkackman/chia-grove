@@ -1,4 +1,4 @@
-import type { ChainHandlers, ChainSource, RpcView } from "./types.js";
+import type { BlockInfo, ChainHandlers, ChainSource, RpcView } from "./types.js";
 import { log } from "../logger.js";
 
 export interface PollerOptions {
@@ -8,6 +8,7 @@ export interface PollerOptions {
 }
 
 const KNOWN_HASHES = 64;
+const MAX_REORGS_PER_TICK = 5;
 
 export class CoinsetPoller implements ChainSource {
   /** height -> headerHash for recent blocks, used for reorg detection */
@@ -16,6 +17,7 @@ export class CoinsetPoller implements ChainSource {
   private timer: NodeJS.Timeout | null = null;
   private stopped = false;
   private running = false;
+  private reorgsThisTick = 0;
 
   private readonly interval: number;
   private readonly backfill: number;
@@ -29,7 +31,7 @@ export class CoinsetPoller implements ChainSource {
     private readonly handlers: ChainHandlers,
     options: PollerOptions = {}
   ) {
-    this.interval = options.pollIntervalMs ?? 3000;
+    this.interval = options.pollIntervalMs ?? 10_000;
     this.backfill = options.backfillBlocks ?? 150;
     this.maxBackoff = options.maxBackoffMs ?? 60_000;
     this.delayMs = this.interval;
@@ -66,6 +68,41 @@ export class CoinsetPoller implements ChainSource {
 
   /** One poll cycle. Public so tests can drive it directly. */
   async tick(): Promise<void> {
+    this.reorgsThisTick = 0;
+    if (this.lastHeight >= 0 && (await this.fastForward())) {
+      return; // caught up via direct lookups; no getBlockchainState needed this tick
+    }
+    await this.resync();
+  }
+
+  /**
+   * Speculative fast path: probe the next height directly instead of asking
+   * for chain state first. A hit means the chain already advanced past it —
+   * process it (reorg detection included) and try the next height too, so a
+   * multi-block backlog still drains within one tick. A miss (not yet mined)
+   * means we're caught up; a thrown error means real RPC trouble either way
+   * the caller falls back to resync(), whose getBlockchainState call also
+   * refreshes ambient data and surfaces genuine errors via the normal
+   * backoff path.
+   */
+  private async fastForward(): Promise<boolean> {
+    let advanced = false;
+    while (!this.stopped) {
+      let info: BlockInfo | null;
+      try {
+        info = await this.rpc.tryGetBlockInfo(this.lastHeight + 1);
+      } catch {
+        return false;
+      }
+      if (info === null) return advanced;
+      await this.applyBlock(info);
+      advanced = true;
+      if (this.lastHeight < 0) return false; // deep reorg reset; needs a full resync
+    }
+    return true;
+  }
+
+  private async resync(): Promise<void> {
     const state = await this.rpc.getState();
     this.handlers.onAmbient(state);
     if (this.lastHeight < 0) {
@@ -79,47 +116,50 @@ export class CoinsetPoller implements ChainSource {
   }
 
   private async walkTo(peak: number): Promise<void> {
-    let height = this.lastHeight + 1;
-    let reorgs = 0;
-    while (height <= peak) {
+    while (this.lastHeight < peak) {
       if (this.stopped) return;
-      const info = await this.rpc.getBlockInfo(height);
-
-      const prevKnown = this.known.get(height - 1);
-      if (prevKnown !== undefined && info.prevHash !== prevKnown) {
-        if (++reorgs > 5) throw new Error("too many reorgs in one tick; backing off");
-        const fork = await this.findFork(height - 1);
-        this.handlers.onReorg(fork);
-        if (fork < 0) {
-          // reorg deeper than our memory: reset and re-backfill next tick
-          this.known.clear();
-          this.lastHeight = -1;
-          return;
-        }
-        for (const h of [...this.known.keys()]) {
-          if (h > fork) this.known.delete(h);
-        }
-        this.lastHeight = fork;
-        height = fork + 1;
-        continue;
-      }
-
-      this.known.set(height, info.headerHash);
-      this.trimKnown();
-
-      if (info.timestamp !== null) {
-        const spends = await this.rpc.getSpends(info.headerHash);
-        await this.handlers.onBlock({
-          height,
-          headerHash: info.headerHash,
-          timestamp: Number(info.timestamp),
-          fees: info.fees ?? 0n,
-          spends,
-        });
-      }
-      this.lastHeight = height;
-      height += 1;
+      const info = await this.rpc.getBlockInfo(this.lastHeight + 1);
+      await this.applyBlock(info);
     }
+  }
+
+  /** Process one block, detecting a reorg against `known` before accepting it. */
+  private async applyBlock(info: BlockInfo): Promise<void> {
+    const height = info.height;
+    const prevKnown = this.known.get(height - 1);
+    if (prevKnown !== undefined && info.prevHash !== prevKnown) {
+      if (++this.reorgsThisTick > MAX_REORGS_PER_TICK) {
+        throw new Error("too many reorgs in one tick; backing off");
+      }
+      const fork = await this.findFork(height - 1);
+      this.handlers.onReorg(fork);
+      if (fork < 0) {
+        // reorg deeper than our memory: reset and re-backfill next tick
+        this.known.clear();
+        this.lastHeight = -1;
+        return;
+      }
+      for (const h of [...this.known.keys()]) {
+        if (h > fork) this.known.delete(h);
+      }
+      this.lastHeight = fork;
+      return; // caller re-fetches from fork + 1 on its next iteration
+    }
+
+    this.known.set(height, info.headerHash);
+    this.trimKnown();
+
+    if (info.timestamp !== null) {
+      const spends = await this.rpc.getSpends(info.headerHash);
+      await this.handlers.onBlock({
+        height,
+        headerHash: info.headerHash,
+        timestamp: Number(info.timestamp),
+        fees: info.fees ?? 0n,
+        spends,
+      });
+    }
+    this.lastHeight = height;
   }
 
   /** Walk back from `from` until our recorded hash matches the chain. */

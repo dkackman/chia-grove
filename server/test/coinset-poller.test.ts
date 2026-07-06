@@ -13,6 +13,7 @@ class FakeRpc implements RpcView {
   blocks = new Map<number, FakeBlock>();
   peak = 0;
   failState = false;
+  getStateCalls = 0;
 
   chain(hashes: Array<{ h: number; hash: string; tx?: boolean }>): void {
     for (const { h, hash, tx = true } of hashes) {
@@ -28,6 +29,7 @@ class FakeRpc implements RpcView {
   }
 
   async getState(): Promise<ChainState> {
+    this.getStateCalls++;
     if (this.failState) throw new Error("boom");
     const peak = this.blocks.get(this.peak)!;
     return {
@@ -44,6 +46,11 @@ class FakeRpc implements RpcView {
     const b = this.blocks.get(height);
     if (!b) throw new Error(`no block at ${height}`);
     return { ...b, fees: 1n };
+  }
+
+  async tryGetBlockInfo(height: number): Promise<BlockInfo | null> {
+    const b = this.blocks.get(height);
+    return b ? { ...b, fees: 1n } : null;
   }
 
   async getSpends(): Promise<never[]> {
@@ -179,6 +186,51 @@ test("backs off exponentially on failure and recovers", async () => {
   expect(sink.blocks.map((b) => b.height)).toEqual([0]);
   poller.stop();
   vi.useRealTimers();
+});
+
+test("skips getBlockchainState when the next block is already mined", async () => {
+  const rpc = new FakeRpc();
+  rpc.chain([{ h: 0, hash: "h0" }]);
+  const sink = collect();
+  const poller = new CoinsetPoller(rpc, sink.handlers, { backfillBlocks: 1 });
+  await poller.tick(); // first tick always needs getState to find the peak
+  expect(rpc.getStateCalls).toBe(1);
+
+  rpc.chain([{ h: 1, hash: "h1" }]);
+  await poller.tick();
+  expect(sink.blocks.map((b) => b.height)).toEqual([0, 1]);
+  expect(rpc.getStateCalls).toBe(1); // unchanged — no getState needed this tick
+});
+
+test("drains a multi-block backlog via direct lookups alone", async () => {
+  const rpc = new FakeRpc();
+  rpc.chain([{ h: 0, hash: "h0" }]);
+  const sink = collect();
+  const poller = new CoinsetPoller(rpc, sink.handlers, { backfillBlocks: 1 });
+  await poller.tick();
+  expect(rpc.getStateCalls).toBe(1);
+
+  rpc.chain([
+    { h: 1, hash: "h1" },
+    { h: 2, hash: "h2" },
+    { h: 3, hash: "h3" },
+  ]);
+  await poller.tick();
+  expect(sink.blocks.map((b) => b.height)).toEqual([0, 1, 2, 3]);
+  expect(rpc.getStateCalls).toBe(1); // still just the one from the first tick
+});
+
+test("falls back to getBlockchainState once no new block is found", async () => {
+  const rpc = new FakeRpc();
+  rpc.chain([{ h: 0, hash: "h0" }]);
+  const sink = collect();
+  const poller = new CoinsetPoller(rpc, sink.handlers, { backfillBlocks: 1 });
+  await poller.tick();
+  expect(rpc.getStateCalls).toBe(1);
+
+  await poller.tick(); // no new block yet — must ask chain state
+  expect(rpc.getStateCalls).toBe(2);
+  expect(sink.ambients).toHaveLength(2);
 });
 
 test("awaits an async onBlock so blocks are processed in order", async () => {

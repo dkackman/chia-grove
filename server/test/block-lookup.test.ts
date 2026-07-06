@@ -40,6 +40,13 @@ class FakeRpc implements RpcView {
     return { height, headerHash: b.headerHash, prevHash: "", timestamp: b.timestamp, fees: 25n };
   }
 
+  async tryGetBlockInfo(height: number): Promise<BlockInfo | null> {
+    const b = this.blocks.get(height);
+    return b
+      ? { height, headerHash: b.headerHash, prevHash: "", timestamp: b.timestamp, fees: 25n }
+      : null;
+  }
+
   spendsError: Error | null = null;
 
   async getSpends(headerHash: string): Promise<CoinSpend[]> {
