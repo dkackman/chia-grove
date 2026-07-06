@@ -17,3 +17,5 @@ content-filter.sqlite
 /test-results/
 /playwright-report/
 /blob-report/
+
+.claude/worktrees/

@@ -1,9 +1,11 @@
 import { expect, test } from "vitest";
 import { PassThrough } from "node:stream";
+import http from "node:http";
 import type { IncomingMessage } from "node:http";
 import fastify from "fastify";
 import pino from "pino";
 import {
+  drainAndDiscard,
   isPrivateAddress,
   registerImageProxy,
   safeContentType,
@@ -105,6 +107,17 @@ test("safeContentType serves only media types, neutralizing html and svg", () =>
   expect(safeContentType("text/html")).toBe("application/octet-stream");
   expect(safeContentType("image/svg+xml")).toBe("application/octet-stream"); // scriptable
   expect(safeContentType(undefined)).toBe("application/octet-stream");
+});
+
+// drainAndDiscard is used to drain a response body we're throwing away (a
+// redirect hop, a 404/5xx fallback candidate). Without an 'error' listener, a
+// socket reset while draining is an unhandled EventEmitter error that crashes
+// the whole process — not just the one request.
+
+test("drainAndDiscard swallows a late socket error instead of throwing", () => {
+  const res = new PassThrough() as unknown as IncomingMessage & PassThrough;
+  drainAndDiscard(res);
+  expect(() => res.emit("error", new Error("upstream socket reset"))).not.toThrow();
 });
 
 // Resolution-path behavioral tests — use inject so no real network calls are made.
@@ -379,6 +392,70 @@ test("an upstream error mid-stream on a cacheable image aborts cleanly, no hang,
   await app.close();
 });
 
+// Client-abort (as opposed to an upstream-side error, covered above) tears
+// down only the response-side stream today: Fastify destroys the stream it
+// was sent with no error argument, so 'close' fires but 'error' never does,
+// and nothing tells the upstream fetch to stop. These use a real listening
+// server + a real client socket, since a client abort can't be simulated
+// through fastify's inject().
+
+async function listenOn(app: ReturnType<typeof fastify>): Promise<number> {
+  await app.listen({ port: 0, host: "127.0.0.1" });
+  const address = app.server.address();
+  if (typeof address !== "object" || address === null) throw new Error("no address");
+  return address.port;
+}
+
+test("a client that aborts mid-image doesn't leave the upstream fetch running", async () => {
+  const media = new MediaIndex(10);
+  media.set("abortimg", { url: "https://cdn.test/big.png", kind: "image" });
+  const upstream = new PassThrough() as unknown as IncomingMessage & PassThrough;
+  upstream.statusCode = 200;
+  upstream.headers = { "content-type": "image/png" };
+  upstream.write("first-chunk"); // never ends — simulates a still-streaming body
+  const fetcher = async (): Promise<IncomingMessage | null> => upstream;
+  const app = fastify();
+  registerImageProxy(app, media, new FailureCache(60_000, 10), fetcher);
+  const port = await listenOn(app);
+
+  await new Promise<void>((resolve) => {
+    const req = http.get(`http://127.0.0.1:${port}/img?nft=abortimg`, (res) => {
+      res.once("data", () => req.destroy());
+    });
+    req.on("close", resolve);
+    req.on("error", () => resolve());
+  });
+  await new Promise((r) => setTimeout(r, 50)); // let the server's teardown handlers run
+
+  expect(upstream.destroyed).toBe(true);
+  await app.close();
+});
+
+test("a client that aborts mid-video doesn't leave the upstream fetch running", async () => {
+  const media = new MediaIndex(10);
+  media.set("abortvid", { url: "https://cdn.test/big.mp4", kind: "video" });
+  const upstream = new PassThrough() as unknown as IncomingMessage & PassThrough;
+  upstream.statusCode = 200;
+  upstream.headers = { "content-type": "video/mp4" };
+  upstream.write("first-chunk-of-video");
+  const fetcher = async (): Promise<IncomingMessage | null> => upstream;
+  const app = fastify();
+  registerImageProxy(app, media, new FailureCache(60_000, 10), fetcher);
+  const port = await listenOn(app);
+
+  await new Promise<void>((resolve) => {
+    const req = http.get(`http://127.0.0.1:${port}/img?nft=abortvid`, (res) => {
+      res.once("data", () => req.destroy());
+    });
+    req.on("close", resolve);
+    req.on("error", () => resolve());
+  });
+  await new Promise((r) => setTimeout(r, 50));
+
+  expect(upstream.destroyed).toBe(true);
+  await app.close();
+});
+
 test("coalesces concurrent requests for the same nft into one upstream fetch", async () => {
   const media = new MediaIndex(10);
   media.set("img3", { url: "https://cdn.test/c.png", kind: "image" });
@@ -429,6 +506,44 @@ test("caches a thumbnail on first fetch and serves the second from cache", async
   expect(second.body).toBe("WEBPDATA");
   expect(second.headers["content-type"]).toBe("image/webp");
   expect(calls).toBe(1);
+  await app.close();
+});
+
+test("a recently-failed thumbnail short-circuits without re-fetching", async () => {
+  const media = new MediaIndex(10);
+  media.set("tfail1", {
+    url: "https://cdn.test/x.mp4",
+    kind: "video",
+    thumbnailUrl: "https://cdn.test/x_512.webp",
+  });
+  const failures = new FailureCache(60_000, 10);
+  failures.mark("tfail1"); // stand in for a prior fetch that already failed
+  let calls = 0;
+  const fetcher = async (): Promise<IncomingMessage | null> => {
+    calls++;
+    return fakeUpstream(200, "image/webp", "WEBPDATA");
+  };
+  const app = fastify();
+  registerImageProxy(app, media, failures, fetcher);
+  const res = await app.inject({ method: "GET", url: "/thumbnail?nft=tfail1" });
+  expect(res.statusCode).toBe(504);
+  expect(calls).toBe(0); // short-circuited, no upstream fetch
+  await app.close();
+});
+
+test("marks a thumbnail as failed after its upstream fetch fails", async () => {
+  const media = new MediaIndex(10);
+  media.set("tfail2", {
+    url: "https://cdn.test/y.mp4",
+    kind: "video",
+    thumbnailUrl: "http://nonexistent.invalid/y_512.webp",
+  });
+  const failures = new FailureCache(60_000, 10);
+  const app = fastify();
+  registerImageProxy(app, media, failures);
+  const res = await app.inject({ method: "GET", url: "/thumbnail?nft=tfail2" });
+  expect(res.statusCode).toBe(504);
+  expect(failures.has("tfail2")).toBe(true); // future requests will short-circuit
   await app.close();
 });
 

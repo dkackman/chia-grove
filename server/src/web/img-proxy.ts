@@ -139,6 +139,15 @@ export function safeContentType(raw: string | undefined): string {
   return "application/octet-stream";
 }
 
+/** Drain and discard a response we're throwing away (a redirect hop, a 404/5xx
+ * fallback candidate). Without an 'error' listener, a socket reset while
+ * draining — no active reader — is an unhandled EventEmitter error that
+ * crashes the whole process, not just this request. */
+export function drainAndDiscard(res: IncomingMessage): void {
+  res.on("error", () => {});
+  res.resume();
+}
+
 function requestOnce(url: URL, range: string | undefined): Promise<IncomingMessage> {
   return new Promise((resolve, reject) => {
     const mod = url.protocol === "https:" ? https : http;
@@ -165,7 +174,7 @@ async function fetchFollowingSafeRedirects(
     const res = await requestOnce(url, range);
     const status = res.statusCode ?? 0;
     if (status >= 300 && status < 400 && res.headers.location) {
-      res.resume(); // drain and release the socket before the next hop
+      drainAndDiscard(res); // drain and release the socket before the next hop
       const next = validateProxyTarget(new URL(res.headers.location, url).href);
       if (!next) return null; // unparseable or disallowed redirect target
       url = next;
@@ -365,7 +374,7 @@ export function registerImageProxy(
       // through to the client unchanged rather than being masked as 502.
       const code = res.statusCode ?? 0;
       if (code === 404 || code >= 500) {
-        res.resume(); // drain and release the socket before trying the fallback
+        drainAndDiscard(res); // drain and release the socket before trying the fallback
         continue;
       }
       upstream = res;
@@ -429,6 +438,12 @@ export function registerImageProxy(
       // cap, so this fills the cache, frees the slot, and settles waiters at
       // once (on abort, body is null → not cached and waiters fall through).
       collector.stream.on("close", () => {
+        // A client abort destroys the sent stream directly, with no 'error'
+        // event — tear down the rest of the chain too (idempotent if it
+        // already ended cleanly) so an abandoned fetch doesn't keep streaming
+        // untracked against MAX_INFLIGHT.
+        capped.destroy();
+        upstream.destroy();
         release();
         const body = collector.result();
         if (body) cache.set(key, { body, contentType: ct });
@@ -440,7 +455,10 @@ export function registerImageProxy(
 
     settle(null); // this body won't be cached (video/partial); waiters fall through
     capped.on("error", () => upstream.destroy());
-    capped.on("close", release);
+    capped.on("close", () => {
+      upstream.destroy(); // see the cacheable branch's close handler above
+      release();
+    });
     upstream.pipe(capped);
     return reply.send(capped);
   });
@@ -466,6 +484,11 @@ export function registerImageProxy(
       if (shared) return serveCached(reply, shared);
       // leader uncacheable → fall through
     }
+
+    // a recently-failed thumbnail short-circuits here too — before consuming
+    // an inflight slot or re-incurring the upstream stall on every viewer and
+    // every snapshot replay
+    if (failures.has(launcherId!)) return reply.code(504).send("upstream recently failed");
 
     if (inflight >= MAX_INFLIGHT) return reply.code(503).send("proxy busy");
 
@@ -496,13 +519,15 @@ export function registerImageProxy(
       upstream = await fetchUpstream(target, undefined);
     } catch {
       release();
+      failures.mark(launcherId!);
       settle(null);
       return reply.code(504).send("upstream fetch failed");
     }
 
     if (!upstream || (upstream.statusCode ?? 0) >= 400) {
-      upstream?.resume();
+      if (upstream) drainAndDiscard(upstream);
       release();
+      failures.mark(launcherId!);
       settle(null);
       return reply.code(502).send("upstream unavailable");
     }
@@ -511,6 +536,7 @@ export function registerImageProxy(
     if (Number.isFinite(declared) && declared > THUMB_MAX_BYTES) {
       upstream.destroy();
       release();
+      failures.mark(launcherId!);
       settle(null);
       return reply.code(502).send("upstream too large");
     }
@@ -518,7 +544,10 @@ export function registerImageProxy(
     const status = upstream.statusCode ?? 502;
     reply.code(status);
     reply.header("access-control-allow-origin", "*");
-    if (status === 200) reply.header("cache-control", "public, max-age=86400");
+    if (status === 200) {
+      reply.header("cache-control", "public, max-age=86400");
+      failures.clear(launcherId!); // recovered → drop any prior backoff streak
+    }
     const ct = safeContentType(upstream.headers["content-type"]);
     reply.header("content-type", ct);
     reply.header("x-content-type-options", "nosniff");
@@ -535,6 +564,9 @@ export function registerImageProxy(
       upstream.on("error", () => collector.stream.destroy()); // upstream error must tear down the collector (release rides on its close)
       collector.stream.on("error", () => capped.destroy());
       collector.stream.on("close", () => {
+        // see the /img handler's identical close handler above
+        capped.destroy();
+        upstream!.destroy();
         release();
         const body = collector.result();
         if (body) cache.set(key, { body, contentType: ct });
@@ -546,7 +578,10 @@ export function registerImageProxy(
 
     settle(null);
     capped.on("error", () => upstream!.destroy());
-    capped.on("close", release);
+    capped.on("close", () => {
+      upstream!.destroy();
+      release();
+    });
     upstream.pipe(capped);
     return reply.send(capped);
   });
