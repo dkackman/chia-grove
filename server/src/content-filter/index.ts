@@ -56,14 +56,19 @@ export interface ContentFilterOptions {
    *  Retries content that lagged Archive ingestion without waiting for a re-spend. */
   safesearchSweepIntervalMs?: number;
   /** Path to the bundled opennsfw2 ONNX model; set to enable local NSFW
-   *  pre-classification. Currently shadow-mode only (see safesearch-worker.ts):
-   *  it runs alongside Vision purely for comparison logging and never affects
-   *  the persisted verdict. Unset disables it entirely (no model load). */
+   *  pre-classification. By default it's observability-only (see
+   *  safesearch-worker.ts): logged for comparison, never affecting the
+   *  persisted verdict. Unset disables it entirely (no model load). */
   localNsfwModelPath?: string;
   /** Local-classifier score below which an image is confidently clean. */
   localNsfwCleanBelow?: number;
   /** Local-classifier score above which an image is confidently nsfw. */
   localNsfwNsfwAbove?: number;
+  /** Promotes the local classifier from observability-only to an actual gate:
+   *  a confident-clean score skips Vision entirely. See
+   *  SafeSearchWorkerOpts.enforceCleanSkipsVision. No effect if
+   *  localNsfwModelPath is unset. */
+  localNsfwEnforceClean?: boolean;
 }
 
 /**
@@ -123,7 +128,10 @@ export class ContentFilter {
     this.archiveBaseUrl = opts.archiveBaseUrl ?? "https://archive.mintgarden.io";
     this.whitelist = opts.whitelist;
     this.store = opts.store;
-    if (opts.store && opts.googleApiKey && opts.onFlag) {
+    // The worker exists if there's anything for it to run: Vision (needs a key)
+    // or the local classifier (standalone, no key needed — see
+    // safesearch-worker.ts). Building it with neither would be a no-op.
+    if (opts.store && opts.onFlag && (opts.googleApiKey || opts.localNsfwModelPath)) {
       const localClassify = opts.localNsfwModelPath
         ? createLocalNsfwClassifier({
             modelPath: opts.localNsfwModelPath,
@@ -136,6 +144,7 @@ export class ContentFilter {
         store: opts.store,
         apiKey: opts.googleApiKey,
         onFlag: opts.onFlag,
+        enforceCleanSkipsVision: opts.localNsfwEnforceClean,
         fetchImpl: opts.fetchImpl,
         archiveBaseUrl: opts.archiveBaseUrl,
         archiveCheckAttempts: opts.archiveCheckAttempts,

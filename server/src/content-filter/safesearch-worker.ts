@@ -9,7 +9,10 @@ import { log } from "../logger.js";
 export interface SafeSearchWorkerOpts {
   media: MediaIndex;
   store: ContentStore;
-  apiKey: string;
+  /** Unset disables Vision entirely — if `localClassify` is set, it still runs
+   *  standalone (see checkVision) so the local classifier can be evaluated
+   *  without a paid Vision key. */
+  apiKey?: string;
   onFlag: (e: ContentFlagEvent) => void;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
@@ -28,13 +31,24 @@ export interface SafeSearchWorkerOpts {
   archiveCheckDelayMs?: number;
   /** Base URL of the assets-CDN poster thumbnails; poster URLs get the same readiness probe. */
   thumbnailBaseUrl?: string;
-  /** Shadow-mode local NSFW classifier: runs alongside Vision purely for
-   *  comparison logging. Never affects the persisted verdict — a failure here
-   *  is caught and logged, not thrown. Undefined disables it entirely. */
+  /** Local NSFW classifier. When `apiKey` is set, this runs alongside every
+   *  Vision call purely for comparison logging (shadow mode) and never
+   *  affects the persisted verdict. When `apiKey` is unset, it runs standalone
+   *  (no Vision call at all) purely for observability — still never persisted
+   *  or flagged, so the local classifier can be evaluated without a Vision
+   *  key. A failure here is caught and logged, not thrown. Undefined disables
+   *  it entirely. */
   localClassify?: (imageBytes: Uint8Array) => Promise<{ score: number; band: LocalNsfwBand }>;
   /** Max bytes read for local classification before giving up (avoids loading
    *  an unbounded response body into memory for a shadow-only comparison). */
   localClassifyMaxBytes?: number;
+  /** Promotes the local classifier from observability-only to an actual gate:
+   *  a confident-clean local score (`band === "clean"`) skips Vision entirely
+   *  and persists ok/checked directly from the local result. Anything else
+   *  (uncertain or nsfw) still goes to Vision as normal — only "clean" is
+   *  ever decided locally, so a local false-negative on nsfw content can't
+   *  slip through unconfirmed. No effect if `localClassify` is unset. */
+  enforceCleanSkipsVision?: boolean;
 }
 
 /**
@@ -92,6 +106,7 @@ export class SafeSearchWorker {
   private readonly archiveCheckDelayMs: number;
   private readonly thumbnailBaseUrl: string;
   private readonly localClassifyMaxBytes: number;
+  private readonly enforceCleanSkipsVision: boolean;
   private active = 0;
   private readonly waiters: Array<() => void> = [];
   private readonly queued = new Set<string>();
@@ -100,7 +115,7 @@ export class SafeSearchWorker {
    *  in-progress Vision check, so concurrent first-time checks of identical
    *  bytes (e.g. an edition drop landing in one block) coalesce onto a single
    *  paid call instead of each racing the not-yet-persisted DB dedup. */
-  private readonly dedupInflight = new Map<string, Promise<VisionOutcome>>();
+  private readonly dedupInflight = new Map<string, Promise<VisionOutcome | undefined>>();
   /** Same dedup key -> suppression deadline after a failure (Vision error, or
    *  Archive never becoming ready). Bounds the case where the in-flight leader
    *  has already failed and cleaned up before the next launcher sharing this
@@ -124,6 +139,7 @@ export class SafeSearchWorker {
     this.thumbnailBaseUrl =
       opts.thumbnailBaseUrl ?? "https://assets.mainnet.mintgarden.io/thumbnails";
     this.localClassifyMaxBytes = opts.localClassifyMaxBytes ?? 15 * 1024 * 1024;
+    this.enforceCleanSkipsVision = opts.enforceCleanSkipsVision ?? false;
   }
 
   maybeEnqueue(event: SproutEvent): void {
@@ -243,7 +259,8 @@ export class SafeSearchWorker {
       // identical Vision lookup.
       const inflight = this.dedupInflight.get(dedupKey);
       if (inflight) {
-        this.persistVerdict(launcherId, imageUri, (await inflight).result, "reused");
+        const outcome = await inflight;
+        if (outcome) this.persistVerdict(launcherId, imageUri, outcome.result, "reused");
         return;
       }
       const work = this.checkVision(imageUri, fallbackUri);
@@ -254,7 +271,9 @@ export class SafeSearchWorker {
       const outcome = await work;
       this.dedupFailStreak.delete(dedupKey);
       this.dedupFailedUntil.delete(dedupKey);
-      this.persistVerdict(launcherId, outcome.checkedUri, outcome.result, "vision");
+      // undefined means checkVision ran local-only (no apiKey configured) —
+      // pure observability, nothing to persist.
+      if (outcome) this.persistVerdict(launcherId, outcome.checkedUri, outcome.result, "vision");
     } catch (err) {
       log.warn(
         { launcherId, imageUri, err: err instanceof Error ? err.message : String(err) },
@@ -271,45 +290,99 @@ export class SafeSearchWorker {
     }
   }
 
-  private async checkVision(imageUri: string, fallbackUri?: string): Promise<VisionOutcome> {
-    let target = imageUri;
-    if (this.needsReadyProbe(imageUri)) {
-      const ready = await this.waitForContentReady(imageUri);
-      if (!ready) {
-        const fallback = this.usableFallback(imageUri, fallbackUri);
-        if (!fallback) {
-          throw new Error(`content not ready after ${this.archiveCheckAttempts} attempts`);
-        }
-        // MintGarden never ingested these bytes; classify the on-chain original
-        // instead of giving up. checked_uri records what was actually classified.
-        target = fallback;
+  private async checkVision(
+    imageUri: string,
+    fallbackUri?: string
+  ): Promise<VisionOutcome | undefined> {
+    const target = await this.resolveTarget(imageUri, fallbackUri);
+
+    if (this.enforceCleanSkipsVision && this.opts.localClassify) {
+      // Enforcement decides whether Vision runs at all, so (unlike shadow
+      // mode below) the local result must be awaited before that decision —
+      // it can't just race Vision for a post-hoc comparison log.
+      const local = await this.shadowClassifyLocal(target);
+      if (local?.band === "clean") {
+        log.info(
+          { target, localScore: local.score, localBand: local.band },
+          "safesearch: local-nsfw enforced clean (Vision skipped)"
+        );
+        return {
+          result: {
+            sensitive: false,
+            adult: "UNKNOWN",
+            raw: { source: "local-nsfw", score: local.score },
+          },
+          checkedUri: target,
+        };
       }
+      // Not confidently clean (uncertain or nsfw): fall through to the normal
+      // Vision-or-standalone handling below, reusing the local result already
+      // computed above rather than re-running it.
+      return this.resolveVisionOutcome(target, Promise.resolve(local));
     }
-    // Started before the Vision gate so the shadow classification (cheap, local
-    // CPU) doesn't wait behind the paid Vision concurrency limit — it runs
-    // concurrently and is only awaited (and logged) after Vision returns.
+
+    // Default (non-enforcing) path: local classification, if configured, runs
+    // concurrently with Vision purely for comparison logging — started before
+    // the Vision gate so it doesn't wait behind the paid concurrency limit.
     const shadow = this.opts.localClassify ? this.shadowClassifyLocal(target) : undefined;
+    return this.resolveVisionOutcome(target, shadow);
+  }
+
+  /** Resolves the readiness-probed / fallback URL Vision (and the local
+   *  classifier) should actually classify. */
+  private async resolveTarget(imageUri: string, fallbackUri?: string): Promise<string> {
+    if (!this.needsReadyProbe(imageUri)) return imageUri;
+    const ready = await this.waitForContentReady(imageUri);
+    if (ready) return imageUri;
+    const fallback = this.usableFallback(imageUri, fallbackUri);
+    if (!fallback) {
+      throw new Error(`content not ready after ${this.archiveCheckAttempts} attempts`);
+    }
+    // MintGarden never ingested these bytes; classify the on-chain original
+    // instead of giving up. checked_uri records what was actually classified.
+    return fallback;
+  }
+
+  /** Calls Vision (if an apiKey is configured) or logs the local classifier's
+   *  standalone result (if not) — shared by both the enforce and shadow
+   *  paths in checkVision, which differ only in when `local` resolves. */
+  private async resolveVisionOutcome(
+    target: string,
+    local: Promise<{ score: number; band: LocalNsfwBand } | undefined> | undefined
+  ): Promise<VisionOutcome | undefined> {
+    if (!this.opts.apiKey) {
+      // No Vision key: the local classifier (if configured) runs standalone,
+      // purely for observability — nothing is persisted or flagged, since
+      // there is no Vision-derived verdict to attach it to.
+      const resolved = local ? await local : undefined;
+      if (resolved) {
+        log.info(
+          { target, localScore: resolved.score, localBand: resolved.band },
+          "safesearch: local-nsfw standalone result (no Vision key configured)"
+        );
+      }
+      return undefined;
+    }
+
     const result = await this.gate(() =>
       querySafeSearch(target, {
-        apiKey: this.opts.apiKey,
+        apiKey: this.opts.apiKey!,
         fetchImpl: this.fetchImpl,
         timeoutMs: this.timeoutMs,
       })
     );
-    if (shadow) {
-      const local = await shadow;
-      if (local) {
-        log.info(
-          {
-            target,
-            localScore: local.score,
-            localBand: local.band,
-            visionAdult: result.adult,
-            visionSensitive: result.sensitive,
-          },
-          "safesearch: local-nsfw shadow comparison"
-        );
-      }
+    const resolved = local ? await local : undefined;
+    if (resolved) {
+      log.info(
+        {
+          target,
+          localScore: resolved.score,
+          localBand: resolved.band,
+          visionAdult: result.adult,
+          visionSensitive: result.sensitive,
+        },
+        "safesearch: local-nsfw shadow comparison"
+      );
     }
     return { result, checkedUri: target };
   }

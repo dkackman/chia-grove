@@ -195,6 +195,141 @@ test("a localClassify failure is swallowed: Vision's verdict still persists norm
   store.close();
 });
 
+test("localClassify runs standalone with no apiKey set: no Vision call, no store mutation, no flag", async () => {
+  const media = new MediaIndex(10);
+  media.set("L1", { url: "https://e/x.png", kind: "image" });
+  const store = new ContentStore(":memory:");
+  store.putCheap("L1", "nft1", { disposition: "ok" });
+  const flags: ContentFlagEvent[] = [];
+  let visionCalls = 0;
+  let receivedBytes: Uint8Array | undefined;
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    onFlag: (e) => flags.push(e),
+    fetchImpl: (async (_url: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        visionCalls++;
+        return new Response("{}", { status: 200 });
+      }
+      return new Response(new Uint8Array([5, 6, 7]), { status: 200 });
+    }) as typeof fetch,
+    localClassify: async (bytes) => {
+      receivedBytes = bytes;
+      return { score: 0.02, band: "clean" };
+    },
+  });
+
+  worker.maybeEnqueue(nftEvent());
+  await flushMicrotasks();
+
+  expect(visionCalls).toBe(0);
+  expect(receivedBytes).toEqual(new Uint8Array([5, 6, 7]));
+  expect(flags).toEqual([]);
+  expect(store.get("L1")?.disposition).toBe("ok");
+  expect(store.get("L1")?.safesearchChecked).toBe(false);
+  store.close();
+});
+
+// ── enforce mode: confident-clean skips Vision ──────────────────────────────
+
+test("enforceCleanSkipsVision: a confident-clean local score skips Vision and persists ok/checked", async () => {
+  const media = new MediaIndex(10);
+  media.set("L1", { url: "https://e/x.png", kind: "image" });
+  const store = new ContentStore(":memory:");
+  store.putCheap("L1", "nft1", { disposition: "ok" });
+  const flags: ContentFlagEvent[] = [];
+  let visionCalls = 0;
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    apiKey: "k",
+    onFlag: (e) => flags.push(e),
+    enforceCleanSkipsVision: true,
+    fetchImpl: (async (_url: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        visionCalls++;
+        return new Response(
+          JSON.stringify({ responses: [{ safeSearchAnnotation: { adult: "VERY_LIKELY" } }] }),
+          { status: 200 }
+        );
+      }
+      return new Response(new Uint8Array([1, 2, 3]), { status: 200 });
+    }) as typeof fetch,
+    localClassify: async () => ({ score: 0.01, band: "clean" }),
+  });
+
+  worker.maybeEnqueue(nftEvent());
+  await flushMicrotasks();
+
+  expect(visionCalls).toBe(0);
+  expect(flags).toEqual([]);
+  expect(store.get("L1")?.disposition).toBe("ok");
+  expect(store.get("L1")?.safesearchChecked).toBe(true);
+  store.close();
+});
+
+test("enforceCleanSkipsVision: an uncertain/nsfw local band still calls Vision as normal", async () => {
+  const media = new MediaIndex(10);
+  media.set("L1", { url: "https://e/x.png", kind: "image" });
+  const store = new ContentStore(":memory:");
+  store.putCheap("L1", "nft1", { disposition: "ok" });
+  const flags: ContentFlagEvent[] = [];
+  let visionCalls = 0;
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    apiKey: "k",
+    onFlag: (e) => flags.push(e),
+    enforceCleanSkipsVision: true,
+    fetchImpl: (async (_url: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        visionCalls++;
+        return new Response(
+          JSON.stringify({ responses: [{ safeSearchAnnotation: { adult: "VERY_LIKELY" } }] }),
+          { status: 200 }
+        );
+      }
+      return new Response(new Uint8Array([1, 2, 3]), { status: 200 });
+    }) as typeof fetch,
+    localClassify: async () => ({ score: 0.5, band: "uncertain" }),
+  });
+
+  worker.maybeEnqueue(nftEvent());
+  await flushMicrotasks();
+
+  expect(visionCalls).toBe(1);
+  expect(flags).toEqual([{ type: "content-flag", launcherId: "L1", mediaFilter: "sensitive" }]);
+  expect(store.get("L1")?.disposition).toBe("sensitive");
+  store.close();
+});
+
+test("enforceCleanSkipsVision with no apiKey: confident-clean still persists ok/checked", async () => {
+  const media = new MediaIndex(10);
+  media.set("L1", { url: "https://e/x.png", kind: "image" });
+  const store = new ContentStore(":memory:");
+  store.putCheap("L1", "nft1", { disposition: "ok" });
+  let visionCalls = 0;
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    onFlag: () => {},
+    enforceCleanSkipsVision: true,
+    fetchImpl: (async (_url: string, init?: RequestInit) => {
+      if (init?.method === "POST") visionCalls++;
+      return new Response(new Uint8Array([1, 2, 3]), { status: 200 });
+    }) as typeof fetch,
+    localClassify: async () => ({ score: 0.01, band: "clean" }),
+  });
+
+  worker.maybeEnqueue(nftEvent());
+  await flushMicrotasks();
+
+  expect(visionCalls).toBe(0);
+  expect(store.get("L1")?.safesearchChecked).toBe(true);
+  store.close();
+});
+
 // ── concurrency decoupling ───────────────────────────────────────────────────
 // The Vision call is paid + rate-limited and must stay behind the gate; the
 // Archive readiness wait is cheap polling and must NOT occupy a Vision slot,
