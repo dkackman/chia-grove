@@ -21,12 +21,32 @@ npm run build
 #   scp server/models/opennsfw2.onnx "$HOST:$TARGET/server/models/"
 # --delete + --exclude leaves files matching the exclude untouched on the
 # destination, so this survives future deploys without being re-synced.
+# .deploy-lockhash (see below) is excluded for the same reason: it's a marker
+# file that only ever exists on the droplet, never in the source tree.
 rsync -az --delete \
   --exclude node_modules \
   --exclude .git \
   --exclude .superpowers \
   --exclude server/models/*.onnx \
+  --exclude .deploy-lockhash \
   ./ "$HOST:$TARGET/"
 
-ssh "$HOST" "cd $TARGET && npm ci --omit=dev && sudo systemctl restart chia-grove"
+# npm ci rebuilds node_modules from scratch every time, which on this droplet's
+# 1GB RAM means re-extracting sharp/onnxruntime-node's native binaries even
+# when package-lock.json didn't change — a needless memory spike on most
+# deploys. Skip it when the lockfile is unchanged from the last deploy that
+# actually ran it (.deploy-lockhash records that deploy's hash).
+if command -v sha256sum >/dev/null 2>&1; then
+  LOCK_HASH="$(sha256sum package-lock.json | cut -d' ' -f1)"
+else
+  LOCK_HASH="$(shasum -a 256 package-lock.json | cut -d' ' -f1)"
+fi
+
+ssh "$HOST" "cd $TARGET && \
+  if [ -d node_modules ] && [ -f .deploy-lockhash ] && [ \"\$(cat .deploy-lockhash)\" = '$LOCK_HASH' ]; then \
+    echo 'package-lock.json unchanged, skipping npm ci'; \
+  else \
+    npm ci --omit=dev && echo '$LOCK_HASH' > .deploy-lockhash; \
+  fi && \
+  sudo systemctl restart chia-grove"
 echo "deployed $VERSION to $HOST"
