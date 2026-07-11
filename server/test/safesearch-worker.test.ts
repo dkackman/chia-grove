@@ -121,6 +121,80 @@ test("ineligible events are skipped (audio NFT, no media entry)", async () => {
   store.close();
 });
 
+// ── local-nsfw shadow classification ────────────────────────────────────────
+// A cheap local classifier can run alongside Vision for comparison logging
+// without being allowed to change the real (Vision-derived) verdict yet.
+
+test("localClassify is called with the fetched image bytes; Vision's verdict is unaffected", async () => {
+  const media = new MediaIndex(10);
+  media.set("L1", { url: "https://e/x.png", kind: "image" });
+  const store = new ContentStore(":memory:");
+  store.putCheap("L1", "nft1", { disposition: "ok" });
+  const flags: ContentFlagEvent[] = [];
+  let receivedBytes: Uint8Array | undefined;
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    apiKey: "k",
+    onFlag: (e) => flags.push(e),
+    fetchImpl: (async (_url: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        return new Response(
+          JSON.stringify({ responses: [{ safeSearchAnnotation: { adult: "UNLIKELY" } }] }),
+          { status: 200 }
+        );
+      }
+      return new Response(new Uint8Array([1, 2, 3, 4]), { status: 200 });
+    }) as typeof fetch,
+    localClassify: async (bytes) => {
+      receivedBytes = bytes;
+      return { score: 0.02, band: "clean" };
+    },
+  });
+
+  worker.maybeEnqueue(nftEvent());
+  await flushMicrotasks();
+
+  expect(receivedBytes).toEqual(new Uint8Array([1, 2, 3, 4]));
+  expect(flags).toEqual([]);
+  expect(store.get("L1")?.disposition).toBe("ok");
+  expect(store.get("L1")?.safesearchChecked).toBe(true);
+  store.close();
+});
+
+test("a localClassify failure is swallowed: Vision's verdict still persists normally", async () => {
+  const media = new MediaIndex(10);
+  media.set("L1", { url: "https://e/x.png", kind: "image" });
+  const store = new ContentStore(":memory:");
+  store.putCheap("L1", "nft1", { disposition: "ok" });
+  const flags: ContentFlagEvent[] = [];
+  const worker = new SafeSearchWorker({
+    media,
+    store,
+    apiKey: "k",
+    onFlag: (e) => flags.push(e),
+    fetchImpl: (async (_url: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        return new Response(
+          JSON.stringify({ responses: [{ safeSearchAnnotation: { adult: "VERY_LIKELY" } }] }),
+          { status: 200 }
+        );
+      }
+      return new Response(new Uint8Array([1, 2, 3, 4]), { status: 200 });
+    }) as typeof fetch,
+    localClassify: async () => {
+      throw new Error("onnx runtime crashed");
+    },
+  });
+
+  worker.maybeEnqueue(nftEvent());
+  await flushMicrotasks();
+
+  expect(flags).toEqual([{ type: "content-flag", launcherId: "L1", mediaFilter: "sensitive" }]);
+  expect(store.get("L1")?.disposition).toBe("sensitive");
+  store.close();
+});
+
 // ── concurrency decoupling ───────────────────────────────────────────────────
 // The Vision call is paid + rate-limited and must stay behind the gate; the
 // Archive readiness wait is cheap polling and must NOT occupy a Vision slot,

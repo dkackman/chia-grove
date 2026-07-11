@@ -4,6 +4,7 @@ import type { Verdict } from "./types.js";
 import { mapMintgardenSignals, extractContentHash } from "./signals/mintgarden.js";
 import type { ContentStore } from "./store.js";
 import { SafeSearchWorker } from "./safesearch-worker.js";
+import { createLocalNsfwClassifier } from "./signals/local-nsfw-runtime.js";
 import { BoundedMap } from "../util/bounded-map.js";
 import { log } from "../logger.js";
 
@@ -54,6 +55,15 @@ export interface ContentFilterOptions {
   /** How often to sweep MediaIndex for still-unchecked NFTs (0 disables; default 10 min).
    *  Retries content that lagged Archive ingestion without waiting for a re-spend. */
   safesearchSweepIntervalMs?: number;
+  /** Path to the bundled opennsfw2 ONNX model; set to enable local NSFW
+   *  pre-classification. Currently shadow-mode only (see safesearch-worker.ts):
+   *  it runs alongside Vision purely for comparison logging and never affects
+   *  the persisted verdict. Unset disables it entirely (no model load). */
+  localNsfwModelPath?: string;
+  /** Local-classifier score below which an image is confidently clean. */
+  localNsfwCleanBelow?: number;
+  /** Local-classifier score above which an image is confidently nsfw. */
+  localNsfwNsfwAbove?: number;
 }
 
 /**
@@ -114,6 +124,13 @@ export class ContentFilter {
     this.whitelist = opts.whitelist;
     this.store = opts.store;
     if (opts.store && opts.googleApiKey && opts.onFlag) {
+      const localClassify = opts.localNsfwModelPath
+        ? createLocalNsfwClassifier({
+            modelPath: opts.localNsfwModelPath,
+            cleanBelow: opts.localNsfwCleanBelow ?? 0.1,
+            nsfwAbove: opts.localNsfwNsfwAbove ?? 0.9,
+          })
+        : undefined;
       this.worker = new SafeSearchWorker({
         media,
         store: opts.store,
@@ -124,6 +141,7 @@ export class ContentFilter {
         archiveCheckAttempts: opts.archiveCheckAttempts,
         archiveCheckDelayMs: opts.archiveCheckDelayMs,
         thumbnailBaseUrl: THUMBNAIL_BASE_URL,
+        localClassify,
       });
       const sweepMs = opts.safesearchSweepIntervalMs ?? 600_000;
       if (sweepMs > 0) {

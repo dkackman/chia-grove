@@ -2,6 +2,7 @@ import type { ContentFlagEvent, SproutEvent } from "@grove/shared";
 import type { MediaIndex } from "../web/media-index.js";
 import type { ContentStore } from "./store.js";
 import { querySafeSearch, adultIsSensitive, type SafeSearchResult } from "./signals/safesearch.js";
+import type { LocalNsfwBand } from "./signals/local-nsfw.js";
 import { BoundedMap } from "../util/bounded-map.js";
 import { log } from "../logger.js";
 
@@ -27,6 +28,13 @@ export interface SafeSearchWorkerOpts {
   archiveCheckDelayMs?: number;
   /** Base URL of the assets-CDN poster thumbnails; poster URLs get the same readiness probe. */
   thumbnailBaseUrl?: string;
+  /** Shadow-mode local NSFW classifier: runs alongside Vision purely for
+   *  comparison logging. Never affects the persisted verdict — a failure here
+   *  is caught and logged, not thrown. Undefined disables it entirely. */
+  localClassify?: (imageBytes: Uint8Array) => Promise<{ score: number; band: LocalNsfwBand }>;
+  /** Max bytes read for local classification before giving up (avoids loading
+   *  an unbounded response body into memory for a shadow-only comparison). */
+  localClassifyMaxBytes?: number;
 }
 
 /**
@@ -83,6 +91,7 @@ export class SafeSearchWorker {
   private readonly archiveCheckAttempts: number;
   private readonly archiveCheckDelayMs: number;
   private readonly thumbnailBaseUrl: string;
+  private readonly localClassifyMaxBytes: number;
   private active = 0;
   private readonly waiters: Array<() => void> = [];
   private readonly queued = new Set<string>();
@@ -114,6 +123,7 @@ export class SafeSearchWorker {
     this.archiveCheckDelayMs = opts.archiveCheckDelayMs ?? 2000;
     this.thumbnailBaseUrl =
       opts.thumbnailBaseUrl ?? "https://assets.mainnet.mintgarden.io/thumbnails";
+    this.localClassifyMaxBytes = opts.localClassifyMaxBytes ?? 15 * 1024 * 1024;
   }
 
   maybeEnqueue(event: SproutEvent): void {
@@ -275,6 +285,10 @@ export class SafeSearchWorker {
         target = fallback;
       }
     }
+    // Started before the Vision gate so the shadow classification (cheap, local
+    // CPU) doesn't wait behind the paid Vision concurrency limit — it runs
+    // concurrently and is only awaited (and logged) after Vision returns.
+    const shadow = this.opts.localClassify ? this.shadowClassifyLocal(target) : undefined;
     const result = await this.gate(() =>
       querySafeSearch(target, {
         apiKey: this.opts.apiKey,
@@ -282,7 +296,56 @@ export class SafeSearchWorker {
         timeoutMs: this.timeoutMs,
       })
     );
+    if (shadow) {
+      const local = await shadow;
+      if (local) {
+        log.info(
+          {
+            target,
+            localScore: local.score,
+            localBand: local.band,
+            visionAdult: result.adult,
+            visionSensitive: result.sensitive,
+          },
+          "safesearch: local-nsfw shadow comparison"
+        );
+      }
+    }
     return { result, checkedUri: target };
+  }
+
+  /** Fetches the same bytes Vision is about to classify and runs the injected
+   *  local classifier. Never throws — a failure here must not affect the real
+   *  (Vision-derived) verdict, only forgo this round's comparison log. */
+  private async shadowClassifyLocal(
+    url: string
+  ): Promise<{ score: number; band: LocalNsfwBand } | undefined> {
+    try {
+      const bytes = await this.fetchBytes(url);
+      return await this.opts.localClassify!(bytes);
+    } catch (err) {
+      log.warn(
+        { url, err: err instanceof Error ? err.message : String(err) },
+        "safesearch: local-nsfw shadow classify failed (ignored)"
+      );
+      return undefined;
+    }
+  }
+
+  private async fetchBytes(url: string): Promise<Uint8Array> {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+    try {
+      const res = await this.fetchImpl(url, { signal: controller.signal });
+      if (!res.ok) throw new Error(`fetch ${res.status}`);
+      const buf = await res.arrayBuffer();
+      if (buf.byteLength > this.localClassifyMaxBytes) {
+        throw new Error(`image too large for local classify (${buf.byteLength} bytes)`);
+      }
+      return new Uint8Array(buf);
+    } finally {
+      clearTimeout(timer);
+    }
   }
 
   /** The original art URL, if it is worth one Vision attempt: http(s), distinct

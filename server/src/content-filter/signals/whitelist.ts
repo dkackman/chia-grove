@@ -22,6 +22,7 @@ export const WHITELIST: WhitelistEntry[] = [
   { collectionId: "col1apvkk4tz48l9qfj5znygzrugfhzjmfu8lykalvzeqn6au38g7mcs4gwxx6" },
   { collectionId: "col1ufu33cchmfgge9hm9ehupy3thux66ehaum9gglqewldzkus4s3mq9yc289" },
   { collectionId: "col1kh3znq66lzm287w0zrdq3jagxzvz2qg3c95m85jzqzazjhylt4gss8cang" },
+  { collectionId: "col1uddlt4txgm7mncfk4rdkk3hw8w6w48zlyl0ngju94hcensg2jh4qauscwm" },
 ];
 
 /** Index entries into a Set of raw identifiers (creator DIDs and collection ids

@@ -59,6 +59,10 @@ const contentFilter = new ContentFilter(media, {
   googleApiKey: process.env.GOOGLE_VISION_API_KEY,
   onFlag: (e) => hub.publish([e]),
   safesearchSweepIntervalMs: envInt("SAFESEARCH_SWEEP_INTERVAL_MS", 600_000),
+  // Shadow-mode only for now (see safesearch-worker.ts): unset by default, so
+  // opting in means setting this to the bundled model, e.g.
+  // LOCAL_NSFW_MODEL_PATH=./server/models/opennsfw2.onnx
+  localNsfwModelPath: process.env.LOCAL_NSFW_MODEL_PATH,
 }); // MintGarden lookups cached per nftId; SafeSearch async when API key set
 const cats = new CatRegistry();
 await cats.start();
