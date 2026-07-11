@@ -86,6 +86,21 @@ The droplet stays on the manual SSH/rsync model; CI just runs the same script.
 
    Then reload: `sudo systemctl daemon-reload`
 
+8. **Place the local NSFW model** (one-time — `deploy.sh` deliberately excludes
+   it from the per-deploy rsync; see the comment above the `rsync` call):
+
+   ```bash
+   scp server/models/opennsfw2.onnx grove@157.230.15.201:/opt/chia-grove/server/models/
+   ```
+
+   Then optionally enable it via the same systemd drop-in as step 7:
+
+   ```ini
+   [Service]
+   Environment=LOCAL_NSFW_MODEL_PATH=./models/opennsfw2.onnx
+   Environment=LOCAL_NSFW_ENFORCE_CLEAN=true
+   ```
+
 The firewall already permits this: `ufw allow OpenSSH` opens port 22 to any
 source, so the runner's dynamic IPs can connect. Revoke access any time by
 removing the key's line from `/home/grove/.ssh/authorized_keys`. The `grove`

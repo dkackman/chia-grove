@@ -19,3 +19,6 @@ content-filter.sqlite
 /blob-report/
 
 .claude/worktrees/
+
+# throwaway Python env for server/models/convert_opennsfw2_to_onnx.py
+server/models/.venv*
