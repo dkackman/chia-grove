@@ -1,0 +1,6 @@
+opennsfw2==0.14.0
+tf2onnx==1.16.1
+tensorflow==2.16.1
+tf_keras==2.16.0
+onnxruntime==1.19.2
+numpy<2

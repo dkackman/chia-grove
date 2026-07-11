@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { expect, test, vi } from "vitest";
 import {
   mapMintgarden,
@@ -1009,4 +1010,52 @@ test("the sweep interval re-checks an unchecked NFT without a new spend, and clo
   } finally {
     vi.useRealTimers();
   }
+});
+
+test("localNsfwModelPath alone (no googleApiKey) still runs local classification standalone", async () => {
+  const media = new MediaIndex(10);
+  media.set("Lnsfw", { url: "https://e/local.png", kind: "image" });
+  const store = new ContentStore(":memory:");
+  const flags: import("@grove/shared").ContentFlagEvent[] = [];
+  let visionCalls = 0;
+  let byteFetchCalls = 0;
+  const modelPath = fileURLToPath(new URL("../models/opennsfw2.onnx", import.meta.url));
+  const sourceBytes = new Uint8Array(
+    (
+      await import("node:fs")
+    ).readFileSync(fileURLToPath(new URL("./fixtures/nsfw-parity-source.png", import.meta.url)))
+  );
+  const filter = new ContentFilter(media, {
+    store,
+    onFlag: (e) => flags.push(e),
+    localNsfwModelPath: modelPath,
+    fetchImpl: (async (url: string, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        visionCalls++;
+        return new Response("{}", { status: 200 });
+      }
+      byteFetchCalls++;
+      return new Response(sourceBytes, { status: 200 });
+    }) as typeof fetch,
+  });
+  const event: SproutEvent = {
+    type: "sprout",
+    kind: "nft",
+    height: 1,
+    coinId: "c",
+    amount: "1",
+    mint: true,
+    launcherId: "Lnsfw",
+    nftId: "nft-local",
+    mediaKind: "image",
+  };
+  await filter.enrich([event]);
+  await new Promise((r) => setTimeout(r, 500)); // ONNX inference is real, not instant
+
+  expect(visionCalls).toBe(0);
+  expect(byteFetchCalls).toBeGreaterThan(0);
+  expect(flags).toEqual([]);
+  expect(store.get("Lnsfw")?.safesearchChecked).toBe(false);
+  filter.close();
+  store.close();
 });
