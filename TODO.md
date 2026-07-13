@@ -2,21 +2,39 @@
 
 From the 2026-07-13 GitNexus-assisted quality/correctness review. The critical
 SSRF bug (IPv6-mapped/compatible IPv4 literals bypassing `isPrivateV6` in
-`server/src/web/img-proxy.ts`) has been fixed and tested. Everything below is
-still open.
+`server/src/web/img-proxy.ts`) and the ingest error-isolation bug below have
+been fixed and tested. Everything else is still open.
 
 ## High
 
-- [ ] **Live ingest has no per-block error isolation.** `server/src/index.ts:80-95`
-      calls `classifyBlock`/`contentFilter.enrich` with no try/catch. A
-      permanent (non-transient) throw wedges the poller retrying the same
-      height forever (capped at 60s backoff, never skips). The equivalent
-      pipeline in `server/src/web/block-lookup.ts:66-89` wraps the same calls
-      and degrades gracefully instead — bring the live path in line.
-- [ ] **Confirm `LOCAL_NSFW_ENFORCE_CLEAN` isn't enabled in production.** If it
-      is, a self-hosted opennsfw2 "clean" verdict is persisted permanently and
-      Vision is never consulted again for that NFT — no second check, no
-      re-review path (`server/src/content-filter/safesearch-worker.ts:299-321`).
+- [x] **Live ingest has no per-block error isolation.** ~~`server/src/index.ts:80-95`
+      calls `classifyBlock`/`contentFilter.enrich` with no try/catch.~~ Fixed:
+      `onBlock` now wraps classify+enrich in try/catch and falls back to a
+      bare `blockEvent(block)` (new export from `classify.ts`, shared with the
+      `classifyBlock` first-event construction) on failure, matching
+      `block-lookup.ts`'s existing degrade-gracefully pattern. Confirmed via
+      `gitnexus impact` that `enrich()` never rejects on its own (network
+      failures are already swallowed to a permissive verdict internally), so
+      this only catches genuine bugs, not transient RPC trouble — real RPC
+      retries still happen upstream in `applyBlock`/`fastForward`/`walkTo`,
+      unaffected. Regression test: `blockEvent() matches classifyBlock()'s own
+      first event` in `classify.test.ts`.
+- [ ] **`LOCAL_NSFW_ENFORCE_CLEAN` — needs your confirmation, not a code fix.**
+      Investigated: this repo has no `.env` committed for production and the
+      droplet's actual value is set via an untracked `systemctl edit`
+      drop-in (`deploy/README.md:101` only documents it as an *optional* step
+      an operator may apply — its presence in the doc isn't evidence it's
+      live). I can't check the running droplet's systemd environment from
+      here without SSHing into production, which I won't do unprompted. If
+      it's enabled: a self-hosted opennsfw2 "clean" verdict is persisted
+      permanently and Vision is never consulted again for that NFT — no
+      second check, no re-review path
+      (`server/src/content-filter/safesearch-worker.ts:299-321`). This is a
+      deliberate, documented trust escalation (CLAUDE.md frames it as "once
+      you trust the local classifier's agreement with Vision"), not a hidden
+      bug — so the action item is just: confirm whether it's actually set on
+      `chia-grove.com`'s host today, and if so, decide if that tradeoff is
+      still the one you want.
 
 ## Medium
 

@@ -1,5 +1,5 @@
 import { Address, Clvm, Constants, type CoinSpend } from "chia-wallet-sdk";
-import type { GroveEvent, SproutEvent } from "@grove/shared";
+import type { BlockEvent, GroveEvent, SproutEvent } from "@grove/shared";
 import { mediaKind, type MediaKind } from "@grove/shared";
 import type { CatRegistry } from "./cats.js";
 import type { MediaIndex } from "../web/media-index.js";
@@ -16,6 +16,20 @@ export interface BlockInput {
   spends: CoinSpend[];
 }
 
+/** The block-level summary event, with no per-spend classification. Used both
+ *  as the first event of a normal classifyBlock() result and as the fallback
+ *  when classification/enrichment fails partway through (see server/src/index.ts). */
+export function blockEvent(block: BlockInput): BlockEvent {
+  return {
+    type: "block",
+    height: block.height,
+    headerHash: block.headerHash,
+    timestamp: block.timestamp,
+    spendCount: block.spends.length,
+    fees: block.fees.toString(),
+  };
+}
+
 export function classifyBlock(
   block: BlockInput,
   cats?: CatRegistry,
@@ -27,16 +41,7 @@ export function classifyBlock(
       .map((s) => hex(s.coin.coinId()))
   );
 
-  const events: GroveEvent[] = [
-    {
-      type: "block",
-      height: block.height,
-      headerHash: block.headerHash,
-      timestamp: block.timestamp,
-      spendCount: block.spends.length,
-      fees: block.fees.toString(),
-    },
-  ];
+  const events: GroveEvent[] = [blockEvent(block)];
 
   // One Clvm allocator for the whole block instead of one per spend. parse*
   // operates on the specific Program returned by deserializeWithBackrefs, so

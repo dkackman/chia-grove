@@ -13,7 +13,7 @@ import {
   type CoinSpend,
   type PublicKey,
 } from "chia-wallet-sdk";
-import { classifyBlock, type BlockInput } from "../src/classify/classify.js";
+import { blockEvent, classifyBlock, type BlockInput } from "../src/classify/classify.js";
 import type { SproutEvent } from "@grove/shared";
 import { MediaIndex } from "../src/web/media-index.js";
 
@@ -70,6 +70,23 @@ test("emits a block event first with counts and fees", () => {
     spendCount: 1,
     fees: "25",
   });
+});
+
+// blockEvent() is the same shape classifyBlock() uses for its first event; it
+// exists standalone so server/src/index.ts's onBlock can fall back to a bare
+// block event (advancing ingest past the block) if classification or
+// enrichment throws, without duplicating this literal — see index.ts.
+test("blockEvent() matches classifyBlock()'s own first event for the same input", () => {
+  const sim = new Simulator();
+  const clvm = new Clvm();
+  const alice = sim.bls(1000n);
+  clvm.spendStandardCoin(
+    alice.coin,
+    alice.pk,
+    clvm.delegatedSpend([clvm.createCoin(alice.puzzleHash, 1000n)])
+  );
+  const b = block(clvm.coinSpends());
+  expect(blockEvent(b)).toEqual(classifyBlock(b)[0]);
 });
 
 test("standard spend classifies as xch with mojo amount", () => {
