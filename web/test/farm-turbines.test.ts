@@ -126,9 +126,7 @@ test("each tower stands on the ground and reaches its full height", () => {
 // sprite) that would otherwise collide on a shared "no geometry" bucket.
 // Built in spec order, matching the constructor's map over this.specs.
 function rotorsOf(scene: THREE.Scene): THREE.Mesh[] {
-  return scene.children.filter(
-    (child): child is THREE.Mesh => child.name === "turbine-rotor"
-  );
+  return scene.children.filter((child): child is THREE.Mesh => child.name === "turbine-rotor");
 }
 
 test("each rotor is pinned to the top of its own tower, scaled to its own height", () => {

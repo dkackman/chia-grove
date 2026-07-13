@@ -10,10 +10,10 @@
 
 > **Executed and amended.** The code blocks below have been corrected in place so that re-executing this plan cannot reintroduce a bug that shipped once already. `web/src/themes/farm/turbines.ts` remains the truth. Four things changed during execution, found by an eyes-on browser check and the final review, and the spec has been corrected to match:
 >
-> 1. **Tower heights 34–50 → 14–20.** The farm camera is pitched ~13° down at the field, so only a narrow band of sky sits above the horizon; at 34–50 the turbines were cropped by the top of the frame (by 35 world units, in the *default* view). The floor of 14 keeps the lowest blade tip clear of the hill each turbine stands on.
+> 1. **Tower heights 34–50 → 14–20.** The farm camera is pitched ~13° down at the field, so only a narrow band of sky sits above the horizon; at 34–50 the turbines were cropped by the top of the frame (by 35 world units, in the _default_ view). The floor of 14 keeps the lowest blade tip clear of the hill each turbine stands on.
 > 2. **The gust sweep is normalised against the layout's actual x extent** (`GUST_SPAN = 2` seconds end to end), not a fixed seconds-per-unit `GUST_SWEEP`. The original constant was sized for an assumed ±110 span; the real layout spans ~85 units, which gave a 0.68 s stagger against a 0.9 s rise — the ridge snapped in near-unison — plus a ~1 s uniform dead beat after each block.
 > 3. **`rotorYaw()` returns `-Math.PI / 2 + spec.yaw`.** The original `+π/2` pointed the nose cone downwind, contradicting its own comments.
-> 4. **Tests added** for the gust actually speeding the blades up, the downwind sweep (ordering *and* magnitude), reduced-motion suppression, and the rotor hub sitting atop its tower.
+> 4. **Tests added** for the gust actually speeding the blades up, the downwind sweep (ordering _and_ magnitude), reduced-motion suppression, and the rotor hub sitting atop its tower.
 
 ## Global Constraints
 
@@ -24,7 +24,7 @@
 - Placement is seeded from a **fixed constant** via `mulberry32` from `../shared/util.js`. The layout must be byte-identical on every reload and every snapshot replay. Never call `Math.random()` in the layout.
 - `prefers-reduced-motion` must be honoured, as it is by the tractor, crows, smoke, and motes: slow idle spin, no gust.
 - `mergeGeometries()` returns **null** if you mix indexed and non-indexed geometries, and a null geometry crashes the renderer on the first frame. `CylinderGeometry`, `BoxGeometry`, and `ConeGeometry` are all indexed, so as long as you never call `.toNonIndexed()` you are fine — and the geometry test in Task 2 guards this.
-- Follow the file's neighbours: `flatShading` on standard materials, comments that explain *why* rather than *what*, no comment restating the next line.
+- Follow the file's neighbours: `flatShading` on standard materials, comments that explain _why_ rather than _what_, no comment restating the next line.
 
 ---
 
@@ -250,7 +250,7 @@ git commit -m "feat(farm): seeded wind-turbine layout and gust envelope"
 Geometry orientation, which is the one fiddly part — read before writing:
 
 - The rotor geometry is modelled **spinning about its local z axis** (blades in the local xy plane), so spinning it is just `rotor.rotation.z = angle`.
-- A `THREE.Euler` in its default `XYZ` order applies **z first, then y** to a vertex. So setting `rotor.rotation.y = yaw` (constant) and `rotor.rotation.z = angle` (animated) spins the blades in their own plane and *then* swings the whole rotor to face the wind. That is exactly what's wanted, and it means each turbine needs a single `Mesh` — no wrapper `Group`.
+- A `THREE.Euler` in its default `XYZ` order applies **z first, then y** to a vertex. So setting `rotor.rotation.y = yaw` (constant) and `rotor.rotation.z = angle` (animated) spins the blades in their own plane and _then_ swings the whole rotor to face the wind. That is exactly what's wanted, and it means each turbine needs a single `Mesh` — no wrapper `Group`.
 - The scene's wind blows **+x**, so the rotor's spin axis must lie along x: the yaw is `-Math.PI / 2 + spec.yaw` (amended from `+Math.PI / 2`, which pointed the nose cone downwind).
 - The tower is a cylinder and therefore rotationally symmetric, so the tower and nacelle can be merged and yawed **together** — the yaw is a no-op for the tower and correctly swings the nacelle.
 
@@ -491,8 +491,8 @@ import { Turbines } from "./turbines.js";
 Then construct it beside the other props, right after the `crows` line:
 
 ```ts
-    const crows = new Crows(scene, reducedMotion ? 10 : 24);
-    const turbines = new Turbines(scene, reducedMotion);
+const crows = new Crows(scene, reducedMotion ? 10 : 24);
+const turbines = new Turbines(scene, reducedMotion);
 ```
 
 - [ ] **Step 2: Gust on each new block**
@@ -516,8 +516,8 @@ In the `feed.onEvent` switch, in the existing `case "block":` arm, add the gust 
 In `frame()`, add the update beside the others, after `crows.update(t);`:
 
 ```ts
-      crows.update(t);
-      turbines.update(t, dt);
+crows.update(t);
+turbines.update(t, dt);
 ```
 
 Do **not** add a legend entry. The turbines are scenery, like the barn and the trees.
