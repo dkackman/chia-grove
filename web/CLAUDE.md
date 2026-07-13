@@ -40,6 +40,10 @@ Daytime crop field with serpentine rows. Each block is the next row, plowed by a
 
 A distant wind farm (`turbines.ts`) stands on the horizon as scenery — seeded random groupings, rotors turning idly, with a gust sweeping downwind across the ridge on each new block.
 
+The surroundings are static scenery, built once at scene construction and never updated per frame. `terrain.ts` owns the ground: a `groundHeight(x, z)` height field displaces the turf disc, damped to **exactly zero** over the box the farm occupies — the crops, tractor, chickens, fence, furrows, soil strips and every `blobShadow` are placed at a hard-coded `y` and none of them sample a ground height — and damped to zero again under the hills, whose lower hemispheres are buried beneath the turf and so cannot tolerate ground that rises or dips at their fringe. Anything that stands on the rolling ground (trees, hedges, bales, boulders) seats itself with `groundHeight`.
+
+`landscape.ts` paints the parcels, mowing stripes, dirt lane and barnyard apron onto a canvas draped over a clone of that same displaced surface, and punches the field's footprint back out as its last step so nothing can be painted under the crop rows. `scenery.ts` has the trees, hedgerows and far tree line; `props.ts` the boulders, tufts, bales and barnyard clutter, rejection-sampled clear of the crop rows, the tractor's headlands, the barnyard and the camera's foreground.
+
 ### gallery (`src/themes/gallery/`)
 
 Interior art gallery showing NFT mints as framed canvases on illuminated walls. Navigate with arrow keys (desktop) or swipe (mobile). Spotlight warmth tracks netspace; lights pulse on new blocks; reorg removes pieces. Non-NFT events are ignored.
