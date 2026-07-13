@@ -8,6 +8,13 @@
 
 **Tech Stack:** TypeScript, Three.js (r1xx, `three/addons/utils/BufferGeometryUtils.js`), Vitest, Vite.
 
+> **Executed and amended.** The code blocks below are the plan as written, not as shipped. Four things changed during execution, found by an eyes-on browser check and the final review — `web/src/themes/farm/turbines.ts` is the truth, and the spec has been corrected to match:
+>
+> 1. **Tower heights 34–50 → 14–20.** The farm camera is pitched ~13° down at the field, so only a narrow band of sky sits above the horizon; at 34–50 the turbines were cropped by the top of the frame (by 35 world units, in the *default* view). The floor of 14 keeps the lowest blade tip clear of the hill each turbine stands on.
+> 2. **The gust sweep is normalised against the layout's actual x extent** (`GUST_SPAN = 2` seconds end to end), not a fixed seconds-per-unit `GUST_SWEEP`. The original constant was sized for an assumed ±110 span; the real layout spans ~85 units, which gave a 0.68 s stagger against a 0.9 s rise — the ridge snapped in near-unison — plus a ~1 s uniform dead beat after each block.
+> 3. **`rotorYaw()` returns `-Math.PI / 2 + spec.yaw`.** The original `+π/2` pointed the nose cone downwind, contradicting its own comments.
+> 4. **Tests added** for the gust actually speeding the blades up, the downwind sweep (ordering *and* magnitude), reduced-motion suppression, and the rotor hub sitting atop its tower.
+
 ## Global Constraints
 
 - Spec: `docs/superpowers/specs/2026-07-12-farm-wind-turbines-design.md`.
@@ -138,8 +145,8 @@ export const WIND_FARM = {
   zFloor: -128,
   /** The turf is a CircleGeometry(140); past this radius a turbine floats over open sky. */
   maxRadius: 132,
-  minHeight: 34,
-  maxHeight: 50,
+  minHeight: 14, // amended from 34 — see the note at the top of this plan
+  maxHeight: 20, // amended from 50 — see the note at the top of this plan
   /** The height the geometry is modelled at; each turbine scales off this. */
   baseHeight: 42,
 } as const;
