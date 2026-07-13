@@ -74,11 +74,14 @@ test("no far-tree crown stands inside a hill's opaque dome", () => {
 });
 
 test("the far tree line still produces a substantial number of crowns", () => {
-  // each IcosahedronGeometry(r, 0) crown merges to 60 non-indexed vertices
-  // (20 faces * 3 verts); a filter (or a future re-tune) that silently guts
-  // the whole feature — as the buried bands effectively did before this fix —
-  // must fail loudly here, not just look sparse on screen.
-  const crowns = farTreeLineGeometry().getAttribute("position").count / 60;
+  // each IcosahedronGeometry(r, 1) crown merges to 240 non-indexed vertices
+  // (80 faces * 3 verts — detail 1, not 0, so the crowns get analytic radial
+  // normals and read as soft foliage rather than faceted hexagons; see the
+  // comment above the IcosahedronGeometry call in farTreeLineGeometry). A
+  // filter (or a future re-tune) that silently guts the whole feature — as
+  // the buried bands effectively did before this fix — must fail loudly
+  // here, not just look sparse on screen.
+  const crowns = farTreeLineGeometry().getAttribute("position").count / 240;
   expect(crowns).toBeGreaterThan(50);
 });
 

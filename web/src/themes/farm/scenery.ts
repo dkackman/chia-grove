@@ -371,11 +371,11 @@ export function farTreeLineGeometry(): THREE.BufferGeometry {
     [-40, 42, -37],
     [80, 122, -37],
   ] as ReadonlyArray<readonly [number, number, number]>) {
-    // Denser than the original 2.6 spacing: at z = -37 a meaningful share of
-    // candidates sit close enough to a hill's fringe (see isBuried below) to
-    // be rejected, and the tighter step keeps the surviving crowns reading as
-    // a continuous band rather than a sparse row of gaps.
-    for (let x = x0; x <= x1; x += 2.0) {
+    // At z = -37 (moved up from the old -56/-66/-52) the crowns read nearly
+    // twice as large on screen for the same world size, so both the radius
+    // and this step were roughly halved from their old 1.6-3.0r / 2.6-step
+    // values to keep the same on-screen density rather than doubling it.
+    for (let x = x0; x <= x1; x += 1.1) {
       // draw every random value for this crown before deciding whether to
       // keep it, so the hillHeight rejection below cannot perturb the
       // sequence later crowns draw from
@@ -385,9 +385,16 @@ export function farTreeLineGeometry(): THREE.BufferGeometry {
       const rsy = rand();
       const jx = x + (rjx - 0.5) * 1.8;
       const jz = z + (rjz - 0.5) * 5;
-      const r = 1.6 + rr * 1.4;
-      const blob = new THREE.IcosahedronGeometry(r, 0);
-      blob.scale(1, 0.75 + rsy * 0.35, 1);
+      const r = 0.9 + rr * 0.8;
+      // detail 1, not 0: PolyhedronGeometry at detail 0 calls
+      // computeVertexNormals() on unshared per-face vertices, which the
+      // three.js source itself notes yields "flat normals" — so flatShading
+      // on the material below is a no-op at detail 0 and the crown is
+      // faceted either way. Detail 1 uses normalizeNormals() instead
+      // (analytic radial normals), which is what actually lets flatShading:
+      // false read as a rounded, soft crown rather than a faceted hexagon.
+      const blob = new THREE.IcosahedronGeometry(r, 1);
+      blob.scale(1, 0.55 + rsy * 0.25, 1);
       // An icosahedron's lowest vertex sits at ~0.85r, not r, so a fixed
       // fraction of r under- or over-shoots depending on the y-squash drawn
       // above; measure the actual extent so the crown's lowest vertex meets
@@ -452,7 +459,11 @@ export function createScenery(scene: THREE.Scene): void {
       new THREE.MeshStandardMaterial({
         color: FARM.treeLineFar,
         roughness: 1,
-        flatShading: true,
+        // soft foliage, not faceted boulders: at this size (crowns roughly
+        // half the radius the line used at its old, more distant z) flat
+        // shading turns every icosahedron face into a visible hexagon facet.
+        // Smooth shading lets the crowns read as a hazy mass instead.
+        flatShading: false,
       })
     )
   );
