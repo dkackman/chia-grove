@@ -19,6 +19,7 @@ export const FARM = {
   silo: 0xb9c0c8,
   siloBand: 0x99a1a9,
   hill: 0x86a96b,
+  hillFar: 0x9db5a2,
   treeTrunk: 0x6b4a2e,
   treeCanopy: 0x4d7a3a,
   fence: 0xcabfa8,

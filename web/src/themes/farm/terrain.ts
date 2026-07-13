@@ -1,5 +1,8 @@
 import * as THREE from "three";
+import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { TURF_RADIUS } from "./layout.js";
+import { FARM } from "./palette.js";
+import { mottledTexture } from "../shared/textures.js";
 
 /**
  * Ground inside this box stays **exactly** at y = 0. Every system that sits on
@@ -91,4 +94,61 @@ export function groundHeight(x: number, z: number): number {
   // Normalize -0 to +0 (Object.is-based toBe(0) rejects -0). Do not swallow
   // NaN — let it stay NaN so tests catch unexpected computations.
   return Object.is(y, -0) ? 0 : y;
+}
+
+/**
+ * The turf disc, displaced by `groundHeight`. A `RingGeometry`, not a
+ * `CircleGeometry`: a circle is a single triangle fan with no radial
+ * subdivision, so there is nothing between its centre and its rim to displace.
+ * The ring is rotated flat at build time, so its positions are already
+ * world-space and the mesh it goes into needs no rotation of its own.
+ */
+export function turfGeometry(): THREE.BufferGeometry {
+  const geo = new THREE.RingGeometry(0, TURF_RADIUS, 128, 72);
+  geo.rotateX(-Math.PI / 2);
+  const pos = geo.getAttribute("position");
+  for (let i = 0; i < pos.count; i++) {
+    pos.setY(i, groundHeight(pos.getX(i), pos.getZ(i)));
+  }
+  pos.needsUpdate = true;
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/** One rank of hazy hills. `squash` is the y-scale; flatter reads as further off. */
+function addHills(
+  scene: THREE.Scene,
+  rank: ReadonlyArray<readonly [number, number, number]>,
+  squash: number,
+  color: number
+): void {
+  const hills: THREE.BufferGeometry[] = [];
+  for (const [x, z, r] of rank) {
+    const hill = new THREE.SphereGeometry(r, 20, 10);
+    hill.scale(1.3, squash, 1);
+    hill.translate(x, 0, z);
+    hills.push(hill);
+  }
+  scene.add(
+    new THREE.Mesh(mergeGeometries(hills), new THREE.MeshStandardMaterial({ color, roughness: 1 }))
+  );
+}
+
+/** The ground: the rolling turf disc and the two ranks of hills behind it. */
+export function createTerrain(scene: THREE.Scene): void {
+  scene.add(
+    new THREE.Mesh(
+      turfGeometry(),
+      new THREE.MeshStandardMaterial({
+        // repeat, or a single canvas stretched across 280 units has no grain at
+        // all and the whole disc reads as one flat green mat
+        map: mottledTexture(FARM.turf, 0x8fbf72, 0x5e8348, 1, 22),
+        roughness: 1,
+      })
+    )
+  );
+
+  // the far rank first, so the near hills draw over it
+  addHills(scene, FAR_HILLS, 0.1, FARM.hillFar);
+  addHills(scene, HILLS, 0.16, FARM.hill);
 }

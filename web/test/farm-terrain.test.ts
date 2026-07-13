@@ -1,5 +1,12 @@
 import { expect, test } from "vitest";
-import { AMPLITUDE, FAR_HILLS, FLAT, groundHeight, HILLS } from "../src/themes/farm/terrain.js";
+import {
+  AMPLITUDE,
+  FAR_HILLS,
+  FLAT,
+  groundHeight,
+  HILLS,
+  turfGeometry,
+} from "../src/themes/farm/terrain.js";
 import { FIELD, rowZ, TURF_RADIUS } from "../src/themes/farm/layout.js";
 
 // Every system that sits on the turf — the crops, the tractor, the chickens, the
@@ -77,4 +84,36 @@ test("the flat zone contains the farm with margin", () => {
   expect(FLAT.halfX).toBeGreaterThan(24); // the tractor's headland turns
   expect(FLAT.centerZ + FLAT.halfZ).toBeGreaterThan(rowZ(0) + 2.8); // the fence
   expect(FLAT.centerZ - FLAT.halfZ).toBeLessThan(-28.3); // the barn's far wall
+});
+
+// The disc is a RingGeometry rotated flat at build time, so its position
+// attribute is already world-space: y is height, and the mesh needs no rotation.
+test("the turf geometry is a flat-lying, displaced disc", () => {
+  const geo = turfGeometry();
+  const pos = geo.getAttribute("position");
+  // subdivided, not the 48-triangle fan a CircleGeometry would give
+  expect(pos.count).toBeGreaterThan(1000);
+
+  let peak = 0;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const z = pos.getZ(i);
+    expect(Number.isFinite(y)).toBe(true);
+    // every vertex sits on the height field the props seat themselves with
+    expect(y).toBeCloseTo(groundHeight(x, z), 6);
+    expect(Math.hypot(x, z)).toBeLessThanOrEqual(TURF_RADIUS + 0.001);
+    peak = Math.max(peak, Math.abs(y));
+  }
+  expect(peak).toBeGreaterThan(0.4); // it is actually displaced
+  expect(peak).toBeLessThanOrEqual(AMPLITUDE);
+
+  // normals must be recomputed after displacement, or the rolling ground is lit
+  // as though it were still flat and the roll is invisible
+  const nrm = geo.getAttribute("normal");
+  let tilted = false;
+  for (let i = 0; i < nrm.count; i++) {
+    if (Math.abs(nrm.getY(i)) < 0.999) tilted = true;
+  }
+  expect(tilted).toBe(true);
 });

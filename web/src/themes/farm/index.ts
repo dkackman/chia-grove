@@ -11,6 +11,7 @@ import { CropSystem } from "./crops.js";
 import { Tractor } from "./tractor.js";
 import { createField } from "./field.js";
 import { createFarmSky } from "./sky.js";
+import { createTerrain } from "./terrain.js";
 import { Chickens } from "./chickens.js";
 import { Crows } from "./crows.js";
 import { Turbines } from "./turbines.js";
@@ -52,6 +53,7 @@ export const farm: Visualization = {
     });
 
     const sky = createFarmSky(scene);
+    createTerrain(scene);
     const field = createField(scene, reducedMotion);
     const glow = glowTexture();
     const crops = new CropSystem(scene, glow);

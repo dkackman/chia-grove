@@ -2,9 +2,8 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { FIELD, rowZ } from "./layout.js";
 import { FARM } from "./palette.js";
-import { furrowTexture, glowTexture, mottledTexture } from "../shared/textures.js";
+import { furrowTexture, glowTexture } from "../shared/textures.js";
 import { mulberry32 } from "../shared/util.js";
-import { HILLS } from "./terrain.js";
 
 export interface Field {
   /** Reveal the soil strip for a row the first time the tractor plows it. */
@@ -480,23 +479,6 @@ function addTrees(scene: THREE.Scene): void {
   );
 }
 
-/** Hazy hills on the horizon; the fog does most of the softening. */
-function addHills(scene: THREE.Scene): void {
-  const hills: THREE.BufferGeometry[] = [];
-  for (const [x, z, r] of HILLS) {
-    const hill = new THREE.SphereGeometry(r, 20, 10);
-    hill.scale(1.3, 0.16, 1);
-    hill.translate(x, 0, z);
-    hills.push(hill);
-  }
-  scene.add(
-    new THREE.Mesh(
-      mergeGeometries(hills),
-      new THREE.MeshStandardMaterial({ color: FARM.hill, roughness: 1 })
-    )
-  );
-}
-
 /** A soft dark patch on the ground that seats a prop (a cheap fake shadow). */
 function blobShadow(
   scene: THREE.Scene,
@@ -523,16 +505,6 @@ function blobShadow(
 }
 
 export function createField(scene: THREE.Scene, reducedMotion = false): Field {
-  const turf = new THREE.Mesh(
-    new THREE.CircleGeometry(140, 48),
-    new THREE.MeshStandardMaterial({
-      map: mottledTexture(FARM.turf, 0x8fbf72, 0x5e8348),
-      roughness: 1,
-    })
-  );
-  turf.rotation.x = -Math.PI / 2;
-  scene.add(turf);
-
   // faint furrow lines give the field direction even before it's plowed; sits
   // just above the turf and below the soil strips, which cover it once plowed
   const furrows = new THREE.Mesh(
@@ -569,7 +541,6 @@ export function createField(scene: THREE.Scene, reducedMotion = false): Field {
   addSilo(scene, barnX + 5.4, barnZ);
   addFence(scene);
   addTrees(scene);
-  addHills(scene);
 
   // soft ground shadows so the props don't read as floating on the turf
   // (offset slightly toward the camera / away from the sun)
