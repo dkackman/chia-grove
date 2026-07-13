@@ -41,11 +41,15 @@ const hex = (c: number) => "#" + c.toString(16).padStart(6, "0");
  * `map` so a large flat disc reads as a varied surface instead of felt. Set the
  * material color to white so the texture supplies the color.
  *
- * `repeat` > 1 tiles the texture across the surface. Without it, a single canvas
- * stretched over a 280-unit disc has no grain at all and the ground reads as one
- * flat mat. Each blotch is drawn nine times — offset by ±1 tile in each axis — so
- * that it wraps continuously; drawn once it would be clipped at the canvas edge
- * and every tile boundary would show as a seam.
+ * When `repeat === 1`, a single canvas is stretched across the entire surface.
+ * No tiling is needed, so we use a smaller canvas (256×256), fewer blotches (120),
+ * and smaller radii for natural ground grain. Each blotch is drawn once.
+ *
+ * When `repeat > 1`, the texture tiles across the surface. A tiled texture requires
+ * more resolution (each tile covers far less ground) and more/larger blotches so
+ * grain is visible at tile scale. Each blotch is drawn nine times — offset by ±1
+ * tile in each axis — so that it wraps continuously across tile boundaries; drawn
+ * once it would be clipped at the canvas edge and every boundary would show as a seam.
  */
 export function mottledTexture(
   base: number,
@@ -54,20 +58,26 @@ export function mottledTexture(
   strength = 1,
   repeat = 1
 ): THREE.CanvasTexture {
-  const size = 512;
+  const tiled = repeat !== 1;
+  const size = tiled ? 512 : 256;
+  const blotchCount = tiled ? 220 : 120;
+  const radiusBase = tiled ? 12 : 8;
+  const radiusRandom = tiled ? 70 : 40;
+  const offsets = tiled ? [-size, 0, size] : [0];
+
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = size;
   const ctx = canvas.getContext("2d")!;
   ctx.fillStyle = hex(base);
   ctx.fillRect(0, 0, size, size);
-  for (let i = 0; i < 220; i++) {
-    const r = 12 + Math.random() * 70;
+  for (let i = 0; i < blotchCount; i++) {
+    const r = radiusBase + Math.random() * radiusRandom;
     const x = Math.random() * size;
     const y = Math.random() * size;
     const color = Math.random() < 0.5 ? hex(light) : hex(dark);
     ctx.globalAlpha = Math.min(1, (0.1 + Math.random() * 0.16) * strength);
-    for (const ox of [-size, 0, size]) {
-      for (const oy of [-size, 0, size]) {
+    for (const ox of offsets) {
+      for (const oy of offsets) {
         const grad = ctx.createRadialGradient(x + ox, y + oy, 0, x + ox, y + oy, r);
         grad.addColorStop(0, color);
         grad.addColorStop(1, "transparent");
