@@ -10,6 +10,21 @@ function safeBigInt(value: string): bigint {
   }
 }
 
+/** Peak opacity of a cloud shadow, out over the field. */
+const SHADOW_OPACITY = 0.34;
+
+/**
+ * How dark a cloud shadow is at x. The shadow planes are flat and drift out to
+ * x = ±60, but past |x| ≈ 26 the ground begins to roll (see terrain.ts) and a
+ * hummock would occlude part of a flat shadow — a shadow vanishing behind a rise
+ * reads as a bug. So they fade out before they get there, which also replaces the
+ * hard wrap-around pop with a fade.
+ */
+export function shadowOpacity(x: number): number {
+  const fade = THREE.MathUtils.clamp((38 - Math.abs(x)) / 14, 0, 1);
+  return SHADOW_OPACITY * fade * fade;
+}
+
 export interface FarmSky {
   update(dt: number, t: number): void;
   setNetspace(bytes: string): void;
@@ -64,7 +79,7 @@ export function createFarmSky(scene: THREE.Scene): FarmSky {
         map: glowMap,
         color: 0x33502a, // a darker turf green, so the patch reads as shade
         transparent: true,
-        opacity: 0.34,
+        opacity: SHADOW_OPACITY,
         depthWrite: false,
       })
     );
@@ -91,6 +106,7 @@ export function createFarmSky(scene: THREE.Scene): FarmSky {
       for (const shadow of shadows) {
         shadow.position.x += dt * 0.9;
         if (shadow.position.x > 60) shadow.position.x = -60;
+        shadow.material.opacity = shadowOpacity(shadow.position.x);
       }
     },
     setNetspace(bytes) {
