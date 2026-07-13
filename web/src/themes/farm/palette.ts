@@ -24,4 +24,6 @@ export const FARM = {
   fence: 0xcabfa8,
   glass: 0xa8cfe0,
   headlight: 0xfff3b0,
+  turbine: 0xdde5ea,
+  turbineHub: 0xc2ccd3,
 } as const;
