@@ -2,6 +2,7 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { TURF_RADIUS } from "./layout.js";
 import { FARM } from "./palette.js";
+import { landscapeTexture } from "./landscape.js";
 import { mottledTexture } from "../shared/textures.js";
 
 /**
@@ -134,16 +135,39 @@ function addHills(
   );
 }
 
-/** The ground: the rolling turf disc and the two ranks of hills behind it. */
+/** The ground: the rolling turf disc, the painted landscape draped on it, and the
+ *  two ranks of hills behind. */
 export function createTerrain(scene: THREE.Scene): void {
+  const geo = turfGeometry();
+
   scene.add(
     new THREE.Mesh(
-      turfGeometry(),
+      geo,
       new THREE.MeshStandardMaterial({
         // repeat, or a single canvas stretched across 280 units has no grain at
         // all and the whole disc reads as one flat green mat
         map: mottledTexture(FARM.turf, 0x8fbf72, 0x5e8348, 1, 22),
         roughness: 1,
+      })
+    )
+  );
+
+  // The parcels, the lane and the barnyard, on a clone of the same displaced
+  // surface so the overlay drapes with the ground rather than z-fighting a flat
+  // plane against it. Lit (not Basic), so it dims and warms with the sun exactly
+  // as the turf beneath it does. polygonOffset guards the two near-coincident
+  // surfaces against depth flicker out at the far end of the disc.
+  scene.add(
+    new THREE.Mesh(
+      geo.clone().translate(0, 0.02, 0),
+      new THREE.MeshStandardMaterial({
+        map: landscapeTexture(),
+        transparent: true,
+        depthWrite: false,
+        roughness: 1,
+        polygonOffset: true,
+        polygonOffsetFactor: -2,
+        polygonOffsetUnits: -2,
       })
     )
   );
