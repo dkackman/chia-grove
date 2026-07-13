@@ -39,6 +39,14 @@ export const FAR_HILLS: ReadonlyArray<readonly [number, number, number]> = [
   [88, -118, 50],
 ];
 
+/** y-scale of the near hill rank's squashed spheres. Shared by `addHills` (which
+ *  renders the domes) and `hillHeight` (which reasons about their surface), so
+ *  the two cannot drift apart. */
+export const HILL_SQUASH = 0.16;
+
+/** y-scale of the far, hazier hill rank. */
+export const FAR_HILL_SQUASH = 0.1;
+
 function smoothstep(edge0: number, edge1: number, x: number): number {
   const t = THREE.MathUtils.clamp((x - edge0) / (edge1 - edge0), 0, 1);
   return t * t * (3 - 2 * t);
@@ -116,6 +124,32 @@ export function turfGeometry(): THREE.BufferGeometry {
   return geo;
 }
 
+/**
+ * Height of the opaque hill dome at (x, z), or 0 where no hill covers it. The
+ * hills are squashed spheres rendered front-face-culled, so this is not a
+ * height field to walk on — it is the surface of a solid obstruction. Anything
+ * planted where this is above zero is *inside* that dome and will never be
+ * seen; scenery placement must stay clear of it rather than seat itself on it.
+ * Mirrors the `scale(1.3, squash, 1)` on a `SphereGeometry(r)` that `addHills`
+ * renders, using the same per-rank squash constants, so the two cannot drift
+ * apart.
+ */
+export function hillHeight(x: number, z: number): number {
+  let maxY = 0;
+  for (const [rank, squash] of [
+    [HILLS, HILL_SQUASH],
+    [FAR_HILLS, FAR_HILL_SQUASH],
+  ] as const) {
+    for (const [hx, hz, r] of rank) {
+      const nx = (x - hx) / (1.3 * r);
+      const nz = (z - hz) / r;
+      const inside = 1 - nx * nx - nz * nz;
+      if (inside > 0) maxY = Math.max(maxY, squash * r * Math.sqrt(inside));
+    }
+  }
+  return maxY;
+}
+
 /** One rank of hazy hills. `squash` is the y-scale; flatter reads as further off. */
 function addHills(
   scene: THREE.Scene,
@@ -182,6 +216,6 @@ export function createTerrain(scene: THREE.Scene, anisotropy: number): void {
   );
 
   // the far rank first, so the near hills draw over it
-  addHills(scene, FAR_HILLS, 0.1, FARM.hillFar);
-  addHills(scene, HILLS, 0.16, FARM.hill);
+  addHills(scene, FAR_HILLS, FAR_HILL_SQUASH, FARM.hillFar);
+  addHills(scene, HILLS, HILL_SQUASH, FARM.hill);
 }

@@ -2,8 +2,9 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { FIELD, rowZ, TURF_RADIUS } from "./layout.js";
 import { FARM } from "./palette.js";
-import { groundHeight } from "./terrain.js";
+import { groundHeight, hillHeight } from "./terrain.js";
 import { blobShadow } from "./scenery.js";
+import { nearLane } from "./landscape.js";
 import { glowTexture } from "../shared/textures.js";
 import { mulberry32 } from "../shared/util.js";
 
@@ -60,6 +61,12 @@ export function propPlacements(): Placement[] {
       const x = Math.cos(a) * r;
       const z = Math.sin(a) * r;
       if (inField(x, z) || inBarnyard(x, z) || inForeground(kind, x, z)) continue;
+      // inside a hill's opaque, front-face-culled dome (see hillHeight in
+      // terrain.ts) — would never be seen
+      if (hillHeight(x, z) > 0.4) continue;
+      // inside the dirt lane's dust band — a boulder in the road undoes the
+      // gate gaps the hedgerows leave for it
+      if (nearLane(x, z, 1.6)) continue;
       if (Math.hypot(x, z) > TURF_RADIUS - 12) continue;
       out.push({ kind, x, z, s: sMin + rand() * (sMax - sMin), yaw: rand() * Math.PI * 2 });
       placed++;
@@ -71,11 +78,14 @@ export function propPlacements(): Placement[] {
   scatter("scrub", 34, 60, 0.8, 1.5);
   scatter("bale", 7, 30, 0.9, 1.1);
 
-  // a stack of bales east of the silo, on the worn apron and clear of the lane
+  // a stack of bales east of the silo, on the worn apron and clear of the lane.
+  // Hand-placed, so it does not go through scatter()'s nearLane rejection —
+  // nudged 0.5 south of its original z so it still clears the lane's new,
+  // more southerly centreline (see FIX 3 in landscape.ts) by > 1.6.
   for (const [x, z] of [
-    [-1.6, -25.5],
-    [-1.6, -23.9],
-    [0.2, -24.7],
+    [-1.6, -26.0],
+    [-1.6, -24.4],
+    [0.2, -25.2],
   ] as ReadonlyArray<readonly [number, number]>) {
     out.push({ kind: "bale", x, z, s: 1, yaw: rand() * 0.4 });
   }
@@ -134,14 +144,24 @@ export function baleGeometry(): THREE.BufferGeometry {
 /**
  * The barnyard clutter, already in world space: a woodpile against the barn's
  * west end, a water trough out past the chicken yard, a ladder leaning on the
- * front wall, and a pair of crates by the doors. Human-scale objects — they are
- * what give the barn its size.
+ * front wall, and a pair of crates east of the doors. Human-scale objects —
+ * they are what give the barn its size.
  *
  * Every position here is threaded between things that are already there: the barn
  * (x ∈ [−13.5, −6.5], front wall at z ≈ −23.7), the silo (x ≈ −4.6, z ≈ −26,
  * r ≈ 1.5), the lane (z ≈ −21.5 in front of the doors), the chicken yard
  * (x ∈ [−17.5, −10.5], z ∈ [−26.5, −19.5]) and the field's far soil strip
  * (z ≈ −19.6). It all sits inside the flat zone, so a hard-coded y is the ground.
+ *
+ * The crates in particular are threaded, footprint included, between: the
+ * chicken yard (x ≤ −10.5), the sliding doors (x ∈ [−10.92, −9.08]) and their
+ * frame (x ≈ −9.04), the ladder (rails x ∈ [−8.705, −8.195], rungs
+ * x ∈ [−8.7, −8.2], both z ∈ [−23.69, −22.83]), the east corner board
+ * (x ≈ −6.55) and the east window (x ∈ [−7.92, −7.08], y ∈ [1.23, 2.17]) — the
+ * stack stands in front of the window but keeps its top (y = 1.2) below the
+ * sill, and the barn's front wall (z = −23.675), which its near face clears by
+ * ~0.09. The two crates share a centre (x = −7.3, z = −23.15) so the upper
+ * one's base is 100% supported by the lower one's top face.
  */
 export function clutterGeometry(): THREE.BufferGeometry {
   const parts: THREE.BufferGeometry[] = [];
@@ -183,9 +203,11 @@ export function clutterGeometry(): THREE.BufferGeometry {
     box(0.5, 0.05, 0.05, -8.45, y, -23.26 - (y - 1.5) * 0.266);
   }
 
-  // crates against the wall, west of the doors and north of the lane
-  box(0.7, 0.7, 0.7, -13.0, 0.35, -23.0, 0.3);
-  box(0.6, 0.6, 0.6, -12.7, 1.0, -22.9, -0.2);
+  // crates east of the doors, clear of the chicken yard, the ladder and the
+  // corner board; the upper one flush and centred on the lower one, its top
+  // (y = 1.2) below the east window's sill (y = 1.23)
+  box(0.7, 0.7, 0.7, -7.3, 0.35, -23.15, 0.3);
+  box(0.5, 0.5, 0.5, -7.3, 0.95, -23.15, -0.2);
 
   return mergeGeometries(parts);
 }
@@ -224,10 +246,13 @@ export function createProps(scene: THREE.Scene): void {
   scene.add(new THREE.Mesh(clutterGeometry(), stone(FARM.wood)));
 
   // only the props big enough to want one: a bale floating a hair off the turf is
-  // obvious, a tuft is not
+  // obvious, a tuft is not. Bales seat themselves at groundHeight(x, z) (see
+  // addKind above), so their shadows must sample the same rolling ground.
   const shadowMap = glowTexture();
   for (const p of placements) {
     if (p.kind !== "bale") continue;
-    blobShadow(scene, shadowMap, p.x - 0.2, p.z + 0.2, 1.9 * p.s, 1.9 * p.s, 0.28);
+    const sx = p.x - 0.2;
+    const sz = p.z + 0.2;
+    blobShadow(scene, shadowMap, sx, sz, 1.9 * p.s, 1.9 * p.s, 0.28, groundHeight(sx, sz) + 0.03);
   }
 }

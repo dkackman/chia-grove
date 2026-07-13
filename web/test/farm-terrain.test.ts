@@ -1,13 +1,63 @@
 import { expect, test } from "vitest";
 import {
   AMPLITUDE,
+  FAR_HILL_SQUASH,
   FAR_HILLS,
   FLAT,
   groundHeight,
+  HILL_SQUASH,
   HILLS,
+  hillHeight,
   turfGeometry,
 } from "../src/themes/farm/terrain.js";
 import { FIELD, rowZ, TURF_RADIUS } from "../src/themes/farm/layout.js";
+
+// hillHeight is the surface of the opaque dome addHills renders — squashed
+// spheres, sunk to their equator. Re-derived independently here (mirroring
+// farm-turbines.test.ts's own local copy of the same formula for HILLS alone),
+// so this test doesn't just echo terrain.ts's implementation back at itself.
+function referenceHillHeight(x: number, z: number): number {
+  let maxY = 0;
+  for (const [rank, squash] of [
+    [HILLS, HILL_SQUASH],
+    [FAR_HILLS, FAR_HILL_SQUASH],
+  ] as const) {
+    for (const [hx, hz, r] of rank) {
+      const nx = (x - hx) / (1.3 * r);
+      const nz = (z - hz) / r;
+      const inside = 1 - nx * nx - nz * nz;
+      if (inside > 0) maxY = Math.max(maxY, squash * r * Math.sqrt(inside));
+    }
+  }
+  return maxY;
+}
+
+test("hillHeight matches the surface addHills renders, and is 0 off every dome", () => {
+  expect(HILL_SQUASH).toBe(0.16);
+  expect(FAR_HILL_SQUASH).toBe(0.1);
+  for (const [hx, hz] of [...HILLS, ...FAR_HILLS]) {
+    // dead centre of the dome: the tallest point on its surface
+    expect(hillHeight(hx, hz)).toBeCloseTo(referenceHillHeight(hx, hz), 9);
+    expect(hillHeight(hx, hz)).toBeGreaterThan(0);
+  }
+  // far from every hill: flat open ground, not covered by any dome
+  expect(hillHeight(0, 0)).toBe(0);
+  expect(hillHeight(140, 140)).toBe(0);
+});
+
+// hillHeight() takes the max across both ranks, so a point just past one
+// hill's rim can still sit inside a different hill's footprint — HILLS and
+// FAR_HILLS overlap in places. This sweeps a grid across the whole disc and
+// checks hillHeight() against the independently-derived reference at every
+// point, which exercises the rim (and every other case) without assuming any
+// particular point is footprint-free.
+test("hillHeight matches the reference formula across the whole disc", () => {
+  for (let x = -TURF_RADIUS; x <= TURF_RADIUS; x += 5) {
+    for (let z = -TURF_RADIUS; z <= TURF_RADIUS; z += 5) {
+      expect(hillHeight(x, z)).toBeCloseTo(referenceHillHeight(x, z), 9);
+    }
+  }
+});
 
 // Every system that sits on the turf — the crops, the tractor, the chickens, the
 // fence, the furrow plane, the soil strips, every blobShadow — is placed at a

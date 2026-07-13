@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { FARM } from "./palette.js";
-import { groundHeight } from "./terrain.js";
+import { groundHeight, hillHeight } from "./terrain.js";
 import { glowTexture } from "../shared/textures.js";
 import { mulberry32 } from "../shared/util.js";
 
@@ -160,7 +160,11 @@ function addTrees(scene: THREE.Scene): void {
   );
 }
 
-/** A soft dark patch on the ground that seats a prop (a cheap fake shadow). */
+/** A soft dark patch on the ground that seats a prop (a cheap fake shadow). `y`
+ *  defaults to the flat zone's height (0.03 above y = 0); callers whose prop
+ *  sits on rolling ground must pass `groundHeight(x, z) + 0.03` instead, or the
+ *  shadow hangs in the air (or sinks into the turf) while the prop it belongs
+ *  to stands on the actual ground beneath it. */
 export function blobShadow(
   scene: THREE.Scene,
   map: THREE.Texture,
@@ -168,7 +172,8 @@ export function blobShadow(
   z: number,
   w: number,
   d: number,
-  opacity: number
+  opacity: number,
+  y = 0.03
 ): void {
   const mesh = new THREE.Mesh(
     new THREE.PlaneGeometry(w, d),
@@ -181,7 +186,7 @@ export function blobShadow(
     })
   );
   mesh.rotation.x = -Math.PI / 2;
-  mesh.position.set(x, 0.03, z);
+  mesh.position.set(x, y, z);
   scene.add(mesh);
 }
 
@@ -242,9 +247,11 @@ const HEDGEROWS: ReadonlyArray<ReadonlyArray<readonly [number, number]>> = [
     [50, -30],
     [50, -40],
   ],
+  // moved forward (from -42/-40) so the line clears HILLS[2] ([62, -78, 42]),
+  // whose near fringe reached to z ≈ -37 in that x range and buried most of it
   [
-    [54, -42],
-    [92, -40],
+    [54, -36],
+    [92, -34],
   ],
   // east again; the lane passes x = 88 at z ≈ −28
   [
@@ -255,19 +262,38 @@ const HEDGEROWS: ReadonlyArray<ReadonlyArray<readonly [number, number]>> = [
     [88, -32],
     [88, -38],
   ],
-  // the cross-hedge beyond the barn
+  // the cross-hedge beyond the barn. z = -34 rather than the field-adjacent
+  // -44 the hedge would otherwise want: HILLS' near fringes reach z ≈ -36 to
+  // -39 (see hillHeight in terrain.ts), and at -44 the whole line sat 15-27
+  // units inside one dome or another. -34 is hill-free across the full width
+  // of the line; addHedgerows' hillHeight() check is the safety net for any
+  // jittered straggler.
   [
-    [-30, -44],
-    [30, -44],
+    [-30, -34],
+    [30, -34],
   ],
 ];
 
-/** Shrubs stepped along each hedgerow, jittered so the line reads as growth rather
- *  than a string of beads, and each seated on the ground it stands on. */
-function addHedgerows(scene: THREE.Scene): void {
+export interface HedgePlacement {
+  x: number;
+  z: number;
+  /** horizontal (x and z) scale */
+  s: number;
+  /** vertical scale (independent of `s`, as `addHedgerows` draws it) */
+  sy: number;
+  yaw: number;
+}
+
+/**
+ * Shrub positions stepped along each hedgerow, jittered so the line reads as
+ * growth rather than a string of beads. Pure, so a test can prove nothing has
+ * landed inside a hill. Exported for testing; `addHedgerows` is the only
+ * production caller.
+ */
+export function hedgerowPlacements(): HedgePlacement[] {
   const rand = mulberry32(HEDGE_SEED);
   const base = hedgeGeometry();
-  const shrubs: THREE.BufferGeometry[] = [];
+  const out: HedgePlacement[] = [];
   const STEP = 1.5;
   for (const line of HEDGEROWS) {
     for (let i = 0; i + 1 < line.length; i++) {
@@ -276,17 +302,47 @@ function addHedgerows(scene: THREE.Scene): void {
       const n = Math.max(1, Math.round(Math.hypot(x1 - x0, z1 - z0) / STEP));
       for (let k = 0; k <= n; k++) {
         const t = k / n;
-        const x = x0 + (x1 - x0) * t + (rand() - 0.5) * 0.7;
-        const z = z0 + (z1 - z0) * t + (rand() - 0.5) * 0.7;
+        // draw every random value for this shrub before deciding whether to
+        // keep it, so the hillHeight rejection below cannot perturb the
+        // sequence later elements (in this line or the next) draw from
+        const rx = rand();
+        const rz = rand();
+        const rs = rand();
+        const rsy = rand();
+        const ryaw = rand();
+        const x = x0 + (x1 - x0) * t + (rx - 0.5) * 0.7;
+        const z = z0 + (z1 - z0) * t + (rz - 0.5) * 0.7;
+        const s = 0.8 + rs * 0.7;
+        const sy = s * (0.85 + rsy * 0.4);
+        const yaw = ryaw * Math.PI * 2;
+        // the safety net: a hedge planted inside a hill's opaque dome would
+        // never be seen. A shrub's own footprint is small, but a line that
+        // runs close along a hill's base (several of HEDGEROWS do) can still
+        // put part of one — not just its centre — inside the dome, so this
+        // checks the real transformed vertices rather than the shrub's
+        // planting point alone (see isBuried below).
         const shrub = base.clone();
-        const s = 0.8 + rand() * 0.7;
-        shrub.scale(s, s * (0.85 + rand() * 0.4), s);
-        shrub.rotateY(rand() * Math.PI * 2);
+        shrub.scale(s, sy, s);
+        shrub.rotateY(yaw);
         shrub.translate(x, groundHeight(x, z), z);
-        shrubs.push(shrub);
+        if (isBuried(shrub)) continue;
+        out.push({ x, z, s, sy, yaw });
       }
     }
   }
+  return out;
+}
+
+/** Shrubs stepped along each hedgerow, each seated on the ground it stands on. */
+function addHedgerows(scene: THREE.Scene): void {
+  const base = hedgeGeometry();
+  const shrubs = hedgerowPlacements().map(({ x, z, s, sy, yaw }) => {
+    const shrub = base.clone();
+    shrub.scale(s, sy, s);
+    shrub.rotateY(yaw);
+    shrub.translate(x, groundHeight(x, z), z);
+    return shrub;
+  });
   scene.add(
     new THREE.Mesh(
       mergeGeometries(shrubs),
@@ -306,17 +362,32 @@ const TREE_LINE_SEED = 0xfa217e;
 export function farTreeLineGeometry(): THREE.BufferGeometry {
   const rand = mulberry32(TREE_LINE_SEED);
   const blobs: THREE.BufferGeometry[] = [];
+  // All three bands sit at z = -37 (was -56, -66, -52), with x-spans retuned
+  // to the gaps between the hill footprints (see hillHeight in terrain.ts):
+  // the old bands sat 15-27 units inside HILLS or FAR_HILLS, where the domes
+  // are opaque and front-face-culled, so 69 of 75 crowns never rendered.
   for (const [x0, x1, z] of [
-    [-118, -62, -56],
-    [-40, 40, -66],
-    [66, 122, -52],
+    [-118, -70, -37],
+    [-40, 42, -37],
+    [80, 122, -37],
   ] as ReadonlyArray<readonly [number, number, number]>) {
-    for (let x = x0; x <= x1; x += 2.6) {
-      const jx = x + (rand() - 0.5) * 1.8;
-      const jz = z + (rand() - 0.5) * 5;
-      const r = 1.6 + rand() * 1.4;
+    // Denser than the original 2.6 spacing: at z = -37 a meaningful share of
+    // candidates sit close enough to a hill's fringe (see isBuried below) to
+    // be rejected, and the tighter step keeps the surviving crowns reading as
+    // a continuous band rather than a sparse row of gaps.
+    for (let x = x0; x <= x1; x += 2.0) {
+      // draw every random value for this crown before deciding whether to
+      // keep it, so the hillHeight rejection below cannot perturb the
+      // sequence later crowns draw from
+      const rjx = rand();
+      const rjz = rand();
+      const rr = rand();
+      const rsy = rand();
+      const jx = x + (rjx - 0.5) * 1.8;
+      const jz = z + (rjz - 0.5) * 5;
+      const r = 1.6 + rr * 1.4;
       const blob = new THREE.IcosahedronGeometry(r, 0);
-      blob.scale(1, 0.75 + rand() * 0.35, 1);
+      blob.scale(1, 0.75 + rsy * 0.35, 1);
       // An icosahedron's lowest vertex sits at ~0.85r, not r, so a fixed
       // fraction of r under- or over-shoots depending on the y-squash drawn
       // above; measure the actual extent so the crown's lowest vertex meets
@@ -324,11 +395,51 @@ export function farTreeLineGeometry(): THREE.BufferGeometry {
       // ball or one sunk into the turf.
       blob.computeBoundingBox();
       const lift = -(blob.boundingBox?.min.y ?? 0);
-      blob.translate(jx, groundHeight(jx, jz) + lift, jz);
+      // The crown is a single rigid blob translated as a whole, but its
+      // footprint (radius up to ~3) is wide enough that the rolling ground
+      // (terrain.ts) can be measurably higher at its edge than under its
+      // centre — seating on groundHeight(jx, jz) alone left vertices a few
+      // centimetres under the turf at their own (x, z). Seat on the highest
+      // ground sampled around the footprint instead, so every vertex clears
+      // the ground under it, not just the one under the centre.
+      let ground = groundHeight(jx, jz);
+      for (let a = 0; a < Math.PI * 2; a += Math.PI / 4) {
+        ground = Math.max(ground, groundHeight(jx + Math.cos(a) * r, jz + Math.sin(a) * r));
+      }
+      blob.translate(jx, ground + lift, jz);
+      // The safety net: reject the whole crown if ANY of its actual,
+      // transformed vertices sits below a hill's opaque dome surface at that
+      // vertex's own (x, z). A radius-3 crown's edge can dip into a hill's
+      // fringe even when its centre reads clear by a wide margin (the fringe
+      // rises steeply close to a dome's footprint), so the check is against
+      // the real geometry, not a single point sampled at the centre.
+      if (isBuried(blob)) continue;
       blobs.push(blob);
     }
   }
   return mergeGeometries(blobs);
+}
+
+/**
+ * Whether any vertex of `geo` (already in world space) sits below a hill's
+ * opaque dome surface at that vertex's own (x, z) — i.e. would never render.
+ *
+ * `hillHeight` is exactly 0 everywhere outside every dome's footprint, so a
+ * vertex only counts if it is genuinely inside one (`hh > 0`) — checking
+ * `y < hillHeight(x, z)` alone would also flag ordinary rolling ground far
+ * from any hill (terrain.ts's ground dips below y = 0 in the wings, which is
+ * unrelated to burial). `tolerance` absorbs the sub-centimetre vertical noise
+ * some base geometries carry (e.g. a hedge shrub's own blobs settle a hair
+ * below y = 0 at their nominal scale) without masking a real burial, which
+ * runs to tens of centimetres or more.
+ */
+function isBuried(geo: THREE.BufferGeometry, tolerance = 0.05): boolean {
+  const pos = geo.getAttribute("position");
+  for (let i = 0; i < pos.count; i++) {
+    const hh = hillHeight(pos.getX(i), pos.getZ(i));
+    if (hh > 0 && hh - pos.getY(i) > tolerance) return true;
+  }
+  return false;
 }
 
 /** Trees, hedgerows and the far tree line — everything green that is not a crop. */
@@ -346,9 +457,13 @@ export function createScenery(scene: THREE.Scene): void {
     )
   );
 
-  // soft ground shadows, so the trees don't read as floating on the turf
+  // soft ground shadows, so the trees don't read as floating on the turf. Trees
+  // seat themselves at groundHeight(x, z) (see addTrees above), so their
+  // shadows must sample the same rolling ground rather than the flat default.
   const shadowMap = glowTexture();
   for (const [tx, tz, s] of TREES) {
-    blobShadow(scene, shadowMap, tx - 0.3 * s, tz + 0.25 * s, 2.6 * s, 2.6 * s, 0.3);
+    const sx = tx - 0.3 * s;
+    const sz = tz + 0.25 * s;
+    blobShadow(scene, shadowMap, sx, sz, 2.6 * s, 2.6 * s, 0.3, groundHeight(sx, sz) + 0.03);
   }
 }

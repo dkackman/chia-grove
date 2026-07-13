@@ -88,22 +88,36 @@ const PARCELS: ReadonlyArray<readonly [number, number, number, number]> = [
  * `landscapeTexture()`. The crop rows are the subject of the scene, so nothing
  * may be painted under them; erasing this rectangle guarantees that
  * structurally rather than relying on every shape above it being hand-tuned to
- * stay clear. Covers x ∈ [−25, 25], z ∈ [−22, 22] — margin of ≥ 1.6 world
- * units beyond the soil strips on every side, enough that even the blurred
- * inner edge of the cut cannot tint a strip.
+ * stay clear. Covers x ∈ [−24, 24], z ∈ [−21.5, 21.5] — the soil strips
+ * (|x| ≤ 22.7, |z| ≤ 20.31) sit ≥ 3.4σ inside this box given the cut's 5px
+ * blur (σ ≈ 0.34 world units — see landscapeTexture), so they are erased
+ * essentially completely (>99.9%), while the dirt lane's control points near
+ * the barn (z ≈ −22.4, outside this box) survive with <0.5% erased. Shrunk
+ * from the original {halfX: 25, halfZ: 22}, which left only a 3.4-unit
+ * corridor between the barn's front wall (z = −23.675) and the cut — not
+ * enough room for the lane's own 2.4-unit-wide dust band, so the cut ate 74%
+ * of the lane's paint right at the doors where a lane most needs to read as
+ * one.
  */
-export const FIELD_CLEAR = { halfX: 25, halfZ: 22 } as const;
+export const FIELD_CLEAR = { halfX: 24, halfZ: 21.5 } as const;
 
 /**
  * The lane out of the barn doors, running east along the field's far headland
  * and away toward the horizon. [x, z] control points. It threads the corridor
- * between the barn's front wall (z ≈ −23.7) and the field's far soil strip
- * (z ≈ −19.6) — which is exactly where a farm lane belongs — so the z values
- * near the barn are tightly constrained and should not be nudged casually.
+ * between the barn's front wall (z = −23.675) and the field-clear cut
+ * (z = −21.5) — a 2.175-unit gap — so the z values near the barn are tightly
+ * constrained and should not be nudged casually: the first point puts the
+ * lane's 2.4-unit dust band (±1.2 around the centreline) at z ∈ [−23.6, −21.2],
+ * clearing the soil strips (z ≥ −20.31) by ~0.9 and just touching the barn wall
+ * (its far edge sits 0.075 short of it) — which is exactly where a lane at the
+ * barn doors belongs. Its near edge (−21.2) sits ~0.3 inside the field-clear
+ * cut, so that sliver of the band fades (the cut is ~81% erased right at
+ * −21.2), but the band's centreline is a further 0.9 outside the cut and
+ * reads clearly — see landscapeTexture's cut-blur comment for the erf math.
  */
 const LANE: ReadonlyArray<readonly [number, number]> = [
-  [-9, -21.3],
-  [4, -22],
+  [-9, -22.4],
+  [4, -22.6],
   [22, -22.6],
   [40, -22.2],
   [68, -24.6],
@@ -122,6 +136,33 @@ function lanePath(ctx: CanvasRenderingContext2D): void {
   }
   const last = LANE[LANE.length - 1];
   ctx.lineTo(toPx(last[0]), toPx(last[1]));
+}
+
+/**
+ * Distance in world units from (x, z) to the lane's centreline — the straight
+ * segments joining `LANE`'s control points, which hug the actual painted
+ * (quadratic-curved) path closely enough for a clearance check. Exported so
+ * `propPlacements` can keep scattered rocks, scrub and bales out of the road.
+ */
+export function distanceToLane(x: number, z: number): number {
+  let best = Infinity;
+  for (let i = 0; i + 1 < LANE.length; i++) {
+    const [x0, z0] = LANE[i];
+    const [x1, z1] = LANE[i + 1];
+    const dx = x1 - x0;
+    const dz = z1 - z0;
+    const len2 = dx * dx + dz * dz;
+    const t = len2 === 0 ? 0 : THREE.MathUtils.clamp(((x - x0) * dx + (z - z0) * dz) / len2, 0, 1);
+    const px = x0 + dx * t;
+    const pz = z0 + dz * t;
+    best = Math.min(best, Math.hypot(x - px, z - pz));
+  }
+  return best;
+}
+
+/** Whether (x, z) falls within `margin` world units of the lane's centreline. */
+export function nearLane(x: number, z: number, margin: number): boolean {
+  return distanceToLane(x, z) < margin;
 }
 
 /**
@@ -178,9 +219,11 @@ export function landscapeTexture(): THREE.CanvasTexture {
   for (const [x, z, rx, rz] of [
     [-10, -26, 7.5, 5.5], // the barn
     [-4.6, -26, 3.6, 3.6], // the silo
-    // the apron in front of the doors, pulled into the corridor between the
-    // barn wall and the field-clear cut so its body isn't half erased
-    [-9, -22.6, 8.5, 1.6],
+    // the apron in front of the doors: trimmed to a 1.0 z-radius so its body
+    // (z ∈ [-23.6, -21.6]) sits inside the 2.175-unit corridor between the
+    // barn wall (-23.675) and the field-clear cut (-21.5), rather than the
+    // wider ellipse this would otherwise want, half of which the cut erased
+    [-9, -22.6, 8.5, 1.0],
   ] as ReadonlyArray<readonly [number, number, number, number]>) {
     ctx.save();
     ctx.translate(toPx(x), toPx(z));
@@ -197,7 +240,18 @@ export function landscapeTexture(): THREE.CanvasTexture {
   // footprint back out of the canvas guarantees that structurally, so a future nudge
   // to a lane control point cannot silently smear packed earth across the rows.
   ctx.globalCompositeOperation = "destination-out";
-  ctx.filter = "blur(8px)"; // feather the cut, so the field's edge is not a crisp rectangle
+  // 5px (σ ≈ 0.34 world units) — feathers the cut so the field's edge is not a
+  // crisp rectangle, without reaching far enough to eat the lane's corridor at
+  // the barn doors the way the previous 8px (σ ≈ 0.55) did. A blurred hard
+  // edge's erase fraction at distance d inside the cut follows the Gaussian
+  // CDF, Φ(d / σ): the soil strips sit ≥ 3.4σ inside FIELD_CLEAR and so are
+  // erased ~99.97%, while the lane's centreline near the barn (z ≈ −22.4, one
+  // of the few points that must survive despite being close by farm scale)
+  // sits far enough outside the box that it is < 0.5% erased. The lane
+  // band's near edge (z = −21.2) is the one part of this that isn't fully
+  // clear — it sits ~0.3 inside the box (~0.9σ), so Φ(0.9) ≈ 81% of just that
+  // sliver fades; the rest of the band, including the centreline, is fine.
+  ctx.filter = "blur(5px)";
   ctx.fillStyle = "#000";
   ctx.fillRect(
     toPx(-FIELD_CLEAR.halfX),

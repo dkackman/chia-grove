@@ -8,6 +8,8 @@ import {
   tuftGeometry,
 } from "../src/themes/farm/props.js";
 import { FIELD, rowZ, TURF_RADIUS } from "../src/themes/farm/layout.js";
+import { hillHeight } from "../src/themes/farm/terrain.js";
+import { nearLane } from "../src/themes/farm/landscape.js";
 
 // mergeGeometries returns null when its inputs mix indexed and non-indexed
 // geometry; a null geometry crashes the renderer on the first frame. Cones,
@@ -68,4 +70,64 @@ test("every prop stands on the turf", () => {
   for (const p of propPlacements()) {
     expect(Math.hypot(p.x, p.z)).toBeLessThan(TURF_RADIUS);
   }
+});
+
+// FIX 1: the hills (terrain.ts) are opaque, front-face-culled domes — 46 of the
+// 220 scattered props used to land inside one and never render. hillHeight is
+// exactly 0 everywhere outside every dome's footprint, so this is a hard boundary,
+// not a "close to a hill" heuristic.
+test("no scattered prop stands where hillHeight(x, z) > 0", () => {
+  for (const p of propPlacements()) {
+    expect(hillHeight(p.x, p.z), `${p.kind} at (${p.x}, ${p.z})`).toBe(0);
+  }
+});
+
+// FIX 5: a boulder at (46.1, -23.8) — 1.10 units from the lane's centreline —
+// used to land in the dirt lane, undoing the gate gaps the hedgerows leave for it.
+test("no scattered prop stands within 1.6 units of the dirt lane's centreline", () => {
+  for (const p of propPlacements()) {
+    expect(nearLane(p.x, p.z, 1.6), `${p.kind} at (${p.x}, ${p.z})`).toBe(false);
+  }
+});
+
+// FIX 4: the crate stack used to sit dead centre of the chicken yard (x ∈
+// [-17.5, -10.5], z ∈ [-26.5, -19.5]), and the upper crate overhung the lower
+// one by nearly half its base. clutterGeometry() merges every barnyard object
+// into one geometry; x > -8 isolates the crates from everything else in it —
+// the ladder immediately to their west tops out at x = -8.195, and the
+// woodpile/trough/silo are all much further west still.
+test("the crate stack clears the chicken yard, the ladder, the doors and the barn wall", () => {
+  const pos = clutterGeometry().getAttribute("position");
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minZ = Infinity;
+  let maxZ = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  let crateVerts = 0;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const z = pos.getZ(i);
+    const y = pos.getY(i);
+    if (x <= -8) continue; // not part of the crate stack
+    crateVerts++;
+    minX = Math.min(minX, x);
+    maxX = Math.max(maxX, x);
+    minZ = Math.min(minZ, z);
+    maxZ = Math.max(maxZ, z);
+    minY = Math.min(minY, y);
+    maxY = Math.max(maxY, y);
+  }
+  expect(crateVerts).toBeGreaterThan(0); // the filter actually found the crates
+
+  expect(minX).toBeGreaterThan(-10.5); // clear of the chicken yard (x <= -10.5)
+  expect(minX).toBeGreaterThan(-9.08); // clear of the sliding doors (x <= -9.08)
+  expect(minX).toBeGreaterThan(-9.04); // clear of the door frame
+  expect(minX).toBeGreaterThan(-8.195); // clear of the ladder (rails/rungs east edge)
+  expect(maxX).toBeLessThan(-6.63); // clear of the east corner board (spans [-6.63, -6.47])
+  expect(minZ).toBeGreaterThan(-23.675); // clear of the barn's front wall
+  // stands in front of the east window (x in [-7.92, -7.08]) but never reaches
+  // its sill (y = 1.23), so it cannot intersect the window
+  expect(maxY).toBeLessThan(1.23);
+  expect(minY).toBeCloseTo(0, 6); // the lower crate rests on the ground
 });
