@@ -31,3 +31,8 @@ export function plantPosition(row: number, indexInRow: number, coinIdHex: string
   const z = rowZ(row) + (rand() - 0.5) * 0.3;
   return { x, z };
 }
+
+/** Radius of the turf disc. Past this, a prop floats over open sky. It lives here
+ *  rather than in terrain.ts so that terrain.ts and landscape.ts — which both need
+ *  it — do not have to import each other. */
+export const TURF_RADIUS = 140;

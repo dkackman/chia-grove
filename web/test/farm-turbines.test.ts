@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { expect, test } from "vitest";
-import { HILLS } from "../src/themes/farm/field.js";
+import { HILLS } from "../src/themes/farm/terrain.js";
 import {
   gustPulse,
   rotorGeometry,

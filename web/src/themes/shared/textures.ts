@@ -40,35 +40,61 @@ const hex = (c: number) => "#" + c.toString(16).padStart(6, "0");
  * A base color flecked with soft lighter/darker blotches, for use as a ground
  * `map` so a large flat disc reads as a varied surface instead of felt. Set the
  * material color to white so the texture supplies the color.
+ *
+ * When `repeat === 1`, a single canvas is stretched across the entire surface.
+ * No tiling is needed, so we use a smaller canvas (256×256), fewer blotches (120),
+ * and smaller radii for natural ground grain. Each blotch is drawn once.
+ *
+ * When `repeat > 1`, the texture tiles across the surface. A tiled texture requires
+ * more resolution (each tile covers far less ground) and more/larger blotches so
+ * grain is visible at tile scale. Each blotch is drawn nine times — offset by ±1
+ * tile in each axis — so that it wraps continuously across tile boundaries; drawn
+ * once it would be clipped at the canvas edge and every boundary would show as a seam.
  */
 export function mottledTexture(
   base: number,
   light: number,
   dark: number,
-  strength = 1
+  strength = 1,
+  repeat = 1
 ): THREE.CanvasTexture {
-  const size = 256;
+  const tiled = repeat !== 1;
+  const size = tiled ? 512 : 256;
+  const blotchCount = tiled ? 220 : 120;
+  const radiusBase = tiled ? 12 : 8;
+  const radiusRandom = tiled ? 70 : 40;
+  const offsets = tiled ? [-size, 0, size] : [0];
+
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = size;
   const ctx = canvas.getContext("2d")!;
   ctx.fillStyle = hex(base);
   ctx.fillRect(0, 0, size, size);
-  for (let i = 0; i < 120; i++) {
-    const r = 8 + Math.random() * 40;
+  for (let i = 0; i < blotchCount; i++) {
+    const r = radiusBase + Math.random() * radiusRandom;
     const x = Math.random() * size;
     const y = Math.random() * size;
-    const grad = ctx.createRadialGradient(x, y, 0, x, y, r);
-    grad.addColorStop(0, Math.random() < 0.5 ? hex(light) : hex(dark));
-    grad.addColorStop(1, "transparent");
+    const color = Math.random() < 0.5 ? hex(light) : hex(dark);
     ctx.globalAlpha = Math.min(1, (0.1 + Math.random() * 0.16) * strength);
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.fill();
+    for (const ox of offsets) {
+      for (const oy of offsets) {
+        const grad = ctx.createRadialGradient(x + ox, y + oy, 0, x + ox, y + oy, r);
+        grad.addColorStop(0, color);
+        grad.addColorStop(1, "transparent");
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(x + ox, y + oy, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
   }
   ctx.globalAlpha = 1;
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
+  if (repeat !== 1) {
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(repeat, repeat);
+  }
   return tex;
 }
 
