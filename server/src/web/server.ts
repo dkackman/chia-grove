@@ -79,7 +79,7 @@ export async function buildServer(
       // bundles — which would defeat the protocol-version reload guard.
       setHeaders(res, filePath) {
         if (filePath.endsWith(".html")) {
-          res.setHeader("Cache-Control", "no-cache");
+          res.header("Cache-Control", "no-cache");
         }
       },
     });

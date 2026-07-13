@@ -1021,9 +1021,9 @@ test("localNsfwModelPath alone (no googleApiKey) still runs local classification
   let byteFetchCalls = 0;
   const modelPath = fileURLToPath(new URL("../models/opennsfw2.onnx", import.meta.url));
   const sourceBytes = new Uint8Array(
-    (
-      await import("node:fs")
-    ).readFileSync(fileURLToPath(new URL("./fixtures/nsfw-parity-source.png", import.meta.url)))
+    (await import("node:fs")).readFileSync(
+      fileURLToPath(new URL("./fixtures/nsfw-parity-source.png", import.meta.url))
+    )
   );
   const filter = new ContentFilter(media, {
     store,
