@@ -27,11 +27,12 @@ function inField(x: number, z: number): boolean {
   return Math.abs(x) <= 25.5 && z <= rowZ(0) + 1.6 && z >= rowZ(FIELD.rows - 1) - 1.6;
 }
 
-/** The barn and the silo are solid. */
-function inFarmstead(x: number, z: number): boolean {
-  const inBarn = x >= -14.5 && x <= -5.5 && z >= -29 && z <= -23;
+/** The barnyard — the barn, the woodpile, the trough, the ladder and the crates
+ *  that clutterGeometry() places by hand — plus the silo. All solid. */
+function inBarnyard(x: number, z: number): boolean {
+  const inYard = x >= -21.5 && x <= -5.5 && z >= -29 && z <= -21;
   const inSilo = Math.hypot(x + 4.6, z + 26) < 2.4;
-  return inBarn || inSilo;
+  return inYard || inSilo;
 }
 
 /** The strip between the fence and the camera's drift path. Anything but an
@@ -58,7 +59,7 @@ export function propPlacements(): Placement[] {
       const r = 27 + rand() * reach;
       const x = Math.cos(a) * r;
       const z = Math.sin(a) * r;
-      if (inField(x, z) || inFarmstead(x, z) || inForeground(kind, x, z)) continue;
+      if (inField(x, z) || inBarnyard(x, z) || inForeground(kind, x, z)) continue;
       if (Math.hypot(x, z) > TURF_RADIUS - 12) continue;
       out.push({ kind, x, z, s: sMin + rand() * (sMax - sMin), yaw: rand() * Math.PI * 2 });
       placed++;
@@ -168,21 +169,23 @@ export function clutterGeometry(): THREE.BufferGeometry {
     box(0.1, 0.3, 0.1, -20.25, 0.15, lz);
   }
 
-  // ladder leaning on the barn's front wall, east of the doors
+  // ladder leaning on the barn's front wall, east of the doors. rotateX is
+  // negative so the top tips toward -z, into the wall (not away from it); the
+  // rungs below track the rails' leaning centreline, so edit the two together.
   for (const dx of [-0.22, 0.22]) {
     const rail = new THREE.BoxGeometry(0.07, 3.1, 0.07);
-    rail.rotateX(0.26);
-    rail.translate(-7.3 + dx, 1.5, -23.1);
+    rail.rotateX(-0.26);
+    rail.translate(-8.45 + dx, 1.5, -23.26);
     parts.push(rail);
   }
   for (let i = 0; i < 6; i++) {
     const y = 0.4 + i * 0.45;
-    box(0.5, 0.05, 0.05, -7.3, y, -23.5 + y * 0.26);
+    box(0.5, 0.05, 0.05, -8.45, y, -23.26 - (y - 1.5) * 0.266);
   }
 
   // crates against the wall, west of the doors and north of the lane
   box(0.7, 0.7, 0.7, -13.0, 0.35, -23.0, 0.3);
-  box(0.6, 0.6, 0.6, -12.7, 0.9, -22.9, -0.2);
+  box(0.6, 0.6, 0.6, -12.7, 1.0, -22.9, -0.2);
 
   return mergeGeometries(parts);
 }

@@ -41,13 +41,14 @@ test("no prop stands where the tractor drives or the crops grow", () => {
   }
 });
 
-// The barn (x ∈ [−13.5, −6.5], z ∈ [−28.3, −23.7]) and the silo (x ≈ −4.6,
-// z ≈ −26, r ≈ 1.5) are solid: a bale inside one is a bale inside a wall.
-test("no scattered prop stands inside the barn or the silo", () => {
+// The barnyard (x ∈ [−21.5, −5.5], z ∈ [−29, −21]) — which contains the barn,
+// the woodpile, the trough, the ladder and the crates — and the silo (x ≈
+// −4.6, z ≈ −26, r ≈ 1.5) are solid: a bale inside one is a bale inside a wall.
+test("no scattered prop stands inside the barnyard or the silo", () => {
   for (const p of propPlacements()) {
-    const inBarn = p.x >= -14.5 && p.x <= -5.5 && p.z >= -29 && p.z <= -23;
+    const inYard = p.x >= -21.5 && p.x <= -5.5 && p.z >= -29 && p.z <= -21;
     const inSilo = Math.hypot(p.x + 4.6, p.z + 26) < 2.4;
-    expect(inBarn || inSilo, `${p.kind} at (${p.x}, ${p.z})`).toBe(false);
+    expect(inYard || inSilo, `${p.kind} at (${p.x}, ${p.z})`).toBe(false);
   }
 });
 
