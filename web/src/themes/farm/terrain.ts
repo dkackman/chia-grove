@@ -136,17 +136,23 @@ function addHills(
 }
 
 /** The ground: the rolling turf disc, the painted landscape draped on it, and the
- *  two ranks of hills behind. */
-export function createTerrain(scene: THREE.Scene): void {
+ *  two ranks of hills behind. `anisotropy` should be `renderer.capabilities.
+ *  getMaxAnisotropy()` — the camera sits ~11 units up looking out across a
+ *  280-unit disc, so the ground is seen almost edge-on, and without it the mip
+ *  selection blurs the turf's grain and the painted lane into the distance. */
+export function createTerrain(scene: THREE.Scene, anisotropy: number): void {
   const geo = turfGeometry();
+
+  // repeat, or a single canvas stretched across 280 units has no grain at
+  // all and the whole disc reads as one flat green mat
+  const turfMap = mottledTexture(FARM.turf, 0x8fbf72, 0x5e8348, 1, 22);
+  turfMap.anisotropy = anisotropy;
 
   scene.add(
     new THREE.Mesh(
       geo,
       new THREE.MeshStandardMaterial({
-        // repeat, or a single canvas stretched across 280 units has no grain at
-        // all and the whole disc reads as one flat green mat
-        map: mottledTexture(FARM.turf, 0x8fbf72, 0x5e8348, 1, 22),
+        map: turfMap,
         roughness: 1,
       })
     )
@@ -157,11 +163,14 @@ export function createTerrain(scene: THREE.Scene): void {
   // plane against it. Lit (not Basic), so it dims and warms with the sun exactly
   // as the turf beneath it does. polygonOffset guards the two near-coincident
   // surfaces against depth flicker out at the far end of the disc.
+  const landscapeMap = landscapeTexture();
+  landscapeMap.anisotropy = anisotropy;
+
   scene.add(
     new THREE.Mesh(
       geo.clone().translate(0, 0.02, 0),
       new THREE.MeshStandardMaterial({
-        map: landscapeTexture(),
+        map: landscapeMap,
         transparent: true,
         depthWrite: false,
         roughness: 1,

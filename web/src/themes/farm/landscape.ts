@@ -84,6 +84,17 @@ const PARCELS: ReadonlyArray<readonly [number, number, number, number]> = [
 ];
 
 /**
+ * The field's footprint, punched back out of the canvas as the last step of
+ * `landscapeTexture()`. The crop rows are the subject of the scene, so nothing
+ * may be painted under them; erasing this rectangle guarantees that
+ * structurally rather than relying on every shape above it being hand-tuned to
+ * stay clear. Covers x ∈ [−25, 25], z ∈ [−22, 22] — margin of ≥ 1.6 world
+ * units beyond the soil strips on every side, enough that even the blurred
+ * inner edge of the cut cannot tint a strip.
+ */
+export const FIELD_CLEAR = { halfX: 25, halfZ: 22 } as const;
+
+/**
  * The lane out of the barn doors, running east along the field's far headland
  * and away toward the horizon. [x, z] control points. It threads the corridor
  * between the barn's front wall (z ≈ −23.7) and the field's far soil strip
@@ -131,18 +142,27 @@ export function landscapeTexture(): THREE.CanvasTexture {
     paintParcel(ctx, rand, cx, cz, w, d);
   }
 
-  // the lane: a soft band of dust, then two worn ruts inside it
+  // the lane: a soft band of dust, then two worn ruts inside it. Narrowed from
+  // the wide/soft band this would otherwise want, because near the barn the
+  // lane has only the corridor between the barn's front wall (z ≈ −23.7) and
+  // the field-clear cut (z ≈ −22) to live in — a wider band would mostly be
+  // erased there and read as a truncated stub instead of a lane leaving the
+  // doors.
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
+  // Composited against the turf (121,168,97), a paint colour's red-minus-green
+  // must clear the turf's green-over-red gap of 47 before it can read as earth
+  // rather than khaki: result R−G = a·(pr−pg) − 47·(1−a). These two are checked
+  // against that formula (≈ +16 and +17), not just eyeballed.
   ctx.filter = "blur(9px)";
-  ctx.strokeStyle = "rgba(138,115,85,0.42)";
-  ctx.lineWidth = scalePx(3.4);
+  ctx.strokeStyle = "rgba(150,104,70,0.68)";
+  ctx.lineWidth = scalePx(2.4);
   lanePath(ctx);
   ctx.stroke();
   ctx.filter = "blur(2px)";
-  ctx.strokeStyle = "rgba(104,84,60,0.5)";
+  ctx.strokeStyle = "rgba(108,66,42,0.72)";
   ctx.lineWidth = scalePx(0.7);
-  for (const offset of [-0.9, 0.9]) {
+  for (const offset of [-0.65, 0.65]) {
     ctx.save();
     ctx.translate(0, scalePx(offset));
     lanePath(ctx);
@@ -154,11 +174,13 @@ export function landscapeTexture(): THREE.CanvasTexture {
   // the turf, with an apron fanning out from the doors. Worn ground is what makes
   // the farmstead read as worked in rather than set down on a lawn.
   ctx.filter = "blur(16px)";
-  ctx.fillStyle = "rgba(146,122,90,0.55)";
+  ctx.fillStyle = "rgba(152,112,72,0.8)";
   for (const [x, z, rx, rz] of [
     [-10, -26, 7.5, 5.5], // the barn
     [-4.6, -26, 3.6, 3.6], // the silo
-    [-9, -21.5, 8.5, 4], // the apron in front of the doors
+    // the apron in front of the doors, pulled into the corridor between the
+    // barn wall and the field-clear cut so its body isn't half erased
+    [-9, -22.6, 8.5, 1.6],
   ] as ReadonlyArray<readonly [number, number, number, number]>) {
     ctx.save();
     ctx.translate(toPx(x), toPx(z));
@@ -169,6 +191,22 @@ export function landscapeTexture(): THREE.CanvasTexture {
     ctx.restore();
   }
   ctx.filter = "none";
+
+  // Whatever the parcels, the lane and the apron do near the field, the crop rows
+  // must come out clean — they are the subject of the scene. Punching the field's
+  // footprint back out of the canvas guarantees that structurally, so a future nudge
+  // to a lane control point cannot silently smear packed earth across the rows.
+  ctx.globalCompositeOperation = "destination-out";
+  ctx.filter = "blur(8px)"; // feather the cut, so the field's edge is not a crisp rectangle
+  ctx.fillStyle = "#000";
+  ctx.fillRect(
+    toPx(-FIELD_CLEAR.halfX),
+    toPx(-FIELD_CLEAR.halfZ),
+    toPx(FIELD_CLEAR.halfX) - toPx(-FIELD_CLEAR.halfX),
+    toPx(FIELD_CLEAR.halfZ) - toPx(-FIELD_CLEAR.halfZ)
+  );
+  ctx.filter = "none";
+  ctx.globalCompositeOperation = "source-over";
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;

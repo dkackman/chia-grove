@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
-import { CANVAS_SIZE, toPx } from "../src/themes/farm/landscape.js";
-import { TURF_RADIUS } from "../src/themes/farm/layout.js";
+import { CANVAS_SIZE, FIELD_CLEAR, toPx } from "../src/themes/farm/landscape.js";
+import { FIELD, TURF_RADIUS, rowZ } from "../src/themes/farm/layout.js";
 
 // The overlay rides the turf's RingGeometry UVs, which span the disc's bounding
 // square: u = (x / 140 + 1) / 2 and v = (−z / 140 + 1) / 2. CanvasTexture flips
@@ -18,4 +18,14 @@ test("toPx is linear and increasing", () => {
   const scale = CANVAS_SIZE / (TURF_RADIUS * 2);
   expect(toPx(10) - toPx(0)).toBeCloseTo(10 * scale, 6);
   expect(toPx(-30) - toPx(-40)).toBeCloseTo(10 * scale, 6);
+});
+
+// The crop rows are the subject of the scene and nothing may be painted under them.
+// landscapeTexture() guarantees this by erasing the field's footprint from the canvas
+// as its last step; this pins the erased box against the soil strips it must cover.
+test("the cleared field box covers every soil strip, with margin for the blurred cut", () => {
+  const stripHalfX = FIELD.rowLength / 2 + 0.7; // strips are rowLength + 1.4 wide
+  const stripHalfZ = Math.abs(rowZ(0)) + (FIELD.rowSpacing * 0.78) / 2;
+  expect(FIELD_CLEAR.halfX).toBeGreaterThan(stripHalfX + 1.5);
+  expect(FIELD_CLEAR.halfZ).toBeGreaterThan(stripHalfZ + 1.5);
 });

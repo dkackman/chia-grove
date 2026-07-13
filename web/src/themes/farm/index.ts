@@ -53,7 +53,7 @@ export const farm: Visualization = {
     });
 
     const sky = createFarmSky(scene);
-    createTerrain(scene);
+    createTerrain(scene, renderer.capabilities.getMaxAnisotropy());
     const field = createField(scene, reducedMotion);
     const glow = glowTexture();
     const crops = new CropSystem(scene, glow);
