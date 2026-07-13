@@ -29,4 +29,9 @@ export const FARM = {
   headlight: 0xfff3b0,
   turbine: 0xdde5ea,
   turbineHub: 0xc2ccd3,
+  rock: 0x8e8b84,
+  tuft: 0x6f9a58,
+  scrub: 0x5c7f46,
+  hay: 0xd6c07c,
+  wood: 0x8a6a45,
 } as const;
