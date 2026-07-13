@@ -89,6 +89,37 @@ test("blockEvent() matches classifyBlock()'s own first event for the same input"
   expect(blockEvent(b)).toEqual(classifyBlock(b)[0]);
 });
 
+// classifySpend's catch block (classify.ts:113-119) is only reachable by an
+// actual throw from deserializeWithBackrefs/parse* — every other test above
+// exercises the "parse returns null" miss path, which takes a different
+// branch entirely. Corrupting `solution` to bytes that fail CLVM deserialization
+// is the most direct way to trigger a genuine throw (confirmed empirically:
+// deserializeWithBackrefs throws "Eval error: bad encoding" on non-CLVM bytes).
+test("classifySpend falls back to a base xch sprout when puzzle/solution parsing throws", () => {
+  const sim = new Simulator();
+  const clvm = new Clvm();
+  const alice = sim.bls(1000n);
+  clvm.spendStandardCoin(
+    alice.coin,
+    alice.pk,
+    clvm.delegatedSpend([clvm.createCoin(alice.puzzleHash, 1000n)])
+  );
+  const [spend] = clvm.coinSpends();
+  const corrupted = {
+    coin: spend.coin,
+    puzzleReveal: spend.puzzleReveal,
+    solution: Buffer.from([0xff, 0xff, 0xff, 0xff]),
+  } as CoinSpend;
+
+  const result = sprouts([corrupted]);
+  expect(result).toHaveLength(1);
+  expect(result[0]).toMatchObject({
+    kind: "xch",
+    amount: "1000",
+    coinId: hex(alice.coin.coinId()),
+  });
+});
+
 test("standard spend classifies as xch with mojo amount", () => {
   const sim = new Simulator();
   const clvm = new Clvm();

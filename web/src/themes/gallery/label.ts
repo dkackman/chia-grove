@@ -1,11 +1,7 @@
 import type { SproutEvent } from "@grove/shared";
 import { mojosToXch, shortHex } from "../../ui/format.js";
 import { resolveMedia, nftMediaEl, type MediaDisposition } from "../../ui/media.js";
-
-export interface PlacardLink {
-  label: string;
-  href: string;
-}
+import { spacescanLink, mintgardenLink, type CardLink } from "../../ui/links.js";
 
 export interface Placard {
   title: string;
@@ -13,7 +9,7 @@ export interface Placard {
   coin: string;
   launcher: string | null;
   activity: string | null;
-  links: PlacardLink[];
+  links: CardLink[];
   media: MediaDisposition;
 }
 
@@ -23,15 +19,9 @@ export interface Placard {
  * details are shown, with a tally once it has been active more than once.
  */
 export function placardModel(event: SproutEvent, count = 1): Placard {
-  const links: PlacardLink[] = [
-    { label: "view on spacescan ↗", href: `https://www.spacescan.io/coin/0x${event.coinId}` },
-  ];
-  if (event.nftId) {
-    links.push({
-      label: "view on mintgarden ↗",
-      href: `https://mintgarden.io/nfts/${event.nftId}`,
-    });
-  }
+  const links: CardLink[] = [spacescanLink(event)];
+  const mintgarden = mintgardenLink(event.nftId);
+  if (mintgarden) links.push(mintgarden);
   return {
     title: event.mint ? "NFT mint" : "NFT",
     meta: `${mojosToXch(event.amount)} XCH · block ${event.height}`,

@@ -19,22 +19,14 @@ been fixed and tested. Everything else is still open.
       retries still happen upstream in `applyBlock`/`fastForward`/`walkTo`,
       unaffected. Regression test: `blockEvent() matches classifyBlock()'s own
       first event` in `classify.test.ts`.
-- [ ] **`LOCAL_NSFW_ENFORCE_CLEAN` — needs your confirmation, not a code fix.**
-      Investigated: this repo has no `.env` committed for production and the
-      droplet's actual value is set via an untracked `systemctl edit`
-      drop-in (`deploy/README.md:101` only documents it as an *optional* step
-      an operator may apply — its presence in the doc isn't evidence it's
-      live). I can't check the running droplet's systemd environment from
-      here without SSHing into production, which I won't do unprompted. If
-      it's enabled: a self-hosted opennsfw2 "clean" verdict is persisted
-      permanently and Vision is never consulted again for that NFT — no
-      second check, no re-review path
-      (`server/src/content-filter/safesearch-worker.ts:299-321`). This is a
-      deliberate, documented trust escalation (CLAUDE.md frames it as "once
-      you trust the local classifier's agreement with Vision"), not a hidden
-      bug — so the action item is just: confirm whether it's actually set on
-      `chia-grove.com`'s host today, and if so, decide if that tradeoff is
-      still the one you want.
+- [ ] **`LOCAL_NSFW_ENFORCE_CLEAN` — confirmed NOT set in production (2026-07-13).**
+      Left open intentionally: not a bug, just a documented trust escalation
+      (CLAUDE.md: "once you trust the local classifier's agreement with
+      Vision"). If ever enabled, be aware a confident-clean local verdict is
+      permanent and propagates to every NFT sharing identical on-chain bytes
+      via the content-hash dedup in `run()` — no periodic re-audit exists
+      (`server/src/content-filter/safesearch-worker.ts:299-321`). Revisit if
+      this ever gets flipped on.
 
 ## Medium
 
@@ -53,19 +45,30 @@ been fixed and tested. Everything else is still open.
       routing through `web/src/net/feed.ts:70`'s `queue.enqueue`. `?demo=1`
       never exercises the real snapshot-pacing path, so a pacing regression
       would be invisible in offline testing.
-- [ ] **No test file for `GroveFeed`** (`web/src/net/feed.ts`). Reconnect/backoff,
-      handshake timeout, and stale-timer logic are untested, unlike the pure
-      helpers it delegates to (`protocol-guard.test.ts`, `drain-queue.test.ts`).
-- [ ] **Gallery's duplicated detail-card logic.** `web/src/ui/detail-card.ts`
-      (used by grove/board) and `web/src/themes/gallery/label.ts`
-      (`placardModel`/`Placard$`) independently reimplement the same
-      spacescan/mintgarden-link and media-rendering logic. Concrete, fixable
-      driver of Gallery's low (72%) cohesion score; a future `CardMeta` field
-      change risks updating one and not the other.
-- [ ] **Untested fallback path in `classifySpend`.** `server/src/classify/classify.ts:113-119`
-      (catch block for an unexpected `parseNft`/`parseCat`/`parseDid` throw,
-      falls back to base `xch` sprout) has no covering test — only the
-      "parse returns null" miss path is exercised.
+- [x] **No test file for `GroveFeed`** (`web/src/net/feed.ts`). Fixed: added
+      `web/test/feed.test.ts` (12 tests) covering ws/wss URL selection,
+      handshake timeout (closes + cancels-on-message), status transitions
+      (connecting → live, malformed-frame drop), reconnect backoff (doubling,
+      30s cap, reset-on-message), the stale timer, hello/protocol-mismatch
+      reload guard behavior, and `queue.clear()` on close. Stubs `WebSocket`/
+      `location`/`sessionStorage`/`requestAnimationFrame` via `vi.stubGlobal`,
+      matching the pattern `drain-queue.test.ts` already used.
+- [x] **Gallery's duplicated detail-card logic.** Fixed: extracted the
+      identical spacescan/mintgarden link construction into
+      `web/src/ui/links.ts` (`spacescanLink`, `mintgardenLink`), consumed by
+      both `web/src/ui/detail-card.ts`'s `showCard` and
+      `web/src/themes/gallery/label.ts`'s `placardModel` — the part that was
+      byte-for-byte identical and the actual risk the finding called out. Left
+      the aggregate/cat-icon handling in `detail-card.ts` and the DOM-free
+      `Placard` model in `label.ts` alone (legitimately different per theme,
+      not duplication). New `web/test/links.test.ts`; existing
+      `gallery-label.test.ts` passes unchanged, confirming `placardModel`'s
+      output is unaffected.
+- [x] **Untested fallback path in `classifySpend`.** Fixed: added a test that
+      empirically forces the throw (corrupting a spend's `solution` bytes so
+      `deserializeWithBackrefs` throws `"Eval error: bad encoding"` inside the
+      try block, confirmed by direct probe against the real SDK — not just the
+      "parse returns null" miss path the rest of the suite already covered).
 
 ## Low
 
