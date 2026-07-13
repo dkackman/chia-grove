@@ -10,6 +10,7 @@ import { FARM } from "./palette.js";
 import { CropSystem } from "./crops.js";
 import { Tractor } from "./tractor.js";
 import { createField } from "./field.js";
+import { createScenery } from "./scenery.js";
 import { createFarmSky } from "./sky.js";
 import { createTerrain } from "./terrain.js";
 import { Chickens } from "./chickens.js";
@@ -55,6 +56,7 @@ export const farm: Visualization = {
     const sky = createFarmSky(scene);
     createTerrain(scene, renderer.capabilities.getMaxAnisotropy());
     const field = createField(scene, reducedMotion);
+    createScenery(scene);
     const glow = glowTexture();
     const crops = new CropSystem(scene, glow);
     const tractor = new Tractor(scene, reducedMotion, glow);

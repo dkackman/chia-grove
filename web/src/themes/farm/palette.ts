@@ -22,6 +22,8 @@ export const FARM = {
   hillFar: 0x9db5a2,
   treeTrunk: 0x6b4a2e,
   treeCanopy: 0x4d7a3a,
+  hedge: 0x3f6b39,
+  treeLineFar: 0x5b7d58,
   fence: 0xcabfa8,
   glass: 0xa8cfe0,
   headlight: 0xfff3b0,
