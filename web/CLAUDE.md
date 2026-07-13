@@ -38,6 +38,8 @@ Daytime crop field with serpentine rows. Each block is the next row, plowed by a
 
 `CropSystem` uses `InstancedKind` with 3 geometry variants each; slot caps: wheat 800, gourd 300, sunflower 40, scarecrow 80. Slots wrap (oldest overwritten).
 
+A distant wind farm (`turbines.ts`) stands on the horizon as scenery — seeded random groupings, rotors turning idly, with a gust sweeping downwind across the ridge on each new block.
+
 ### gallery (`src/themes/gallery/`)
 
 Interior art gallery showing NFT mints as framed canvases on illuminated walls. Navigate with arrow keys (desktop) or swipe (mobile). Spotlight warmth tracks netspace; lights pulse on new blocks; reorg removes pieces. Non-NFT events are ignored.
