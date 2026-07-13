@@ -100,6 +100,32 @@ test("isPrivateAddress allows genuinely public addresses", () => {
   }
 });
 
+// `new URL()` normalizes bracketed IPv6-literal hosts to compressed hex form
+// (e.g. "[::ffff:127.0.0.1]" -> "::ffff:7f00:1") before validateProxyTarget
+// ever sees them. isPrivateV6 previously only matched the dotted-decimal
+// textual form and missed this normalized form entirely — SSRF bypass.
+test("isPrivateAddress flags IPv4-mapped/compatible v6 in compressed hex form", () => {
+  for (const ip of [
+    "::ffff:7f00:1", // ::ffff:127.0.0.1, post-URL-normalization form
+    "::ffff:a9fe:a9fe", // ::ffff:169.254.169.254 (cloud metadata), post-normalization
+    "::ffff:a00:1", // ::ffff:10.0.0.1
+    "::7f00:1", // deprecated IPv4-compatible ::127.0.0.1
+    "64:ff9b::a9fe:a9fe", // NAT64 well-known prefix wrapping cloud metadata
+  ]) {
+    expect(isPrivateAddress(ip)).toBe(true);
+  }
+});
+
+test("validateProxyTarget rejects bracketed IPv4-mapped v6 literals end to end", () => {
+  for (const u of [
+    "http://[::ffff:169.254.169.254]/latest/meta-data",
+    "http://[::ffff:127.0.0.1]/x",
+    "http://[::127.0.0.1]/x",
+  ]) {
+    expect(validateProxyTarget(u)).toBeNull();
+  }
+});
+
 test("safeContentType serves only media types, neutralizing html and svg", () => {
   expect(safeContentType("image/jpeg")).toBe("image/jpeg");
   expect(safeContentType("video/mp4")).toBe("video/mp4");
