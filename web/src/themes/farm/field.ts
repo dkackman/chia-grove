@@ -4,6 +4,7 @@ import { FIELD, rowZ } from "./layout.js";
 import { FARM } from "./palette.js";
 import { furrowTexture, glowTexture, mottledTexture } from "../shared/textures.js";
 import { mulberry32 } from "../shared/util.js";
+import { HILLS } from "./terrain.js";
 
 export interface Field {
   /** Reveal the soil strip for a row the first time the tractor plows it. */
@@ -478,15 +479,6 @@ function addTrees(scene: THREE.Scene): void {
     )
   );
 }
-
-/** Squashed-sphere hills on the horizon: [x, z, r]. Exported so tests can check
- *  scenery clearance (e.g. a turbine's lowest blade tip against the hill it
- *  stands on) without duplicating these numbers. */
-export const HILLS: ReadonlyArray<readonly [number, number, number]> = [
-  [-55, -85, 48],
-  [8, -95, 56],
-  [62, -78, 42],
-];
 
 /** Hazy hills on the horizon; the fog does most of the softening. */
 function addHills(scene: THREE.Scene): void {
