@@ -8,7 +8,7 @@
 
 **Tech Stack:** TypeScript, Three.js (r1xx, `three/addons/utils/BufferGeometryUtils.js`), Vitest, Vite.
 
-> **Executed and amended.** The code blocks below are the plan as written, not as shipped. Four things changed during execution, found by an eyes-on browser check and the final review — `web/src/themes/farm/turbines.ts` is the truth, and the spec has been corrected to match:
+> **Executed and amended.** The code blocks below have been corrected in place so that re-executing this plan cannot reintroduce a bug that shipped once already. `web/src/themes/farm/turbines.ts` remains the truth. Four things changed during execution, found by an eyes-on browser check and the final review, and the spec has been corrected to match:
 >
 > 1. **Tower heights 34–50 → 14–20.** The farm camera is pitched ~13° down at the field, so only a narrow band of sky sits above the horizon; at 34–50 the turbines were cropped by the top of the frame (by 35 world units, in the *default* view). The floor of 14 keeps the lowest blade tip clear of the hill each turbine stands on.
 > 2. **The gust sweep is normalised against the layout's actual x extent** (`GUST_SPAN = 2` seconds end to end), not a fixed seconds-per-unit `GUST_SWEEP`. The original constant was sized for an assumed ±110 span; the real layout spans ~85 units, which gave a 0.68 s stagger against a 0.9 s rise — the ridge snapped in near-unison — plus a ~1 s uniform dead beat after each block.
@@ -251,7 +251,7 @@ Geometry orientation, which is the one fiddly part — read before writing:
 
 - The rotor geometry is modelled **spinning about its local z axis** (blades in the local xy plane), so spinning it is just `rotor.rotation.z = angle`.
 - A `THREE.Euler` in its default `XYZ` order applies **z first, then y** to a vertex. So setting `rotor.rotation.y = yaw` (constant) and `rotor.rotation.z = angle` (animated) spins the blades in their own plane and *then* swings the whole rotor to face the wind. That is exactly what's wanted, and it means each turbine needs a single `Mesh` — no wrapper `Group`.
-- The scene's wind blows **+x**, so the rotor's spin axis must lie along x: the yaw is `Math.PI / 2 + spec.yaw`.
+- The scene's wind blows **+x**, so the rotor's spin axis must lie along x: the yaw is `-Math.PI / 2 + spec.yaw` (amended from `+Math.PI / 2`, which pointed the nose cone downwind).
 - The tower is a cylinder and therefore rotationally symmetric, so the tower and nacelle can be merged and yawed **together** — the yaw is a no-op for the tower and correctly swings the nacelle.
 
 - [ ] **Step 1: Write the failing test**
@@ -312,7 +312,7 @@ const BLADE_LEN = 14;
 
 /** Where the rotor's spin axis points: across the scene's +x wind, plus jitter. */
 function rotorYaw(spec: TurbineSpec): number {
-  return Math.PI / 2 + spec.yaw;
+  return -Math.PI / 2 + spec.yaw; // amended — see the note at the top of this plan
 }
 
 /**
@@ -364,8 +364,8 @@ export function rotorGeometry(): THREE.BufferGeometry {
 const GUST_PEAK = 1.5;
 /** Seconds from the wind reaching a turbine to the top of its gust. */
 const GUST_TAU = 0.9;
-/** Seconds of delay per world unit of +x, so the gust sweeps downwind across the ridge. */
-const GUST_SWEEP = 0.008;
+/** Seconds for a gust to travel the full width of the wind farm, riding the +x wind. */
+const GUST_SPAN = 2; // amended from a fixed per-unit GUST_SWEEP — see the note at the top of this plan
 /** Idle spin is barely perceptible under prefers-reduced-motion. */
 const REDUCED_IDLE = 0.15;
 
@@ -380,6 +380,8 @@ export class Turbines {
   private readonly angles: number[];
   /** When the current gust reaches each turbine; -Infinity until the first block. */
   private readonly gustAt: number[];
+  /** Per-turbine delay from gust() to arrival, spread across the layout's actual x extent. */
+  private readonly sweep: number[];
 
   constructor(
     scene: THREE.Scene,
@@ -388,6 +390,15 @@ export class Turbines {
     this.specs = turbineLayout();
     this.angles = this.specs.map((spec) => spec.phase);
     this.gustAt = this.specs.map(() => -Infinity);
+
+    // normalise against the layout's real x span (not an assumed one) so the sweep
+    // stays perceptible however the seed or layout later changes
+    const xs = this.specs.map((spec) => spec.x);
+    const minX = Math.min(...xs);
+    const extent = Math.max(...xs) - minX;
+    this.sweep = this.specs.map((spec) =>
+      extent > 0 ? ((spec.x - minX) / extent) * GUST_SPAN : 0
+    );
 
     // every tower is static, so they all collapse into one draw call
     const towers = new THREE.Mesh(
@@ -428,7 +439,7 @@ export class Turbines {
   gust(t: number): void {
     if (this.reducedMotion) return;
     for (let i = 0; i < this.specs.length; i++) {
-      this.gustAt[i] = t + (this.specs[i].x + WIND_FARM.maxRadius) * GUST_SWEEP;
+      this.gustAt[i] = t + this.sweep[i];
     }
   }
 
