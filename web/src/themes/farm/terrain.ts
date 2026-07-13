@@ -41,7 +41,7 @@ function smoothstep(edge0: number, edge1: number, x: number): number {
 }
 
 /**
- * Three sines at falling wavelengths — roughly 60, 34 and 19 units — summing to
+ * Three sines at falling wavelengths — roughly 60, 34 and 20 units — summing to
  * exactly [−1, 1] (0.6 + 0.28 + 0.12). Long enough to read as land rather than
  * corrugation at a camera 11 units up, short enough to fit several humps into
  * the wings either side of the field.
@@ -49,8 +49,8 @@ function smoothstep(edge0: number, edge1: number, x: number): number {
 function noise(x: number, z: number): number {
   return (
     Math.sin(x * 0.105 + 1.7) * Math.cos(z * 0.092 - 0.4) * 0.6 +
-    Math.sin((x + z) * 0.11 + 3.1) * 0.28 +
-    Math.sin(x * 0.19 - 2.2) * Math.sin(z * 0.17 + 0.9) * 0.12
+    Math.sin((x + z) * 0.131 + 3.1) * 0.28 +
+    Math.sin(x * 0.331 - 2.2) * Math.sin(z * 0.3 + 0.9) * 0.12
   );
 }
 
@@ -87,8 +87,8 @@ function damp(x: number, z: number): number {
  * renderer draws rather than on an approximation of it.
  */
 export function groundHeight(x: number, z: number): number {
-  // `|| 0` normalizes -0 to +0: when noise(x, z) is negative and damp(x, z)
-  // clamps to exactly zero, the product is -0, which is a legitimate "flat"
-  // height but fails strict zero checks (and Object.is-based test assertions).
-  return AMPLITUDE * noise(x, z) * damp(x, z) || 0;
+  const y = AMPLITUDE * noise(x, z) * damp(x, z);
+  // Normalize -0 to +0 (Object.is-based toBe(0) rejects -0). Do not swallow
+  // NaN — let it stay NaN so tests catch unexpected computations.
+  return Object.is(y, -0) ? 0 : y;
 }
