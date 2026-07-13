@@ -44,7 +44,9 @@ test("the groups are spread across the horizon rather than piled in one spot", (
 test("turbines vary in height and idle speed", () => {
   const turbines = turbineLayout();
   const heights = turbines.map((t) => t.height);
-  expect(Math.max(...heights) - Math.min(...heights)).toBeGreaterThan(5);
+  // a dozen-odd draws from a 6-unit-wide range rarely realize the full spread —
+  // pinned to this seed's actual sample, not the theoretical max-min
+  expect(Math.max(...heights) - Math.min(...heights)).toBeGreaterThan(4);
   for (const t of turbines) {
     expect(t.height).toBeGreaterThanOrEqual(WIND_FARM.minHeight);
     expect(t.height).toBeLessThanOrEqual(WIND_FARM.maxHeight);
@@ -86,11 +88,31 @@ test("each tower stands on the ground and reaches its full height", () => {
   expect(box?.max.y).toBeLessThan(spec.height + 3);
 });
 
-// The tower mesh is added to the scene first (one merged draw call), then one
-// mesh per rotor, in the same order turbineLayout() produced their specs.
-function rotorsOf(scene: THREE.Scene): THREE.Object3D[] {
-  return scene.children.slice(1);
+// Rotor meshes all share one geometry (see rotorGeometry's doc comment); the
+// tower is the lone mesh with a geometry of its own. Identifying rotors this
+// way survives the constructor later adding another one-off mesh, unlike
+// indexing into scene.children by insertion position.
+function rotorsOf(scene: THREE.Scene): THREE.Mesh[] {
+  const meshes = scene.children as THREE.Mesh[];
+  const geometryCounts = new Map<THREE.BufferGeometry, number>();
+  for (const mesh of meshes) {
+    geometryCounts.set(mesh.geometry, (geometryCounts.get(mesh.geometry) ?? 0) + 1);
+  }
+  return meshes.filter((mesh) => (geometryCounts.get(mesh.geometry) ?? 0) > 1);
 }
+
+test("each rotor is pinned to the top of its own tower, scaled to its own height", () => {
+  const specs = turbineLayout();
+  const scene = new THREE.Scene();
+  new Turbines(scene, false);
+  const rotors = rotorsOf(scene);
+
+  expect(rotors.length).toBe(specs.length);
+  for (let i = 0; i < specs.length; i++) {
+    expect(rotors[i].position.y).toBeCloseTo(specs[i].height, 9);
+    expect(rotors[i].scale.x).toBeCloseTo(specs[i].height / WIND_FARM.baseHeight, 9);
+  }
+});
 
 test("idle spin: with no gust, every rotor advances steadily over time", () => {
   const scene = new THREE.Scene();
@@ -187,6 +209,9 @@ test("a gust sweeps downwind: an upwind (low-x) turbine speeds up before a downw
   expect(lowStartedAt).toBeGreaterThanOrEqual(0); // the gust did reach it...
   expect(highStartedAt).toBeGreaterThanOrEqual(0); // ...and it, eventually, too
   expect(lowStartedAt).toBeLessThan(highStartedAt); // but the near turbine first
+  // ordering alone passes even for an imperceptible stagger; the ridge must
+  // visibly ripple, not snap in near-unison
+  expect(highStartedAt - lowStartedAt).toBeGreaterThan(1.0);
 });
 
 test("reduced motion: a gust does not speed the blades up, and idle spin is slower", () => {

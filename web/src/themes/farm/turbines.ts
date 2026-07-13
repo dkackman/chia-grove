@@ -19,8 +19,11 @@ export const WIND_FARM = {
   /** The turf is a CircleGeometry(140); past this radius a turbine floats over open sky. */
   maxRadius: 132,
   // the camera is pitched down at the field, so only a narrow band of sky sits
-  // above the horizon: a turbine much taller than this is cropped by the frame
-  minHeight: 12,
+  // above the horizon: a turbine much taller than this is cropped by the frame.
+  // Floored at 14 so even the shortest turbine's lowest blade tip clears the
+  // hill it stands on (see addHills in field.ts) — a tower base occluded by a
+  // hill reads as standing on the ridge, but a blade winking into it does not.
+  minHeight: 14,
   maxHeight: 20,
   /** The height the geometry is modelled at; each turbine scales off this. */
   baseHeight: 42,
@@ -96,9 +99,9 @@ export function gustPulse(u: number): number {
 const HUB_Z = 2.4;
 const BLADE_LEN = 14;
 
-/** Where the rotor's spin axis points: across the scene's +x wind, plus jitter. */
+/** Where the rotor's spin axis points: into the scene's +x wind, plus jitter. */
 function rotorYaw(spec: TurbineSpec): number {
-  return Math.PI / 2 + spec.yaw;
+  return -Math.PI / 2 + spec.yaw;
 }
 
 /**
@@ -150,8 +153,8 @@ export function rotorGeometry(): THREE.BufferGeometry {
 const GUST_PEAK = 1.5;
 /** Seconds from the wind reaching a turbine to the top of its gust. */
 const GUST_TAU = 0.9;
-/** Seconds of delay per world unit of +x, so the gust sweeps downwind across the ridge. */
-const GUST_SWEEP = 0.008;
+/** Seconds for a gust to travel the full width of the wind farm, riding the +x wind. */
+const GUST_SPAN = 2;
 /** Idle spin is barely perceptible under prefers-reduced-motion. */
 const REDUCED_IDLE = 0.15;
 
@@ -166,6 +169,8 @@ export class Turbines {
   private readonly angles: number[];
   /** When the current gust reaches each turbine; -Infinity until the first block. */
   private readonly gustAt: number[];
+  /** Per-turbine delay from gust() to arrival, spread across the layout's actual x extent. */
+  private readonly sweep: number[];
 
   constructor(
     scene: THREE.Scene,
@@ -174,6 +179,15 @@ export class Turbines {
     this.specs = turbineLayout();
     this.angles = this.specs.map((spec) => spec.phase);
     this.gustAt = this.specs.map(() => -Infinity);
+
+    // normalise against the layout's real x span (not an assumed one) so the sweep
+    // stays perceptible however the seed or layout later changes
+    const xs = this.specs.map((spec) => spec.x);
+    const minX = Math.min(...xs);
+    const extent = Math.max(...xs) - minX;
+    this.sweep = this.specs.map((spec) =>
+      extent > 0 ? ((spec.x - minX) / extent) * GUST_SPAN : 0
+    );
 
     // every tower is static, so they all collapse into one draw call
     const towers = new THREE.Mesh(
@@ -214,7 +228,7 @@ export class Turbines {
   gust(t: number): void {
     if (this.reducedMotion) return;
     for (let i = 0; i < this.specs.length; i++) {
-      this.gustAt[i] = t + (this.specs[i].x + WIND_FARM.maxRadius) * GUST_SWEEP;
+      this.gustAt[i] = t + this.sweep[i];
     }
   }
 
