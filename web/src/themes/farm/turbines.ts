@@ -18,8 +18,10 @@ export const WIND_FARM = {
   zFloor: -128,
   /** The turf is a CircleGeometry(140); past this radius a turbine floats over open sky. */
   maxRadius: 132,
-  minHeight: 34,
-  maxHeight: 50,
+  // the camera is pitched down at the field, so only a narrow band of sky sits
+  // above the horizon: a turbine much taller than this is cropped by the frame
+  minHeight: 12,
+  maxHeight: 20,
   /** The height the geometry is modelled at; each turbine scales off this. */
   baseHeight: 42,
 } as const;
