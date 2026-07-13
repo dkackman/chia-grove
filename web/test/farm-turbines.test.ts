@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { expect, test } from "vitest";
+import { HILLS } from "../src/themes/farm/field.js";
 import {
   gustPulse,
   rotorGeometry,
@@ -76,6 +77,38 @@ test("the turbine geometries are valid and renderable", () => {
   }
 });
 
+// The hills are squashed spheres: y = 0.16*r*sqrt(1 - ((x-hx)/(1.3r))^2 - ((z-hz)/r)^2)
+// inside the footprint, 0 outside it. Mirrors the geometry addHills builds
+// (scale(1.3, 0.16, 1) on a SphereGeometry(r)) so the test reasons about the
+// same surface the renderer draws, not a re-derived approximation of it.
+function hillHeightAt(x: number, z: number): number {
+  let maxY = 0;
+  for (const [hx, hz, r] of HILLS) {
+    const nx = (x - hx) / (1.3 * r);
+    const nz = (z - hz) / r;
+    const inside = 1 - nx * nx - nz * nz;
+    if (inside > 0) maxY = Math.max(maxY, 0.16 * r * Math.sqrt(inside));
+  }
+  return maxY;
+}
+
+// A tower base occluded by a hill is WANTED — it reads as the turbine standing
+// on the ridge. But the lowest BLADE TIP dipping inside the opaque hill dome
+// makes a blade wink out once per revolution, which reads as a glitch rather
+// than scenery. WIND_FARM.minHeight (14) exists specifically to keep every
+// turbine's lowest blade tip above every hill it could stand on; this test
+// pins that invariant so a future edit lowering minHeight fails loudly here,
+// before the artifact is visible on screen, not after.
+test("every turbine's lowest blade tip clears the hill beneath it", () => {
+  for (const t of turbineLayout()) {
+    // blade geometry spans local y 0.8 -> 14.8 before the per-turbine scale
+    // (spec.height / baseHeight) is applied — see rotorGeometry/towerGeometry
+    const lowestBladeTip = t.height * (1 - 14.8 / WIND_FARM.baseHeight);
+    const hillHeight = hillHeightAt(t.x, t.z);
+    expect(lowestBladeTip - hillHeight).toBeGreaterThan(0.5);
+  }
+});
+
 test("each tower stands on the ground and reaches its full height", () => {
   const spec = turbineLayout()[0];
   const tower = towerGeometry(spec);
@@ -88,17 +121,14 @@ test("each tower stands on the ground and reaches its full height", () => {
   expect(box?.max.y).toBeLessThan(spec.height + 3);
 });
 
-// Rotor meshes all share one geometry (see rotorGeometry's doc comment); the
-// tower is the lone mesh with a geometry of its own. Identifying rotors this
-// way survives the constructor later adding another one-off mesh, unlike
-// indexing into scene.children by insertion position.
+// Rotors are tagged with name "turbine-rotor" in the constructor, so this
+// survives the constructor later adding other non-mesh objects (a light, a
+// sprite) that would otherwise collide on a shared "no geometry" bucket.
+// Built in spec order, matching the constructor's map over this.specs.
 function rotorsOf(scene: THREE.Scene): THREE.Mesh[] {
-  const meshes = scene.children as THREE.Mesh[];
-  const geometryCounts = new Map<THREE.BufferGeometry, number>();
-  for (const mesh of meshes) {
-    geometryCounts.set(mesh.geometry, (geometryCounts.get(mesh.geometry) ?? 0) + 1);
-  }
-  return meshes.filter((mesh) => (geometryCounts.get(mesh.geometry) ?? 0) > 1);
+  return scene.children.filter(
+    (child): child is THREE.Mesh => child.name === "turbine-rotor"
+  );
 }
 
 test("each rotor is pinned to the top of its own tower, scaled to its own height", () => {

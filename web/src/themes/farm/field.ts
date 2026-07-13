@@ -479,14 +479,19 @@ function addTrees(scene: THREE.Scene): void {
   );
 }
 
+/** Squashed-sphere hills on the horizon: [x, z, r]. Exported so tests can check
+ *  scenery clearance (e.g. a turbine's lowest blade tip against the hill it
+ *  stands on) without duplicating these numbers. */
+export const HILLS: ReadonlyArray<readonly [number, number, number]> = [
+  [-55, -85, 48],
+  [8, -95, 56],
+  [62, -78, 42],
+];
+
 /** Hazy hills on the horizon; the fog does most of the softening. */
 function addHills(scene: THREE.Scene): void {
   const hills: THREE.BufferGeometry[] = [];
-  for (const [x, z, r] of [
-    [-55, -85, 48],
-    [8, -95, 56],
-    [62, -78, 42],
-  ]) {
+  for (const [x, z, r] of HILLS) {
     const hill = new THREE.SphereGeometry(r, 20, 10);
     hill.scale(1.3, 0.16, 1);
     hill.translate(x, 0, z);

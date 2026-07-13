@@ -212,6 +212,10 @@ export class Turbines {
     });
     this.rotors = this.specs.map((spec) => {
       const mesh = new THREE.Mesh(rotor, rotorMat);
+      // tagged so tests can pick rotors out of scene.children without relying
+      // on a shared-geometry census, which would misfire if two unrelated
+      // objects ever both lacked a geometry (e.g. a light and a sprite)
+      mesh.name = "turbine-rotor";
       const scale = spec.height / WIND_FARM.baseHeight;
       mesh.position.set(spec.x, spec.height, spec.z);
       mesh.scale.setScalar(scale);
