@@ -2,6 +2,7 @@ import type { SproutEvent } from "@grove/shared";
 import type { CardMeta } from "../themes/types.js";
 import { mojosToXch, mojosToCAT, shortHex } from "./format.js";
 import { resolveMedia, nftMediaEl } from "./media.js";
+import { spacescanLink, mintgardenLink } from "./links.js";
 
 const KIND_LABELS: Record<SproutEvent["kind"], string> = {
   xch: "XCH spend",
@@ -81,23 +82,22 @@ export function showCard(event: CardMeta): void {
 
   const linkDiv = el("div");
   const a = document.createElement("a");
-  // an aggregate points at the block (the total's scope); a single spend at the coin
-  a.href = agg
-    ? `https://www.spacescan.io/block/${event.height}`
-    : `https://www.spacescan.io/coin/0x${event.coinId}`;
+  const spacescan = spacescanLink(event, agg?.count);
+  a.href = spacescan.href;
   a.target = "_blank";
   a.rel = "noopener";
-  a.textContent = agg ? "view block on spacescan ↗" : "view on spacescan ↗";
+  a.textContent = spacescan.label;
   linkDiv.appendChild(a);
   card.appendChild(linkDiv);
 
-  if (event.nftId) {
+  const mintgarden = mintgardenLink(event.nftId);
+  if (mintgarden) {
     const mgDiv = el("div");
     const mg = document.createElement("a");
-    mg.href = `https://mintgarden.io/nfts/${event.nftId}`;
+    mg.href = mintgarden.href;
     mg.target = "_blank";
     mg.rel = "noopener";
-    mg.textContent = "view on mintgarden ↗";
+    mg.textContent = mintgarden.label;
     mgDiv.appendChild(mg);
     card.appendChild(mgDiv);
   }

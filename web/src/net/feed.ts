@@ -73,6 +73,10 @@ export class GroveFeed {
       this.retryMs = 1000;
     };
 
+    // Reconnection is driven entirely by onclose (which always follows a fatal
+    // error); this exists only so connection errors leave a diagnostic trail.
+    ws.onerror = (event) => console.warn("grove feed socket error", event);
+
     ws.onclose = () => {
       clearTimeout(handshakeTimer);
       clearTimeout(this.staleTimer);

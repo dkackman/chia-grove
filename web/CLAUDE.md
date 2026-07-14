@@ -36,7 +36,7 @@ Bioluminescent night meadow.
 
 Daytime crop field with serpentine rows. Each block is the next row, plowed by a tractor in alternating directions; crops sprout behind it (wheat=XCH, gourd=CAT, sunflower=NFT, scarecrow=DID). Chickens=mempool, sun brightness=netspace, crows=reorg.
 
-`CropSystem` uses `InstancedKind` with 3 geometry variants each; slot caps: wheat 800, gourd 300, sunflower 40, scarecrow 80. Slots wrap (oldest overwritten).
+`CropSystem` uses `InstancedKind` with 3 geometry variants each; slot caps: wheat 1600, gourd 600, sunflower 80, scarecrow 160. Slots wrap (oldest overwritten).
 
 A distant wind farm (`turbines.ts`) stands on the horizon as scenery — seeded random groupings, rotors turning idly, with a gust sweeping downwind across the ridge on each new block.
 

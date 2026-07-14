@@ -113,6 +113,7 @@ export const farm: Visualization = {
           const newest = rowZ(currentRow);
           const oldest = rowZ(Math.max(0, currentRow - 5));
           crows.fly(Math.min(newest, oldest), Math.max(newest, oldest), clockT);
+          crops.clearAbove(event.forkHeight);
           crops.wilt(clockT);
           break;
         }

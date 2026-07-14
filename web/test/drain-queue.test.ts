@@ -49,9 +49,24 @@ test("clear() drops undrained items so a later enqueue doesn't replay them", () 
   const q = new DrainQueue<number>((n) => out.push(n), 10, scheduler);
   q.enqueue([1, 2, 3]); // schedules a frame, nothing drained yet
   q.clear();
-  q.enqueue([4, 5]);
+  q.enqueue([4, 5]); // schedules its own frame; the pre-clear one is dead
+  runFrame(); // stale pre-clear frame: no-op
   runFrame();
   expect(out).toEqual([4, 5]); // 1, 2, 3 never dispatched
+});
+
+test("a frame scheduled before clear() is cancelled and can't double-drain", () => {
+  const out: number[] = [];
+  const { scheduler, runFrame, pending } = manualScheduler();
+  const q = new DrainQueue<number>((n) => out.push(n), 2, scheduler);
+  q.enqueue([1, 2, 3, 4]); // schedules frame A
+  q.clear();
+  q.enqueue([5, 6, 7, 8]); // schedules frame B
+  expect(pending()).toBe(2);
+  runFrame(); // stale frame A (e.g. the 1s hidden-tab fallback racing a reconnect)
+  expect(out).toEqual([]); // belongs to the cleared generation — must not drain
+  runFrame(); // frame B
+  expect(out).toEqual([5, 6]); // exactly one budget's worth this frame
 });
 
 test("clear() on an empty queue is a no-op", () => {

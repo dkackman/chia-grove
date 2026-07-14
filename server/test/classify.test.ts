@@ -13,7 +13,7 @@ import {
   type CoinSpend,
   type PublicKey,
 } from "chia-wallet-sdk";
-import { classifyBlock, type BlockInput } from "../src/classify/classify.js";
+import { blockEvent, classifyBlock, type BlockInput } from "../src/classify/classify.js";
 import type { SproutEvent } from "@grove/shared";
 import { MediaIndex } from "../src/web/media-index.js";
 
@@ -69,6 +69,54 @@ test("emits a block event first with counts and fees", () => {
     timestamp: 1_718_000_000,
     spendCount: 1,
     fees: "25",
+  });
+});
+
+// blockEvent() is the same shape classifyBlock() uses for its first event; it
+// exists standalone so server/src/index.ts's onBlock can fall back to a bare
+// block event (advancing ingest past the block) if classification or
+// enrichment throws, without duplicating this literal — see index.ts.
+test("blockEvent() matches classifyBlock()'s own first event for the same input", () => {
+  const sim = new Simulator();
+  const clvm = new Clvm();
+  const alice = sim.bls(1000n);
+  clvm.spendStandardCoin(
+    alice.coin,
+    alice.pk,
+    clvm.delegatedSpend([clvm.createCoin(alice.puzzleHash, 1000n)])
+  );
+  const b = block(clvm.coinSpends());
+  expect(blockEvent(b)).toEqual(classifyBlock(b)[0]);
+});
+
+// classifySpend's catch block (classify.ts:113-119) is only reachable by an
+// actual throw from deserializeWithBackrefs/parse* — every other test above
+// exercises the "parse returns null" miss path, which takes a different
+// branch entirely. Corrupting `solution` to bytes that fail CLVM deserialization
+// is the most direct way to trigger a genuine throw (confirmed empirically:
+// deserializeWithBackrefs throws "Eval error: bad encoding" on non-CLVM bytes).
+test("classifySpend falls back to a base xch sprout when puzzle/solution parsing throws", () => {
+  const sim = new Simulator();
+  const clvm = new Clvm();
+  const alice = sim.bls(1000n);
+  clvm.spendStandardCoin(
+    alice.coin,
+    alice.pk,
+    clvm.delegatedSpend([clvm.createCoin(alice.puzzleHash, 1000n)])
+  );
+  const [spend] = clvm.coinSpends();
+  const corrupted = {
+    coin: spend.coin,
+    puzzleReveal: spend.puzzleReveal,
+    solution: Buffer.from([0xff, 0xff, 0xff, 0xff]),
+  } as CoinSpend;
+
+  const result = sprouts([corrupted]);
+  expect(result).toHaveLength(1);
+  expect(result[0]).toMatchObject({
+    kind: "xch",
+    amount: "1000",
+    coinId: hex(alice.coin.coinId()),
   });
 });
 

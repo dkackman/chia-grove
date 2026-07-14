@@ -253,6 +253,17 @@ export class CropSystem {
     this.wiltUntil = t + 2;
   }
 
+  /** Reorg: remove crops (planted or still queued) from blocks at or above the fork. */
+  clearAbove(forkHeight: number): void {
+    this.pending = this.pending.filter((crop) => crop.event.height < forkHeight);
+    for (const kind of this.allKinds()) kind.clearWhere((meta) => meta.height >= forkHeight);
+    this.sunflower.forEach((kind, variant) => {
+      for (const [index, glow] of this.sunflowerGlows[variant].entries()) {
+        if (!kind.metaAt(index)) glow.material.opacity = 0;
+      }
+    });
+  }
+
   update(t: number, dt: number, tractor: Tractor): void {
     this.release(tractor, t);
     const remaining = Math.max(0, this.wiltUntil - t);

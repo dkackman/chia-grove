@@ -81,8 +81,7 @@ export function isPrivateAddress(ip: string): boolean {
   return true; // not a valid IP → treat as unsafe
 }
 
-function isPrivateV4(ip: string): boolean {
-  const o = ip.split(".").map(Number);
+function isPrivateV4Octets(o: number[]): boolean {
   if (o.length !== 4 || o.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return true;
   const [a, b] = o;
   return (
@@ -96,14 +95,89 @@ function isPrivateV4(ip: string): boolean {
   );
 }
 
+function isPrivateV4(ip: string): boolean {
+  // strict decimal only: Number() would accept legacy hex/octal segments
+  // ("0x7f" → 127), so anything else becomes NaN and reads as unsafe
+  return isPrivateV4Octets(ip.split(".").map((s) => (/^\d{1,3}$/.test(s) ? Number(s) : NaN)));
+}
+
+/**
+ * Parse an IPv6 literal into its eight 16-bit groups, expanding "::" and
+ * folding an embedded dotted-decimal IPv4 tail into two hex groups first.
+ * `new URL()` normalizes bracketed hosts (e.g. "[::ffff:127.0.0.1]") to
+ * compressed hex form ("::ffff:7f00:1") before validateProxyTarget ever sees
+ * them, so matching against dotted-decimal text alone (the previous approach)
+ * missed that normalized form entirely — this parses the actual bits instead.
+ */
+function parseV6Hextets(ip: string): number[] | null {
+  let s = ip.toLowerCase().replace(/^\[|\]$/g, "");
+  const pct = s.indexOf("%");
+  if (pct !== -1) s = s.slice(0, pct); // strip zone id (e.g. fe80::1%eth0)
+
+  const lastColon = s.lastIndexOf(":");
+  if (lastColon !== -1) {
+    const tail = s.slice(lastColon + 1);
+    if (tail.includes(".")) {
+      const octets = tail.split(".");
+      const nums = octets.map((o) => Number(o));
+      if (
+        octets.length !== 4 ||
+        nums.some((n, i) => !/^\d{1,3}$/.test(octets[i]) || n < 0 || n > 255)
+      ) {
+        return null;
+      }
+      const hi = ((nums[0] << 8) | nums[1]).toString(16);
+      const lo = ((nums[2] << 8) | nums[3]).toString(16);
+      s = `${s.slice(0, lastColon + 1)}${hi}:${lo}`;
+    }
+  }
+
+  let groups: string[];
+  if (s.includes("::")) {
+    const parts = s.split("::");
+    if (parts.length !== 2) return null; // "::" may appear at most once
+    const left = parts[0] === "" ? [] : parts[0].split(":");
+    const right = parts[1] === "" ? [] : parts[1].split(":");
+    const missing = 8 - (left.length + right.length);
+    if (missing < 0) return null;
+    groups = [...left, ...Array(missing).fill("0"), ...right];
+  } else {
+    groups = s.split(":");
+  }
+  if (groups.length !== 8) return null;
+
+  const nums = groups.map((g) => (/^[0-9a-f]{1,4}$/.test(g) ? parseInt(g, 16) : NaN));
+  return nums.some(Number.isNaN) ? null : nums;
+}
+
 function isPrivateV6(ip: string): boolean {
-  const v = ip.toLowerCase().replace(/^\[|\]$/g, "");
-  if (v === "::1" || v === "::") return true; // loopback / unspecified
-  const mapped = v.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/); // IPv4-mapped
-  if (mapped) return isPrivateV4(mapped[1]);
-  const head = v.split(":")[0];
-  if (/^f[cd]/.test(head)) return true; // fc00::/7 unique-local
-  if (/^fe[89ab]/.test(head)) return true; // fe80::/10 link-local
+  const g = parseV6Hextets(ip);
+  if (!g) return true; // unparseable → treat as unsafe
+  const [g0, g1, g2, g3, g4, g5, g6, g7] = g;
+
+  if (g.every((n) => n === 0)) return true; // :: unspecified
+  if (
+    g0 === 0 &&
+    g1 === 0 &&
+    g2 === 0 &&
+    g3 === 0 &&
+    g4 === 0 &&
+    g5 === 0 &&
+    g6 === 0 &&
+    g7 === 1
+  ) {
+    return true; // ::1 loopback
+  }
+  // IPv4-mapped (::ffff:a.b.c.d) and deprecated IPv4-compatible (::a.b.c.d)
+  if (g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0 && (g5 === 0 || g5 === 0xffff)) {
+    return isPrivateV4Octets([g6 >> 8, g6 & 0xff, g7 >> 8, g7 & 0xff]);
+  }
+  // NAT64 well-known prefix 64:ff9b::/96
+  if (g0 === 0x0064 && g1 === 0xff9b && g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0) {
+    return isPrivateV4Octets([g6 >> 8, g6 & 0xff, g7 >> 8, g7 & 0xff]);
+  }
+  if ((g0 & 0xfe00) === 0xfc00) return true; // fc00::/7 unique-local
+  if ((g0 & 0xffc0) === 0xfe80) return true; // fe80::/10 link-local
   return false;
 }
 

@@ -1,3 +1,13 @@
+// FAIL-OPEN BY DESIGN (deliberate policy, signed off 2026-07-13): every
+// timeout or error in this pipeline — MintGarden outage, Vision failure,
+// store failure — defaults content to unflagged rather than blocking. The
+// grove is a visualizer; failing closed would blank the gallery on every
+// upstream hiccup. The trade-off is that a flaggable NFT can render while a
+// signal source is down (until the SafeSearch sweep retries it). If this
+// module is ever lifted into a context where that trade-off is wrong
+// (moderation gating, anything user-generated-content-facing), revisit the
+// catch-and-permit sites: enrich(), fetchVerdict()'s callers, and
+// SafeSearchWorker's verdict fallbacks.
 import type { ContentFlagEvent, GroveEvent, SproutEvent } from "@grove/shared";
 import type { MediaIndex } from "../web/media-index.js";
 import type { Verdict } from "./types.js";

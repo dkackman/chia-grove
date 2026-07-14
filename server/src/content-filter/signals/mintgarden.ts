@@ -8,6 +8,13 @@ const asRecord = (v: unknown): Record<string, unknown> =>
   typeof v === "object" && v !== null ? (v as Record<string, unknown>) : {};
 
 /**
+ * MintGarden's creator.verification_state value for a creator flagged by their
+ * moderation (verified=1, flagged=2). Matched strictly: only the exact number
+ * blocks, so a malformed value can never escalate to a takedown.
+ */
+export const CREATOR_VERIFICATION_FLAGGED = 2;
+
+/**
  * sensitive_content per CHIP-0007 may be boolean, a string, or a non-empty list.
  * A bare descriptive string (e.g. "nudity") flags as sensitive too; only the
  * explicit negatives ("" / "false") and a literal `false` are treated as clear.
@@ -51,7 +58,7 @@ export function mapMintgardenSignals(json: unknown, opts: MapMintgardenOpts = {}
   const parts: Array<{ disposition: Disposition }> = [];
 
   // creator verification → hard block
-  if (creator.verification_state === 2) {
+  if (creator.verification_state === CREATOR_VERIFICATION_FLAGGED) {
     parts.push({ disposition: "blocked" });
   }
 
