@@ -80,10 +80,10 @@ export class CoinsetPoller implements ChainSource {
    * for chain state first. A hit means the chain already advanced past it —
    * process it (reorg detection included) and try the next height too, so a
    * multi-block backlog still drains within one tick. A miss (not yet mined)
-   * means we're caught up; a thrown error means real RPC trouble either way
-   * the caller falls back to resync(), whose getBlockchainState call also
-   * refreshes ambient data and surfaces genuine errors via the normal
-   * backoff path.
+   * means we're caught up. Only the probe itself is error-guarded: a thrown
+   * tryGetBlockInfo error makes the caller fall back to resync(), whose
+   * getBlockchainState call also refreshes ambient data. Errors from
+   * applyBlock propagate straight to loop()'s backoff handler instead.
    */
   private async fastForward(): Promise<boolean> {
     let advanced = false;

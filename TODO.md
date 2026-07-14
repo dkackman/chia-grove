@@ -18,7 +18,7 @@ been fixed and tested. Everything else is still open.
       this only catches genuine bugs, not transient RPC trouble — real RPC
       retries still happen upstream in `applyBlock`/`fastForward`/`walkTo`,
       unaffected. Regression test: `blockEvent() matches classifyBlock()'s own
-      first event` in `classify.test.ts`.
+    first event` in `classify.test.ts`.
 - [ ] **`LOCAL_NSFW_ENFORCE_CLEAN` — confirmed NOT set in production (2026-07-13).**
       Left open intentionally: not a bug, just a documented trust escalation
       (CLAUDE.md: "once you trust the local classifier's agreement with

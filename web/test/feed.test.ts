@@ -14,6 +14,7 @@ class FakeWebSocket {
   onopen: (() => void) | null = null;
   onmessage: ((ev: { data: string }) => void) | null = null;
   onclose: (() => void) | null = null;
+  onerror: ((ev: unknown) => void) | null = null;
   closeCalled = false;
 
   constructor(public readonly url: string) {
@@ -235,6 +236,15 @@ test("a matching protocol version clears the reload guard without reloading", ()
   ws.message(hello(PROTOCOL_VERSION));
   expect(reload).not.toHaveBeenCalled();
   expect(session.getItem("grove.proto-reloaded")).toBeNull();
+});
+
+test("a socket error is surfaced as a console diagnostic, not silently dropped", () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  new GroveFeed().start();
+  const ws = latestSocket();
+  expect(ws.onerror).toBeTypeOf("function");
+  ws.onerror?.(new Error("boom"));
+  expect(warn).toHaveBeenCalledTimes(1);
 });
 
 test("close() clears the drain queue so undrained events never dispatch", () => {

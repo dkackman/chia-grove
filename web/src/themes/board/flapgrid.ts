@@ -6,6 +6,8 @@ const FLIP_TIME = 0.06; // seconds per single flap
 const STAGGER = 0.012; // per-column riffle start delay
 const MIN_SQUASH = 0.06; // flap thinness at fold midpoint
 const HIGHLIGHT = 1.8; // hovered-row brightness boost
+const ROW_COLOR = new THREE.Color(1, 1, 1);
+const HOVER_COLOR = ROW_COLOR.clone().multiplyScalar(HIGHLIGHT);
 
 // Custom unlit shader: each instance samples its own atlas cell (aGlyph) and is
 // tinted by instanceColor. The squash lives in instanceMatrix.scale.y, so the
@@ -64,7 +66,6 @@ export class FlapGrid {
   private readonly wait: Float32Array; // stagger countdown before riffle starts
   private readonly swapped: Uint8Array; // glyph already swapped this flip?
   private readonly aGlyph: THREE.InstancedBufferAttribute;
-  private readonly base: THREE.Color[]; // per-row tint (stored on cell 0..cols)
   private hovered = -1;
   private animating = 0;
 
@@ -72,7 +73,6 @@ export class FlapGrid {
   private readonly pos = new THREE.Vector3();
   private readonly scl = new THREE.Vector3();
   private readonly q = new THREE.Quaternion();
-  private readonly tint = new THREE.Color();
 
   constructor(
     scene: THREE.Scene,
@@ -113,7 +113,6 @@ export class FlapGrid {
     this.flip = new Float32Array(n).fill(-1);
     this.wait = new Float32Array(n);
     this.swapped = new Uint8Array(n);
-    this.base = Array.from({ length: rows }, () => new THREE.Color(1, 1, 1));
 
     for (let i = 0; i < n; i++) this.writeMatrix(i, 1);
     this.mesh.instanceMatrix.needsUpdate = true;
@@ -170,14 +169,9 @@ export class FlapGrid {
 
   highlightRow(row: number | null): void {
     if (this.hovered === (row ?? -1)) return;
-    if (this.hovered >= 0) this.applyRowColor(this.hovered, this.base[this.hovered]);
+    if (this.hovered >= 0) this.applyRowColor(this.hovered, ROW_COLOR);
     this.hovered = row ?? -1;
-    if (this.hovered >= 0) {
-      this.applyRowColor(
-        this.hovered,
-        this.tint.copy(this.base[this.hovered]).multiplyScalar(HIGHLIGHT)
-      );
-    }
+    if (this.hovered >= 0) this.applyRowColor(this.hovered, HOVER_COLOR);
   }
 
   private applyRowColor(row: number, color: THREE.Color): void {

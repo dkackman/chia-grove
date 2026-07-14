@@ -96,7 +96,9 @@ function isPrivateV4Octets(o: number[]): boolean {
 }
 
 function isPrivateV4(ip: string): boolean {
-  return isPrivateV4Octets(ip.split(".").map(Number));
+  // strict decimal only: Number() would accept legacy hex/octal segments
+  // ("0x7f" → 127), so anything else becomes NaN and reads as unsafe
+  return isPrivateV4Octets(ip.split(".").map((s) => (/^\d{1,3}$/.test(s) ? Number(s) : NaN)));
 }
 
 /**
@@ -154,7 +156,16 @@ function isPrivateV6(ip: string): boolean {
   const [g0, g1, g2, g3, g4, g5, g6, g7] = g;
 
   if (g.every((n) => n === 0)) return true; // :: unspecified
-  if (g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0 && g6 === 0 && g7 === 1) {
+  if (
+    g0 === 0 &&
+    g1 === 0 &&
+    g2 === 0 &&
+    g3 === 0 &&
+    g4 === 0 &&
+    g5 === 0 &&
+    g6 === 0 &&
+    g7 === 1
+  ) {
     return true; // ::1 loopback
   }
   // IPv4-mapped (::ffff:a.b.c.d) and deprecated IPv4-compatible (::a.b.c.d)

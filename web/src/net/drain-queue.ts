@@ -33,6 +33,7 @@ export class DrainQueue<T> {
   private items: T[] = [];
   private head = 0;
   private scheduled = false;
+  private generation = 0;
 
   constructor(
     private readonly sink: (item: T) => void,
@@ -48,18 +49,24 @@ export class DrainQueue<T> {
   /** Drop everything not yet drained. A caller that's about to enqueue a
    * fresh, self-contained batch (e.g. a reconnect's Snapshot replay) calls
    * this first so leftovers from before don't get dispatched a second time
-   * once appended behind the new batch. Safe even with a frame already
-   * scheduled: drainFrame() re-checks the (now empty) state when it runs. */
+   * once appended behind the new batch. Any frame already handed to the
+   * scheduler is cancelled by the generation bump, so it can't drain a
+   * second budget alongside the frame the fresh batch schedules. */
   clear(): void {
     this.items = [];
     this.head = 0;
     this.scheduled = false;
+    this.generation++;
   }
 
   private ensureScheduled(): void {
     if (this.scheduled || this.head >= this.items.length) return;
     this.scheduled = true;
-    this.scheduler.schedule(() => this.drainFrame());
+    const scheduledGeneration = this.generation;
+    this.scheduler.schedule(() => {
+      if (scheduledGeneration !== this.generation) return; // cleared since scheduling — stale frame
+      this.drainFrame();
+    });
   }
 
   private drainFrame(): void {

@@ -116,6 +116,23 @@ test("isPrivateAddress flags IPv4-mapped/compatible v6 in compressed hex form", 
   }
 });
 
+// net.isIP is strict decimal-only, so these all fall through to the
+// "not a valid IP → unsafe" branch today. Pinned explicitly so a future
+// parser change (e.g. inet_aton-style leniency) can't silently let a
+// legacy hex/octal/short loopback form read as safe.
+test("legacy hex/octal/short IPv4 forms are treated as unsafe", () => {
+  for (const ip of [
+    "0x7f.0.0.1", // hex octet loopback
+    "0177.0.0.1", // octal octet loopback
+    "0x7f000001", // single 32-bit hex loopback
+    "2130706433", // single 32-bit decimal loopback
+    "127.1", // two-part shorthand
+    "127.0.1", // three-part shorthand
+  ]) {
+    expect(isPrivateAddress(ip)).toBe(true);
+  }
+});
+
 test("validateProxyTarget rejects bracketed IPv4-mapped v6 literals end to end", () => {
   for (const u of [
     "http://[::ffff:169.254.169.254]/latest/meta-data",

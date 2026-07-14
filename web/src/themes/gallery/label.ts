@@ -139,8 +139,4 @@ export class Placard$ {
       this.el.appendChild(wrap);
     }
   }
-
-  dispose(): void {
-    this.el.remove();
-  }
 }

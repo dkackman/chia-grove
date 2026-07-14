@@ -24,6 +24,13 @@ test("creator.verification_state 2 → blocked", () => {
   expect(mapMintgarden({ creator: { verification_state: 2 } })).toBe("blocked");
 });
 
+test("verification_state type fuzz: only the exact number 2 blocks", () => {
+  const fuzz = ["2", 2n, true, [2], { state: 2 }, null, undefined, NaN, 1, 3, 2.5, "flagged"];
+  for (const verification_state of fuzz) {
+    expect(mapMintgarden({ creator: { verification_state } })).toBe("ok");
+  }
+});
+
 test("collection.sensitive_content true → sensitive", () => {
   expect(mapMintgarden({ collection: { sensitive_content: true } })).toBe("sensitive");
 });

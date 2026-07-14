@@ -91,7 +91,10 @@ const poller = new CoinsetPoller(
         events = classifyBlock(block, cats, media);
         await contentFilter.enrich(events);
       } catch (err) {
-        log.error({ err, height: block.height }, "block classify/enrich failed; publishing bare block event");
+        log.error(
+          { err, height: block.height },
+          "block classify/enrich failed; publishing bare block event"
+        );
         events = [blockEvent(block)];
       }
       hub.publish(events);
