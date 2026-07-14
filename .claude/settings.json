@@ -14,13 +14,8 @@
       "Bash(curl -s -o /dev/null -w \"page: %{http_code}\\\\n\" \"http://localhost:5173/?demo=1&theme=farm\")",
       "Bash(curl -s \"http://localhost:5173/src/themes/farm/field.ts\")",
       "Bash(kill %1)",
-      "mcp__gitnexus__list_repos",
-      "mcp__gitnexus__explain",
-      "mcp__gitnexus__impact",
       "Bash(node -e ' *)",
-      "mcp__gitnexus__detect_changes",
       "Bash(git -C /Users/don/src/dkackman/chia-grove diff --stat)",
-      "Bash(git -C /Users/don/src/dkackman/chia-grove status --porcelain .gitnexus/run.cjs)",
       "Bash(git -C /Users/don/src/dkackman/chia-grove status --porcelain=v1 -uall)",
       "Bash(git -C /Users/don/src/dkackman/chia-grove log --oneline -5)",
       "Bash(git -C /Users/don/src/dkackman/chia-grove diff HEAD --stat -- server/src/web/img-proxy.ts server/src/index.ts TODO.md)",
@@ -28,7 +23,10 @@
       "Bash(git -C /Users/don/src/dkackman/chia-grove show --stat fa66256)",
       "Bash(git -C /Users/don/src/dkackman/chia-grove show --stat cd9448d)",
       "Bash(git -C /Users/don/src/dkackman/chia-grove show HEAD~2:.claude/settings.json)",
-      "Read(//Users/don/.claude/**)"
+      "Read(//Users/don/.claude/**)",
+      "Bash(claude mcp *)",
+      "Read(//Users/don/**)",
+      "Bash(python3 -c ' *)"
     ]
   }
 }

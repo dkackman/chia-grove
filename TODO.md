@@ -1,6 +1,6 @@
 # Code review follow-ups
 
-From the 2026-07-13 GitNexus-assisted quality/correctness review. The critical
+From the 2026-07-13 quality/correctness review. The critical
 SSRF bug (IPv6-mapped/compatible IPv4 literals bypassing `isPrivateV6` in
 `server/src/web/img-proxy.ts`) and the ingest error-isolation bug below have
 been fixed and tested. Everything else is still open.
@@ -12,8 +12,8 @@ been fixed and tested. Everything else is still open.
       `onBlock` now wraps classify+enrich in try/catch and falls back to a
       bare `blockEvent(block)` (new export from `classify.ts`, shared with the
       `classifyBlock` first-event construction) on failure, matching
-      `block-lookup.ts`'s existing degrade-gracefully pattern. Confirmed via
-      `gitnexus impact` that `enrich()` never rejects on its own (network
+      `block-lookup.ts`'s existing degrade-gracefully pattern. Confirmed
+      that `enrich()` never rejects on its own (network
       failures are already swallowed to a permissive verdict internally), so
       this only catches genuine bugs, not transient RPC trouble — real RPC
       retries still happen upstream in `applyBlock`/`fastForward`/`walkTo`,

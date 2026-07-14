@@ -24,3 +24,4 @@ content-filter.sqlite
 server/models/.venv*
 
 .playwright-mcp/
+.claude/settings.json
