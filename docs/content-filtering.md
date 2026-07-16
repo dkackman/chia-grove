@@ -80,7 +80,7 @@ stalling the whole block). Checked and combined:
 4. **Curated denylist** — a maintained map of collection-id → disposition,
    for cases the above don't catch (manual curation, e.g. after a user
    report). Checked independent of MintGarden's own opinion.
-5. **Curated allow-list** — matched by creator DID *or* collection id. Can
+5. **Curated allow-list** — matched by creator DID _or_ collection id. Can
    only stamp a `whitelisted: true` flag on an otherwise-`ok` result; it can
    never downgrade a blocked/sensitive verdict from any of the above. Its
    only effect downstream is skipping Tier 2 entirely for known-safe,
@@ -100,11 +100,11 @@ with no per-call cost. Three operating modes, all controlled by two things:
 whether a paid-API key is configured, and whether the operator has opted into
 enforcement:
 
-| Paid API key set? | Enforcement opted in? | Behavior |
-|---|---|---|
-| no | — | **Standalone**: runs, logs its score, never persisted or acted on. Lets you evaluate the model with zero ongoing cost. |
-| yes | no | **Shadow**: runs alongside every paid-API call, logs a comparison between the two verdicts. Still never changes what gets persisted. |
-| yes | yes | **Enforcing**: a confidently-clean score skips the paid call entirely (persists ok directly from the local result). Anything *not* confidently clean (uncertain or confidently-nsfw) still goes to the paid API — the local model is only ever trusted to say "definitely fine," never to say "definitely bad" on its own. |
+| Paid API key set? | Enforcement opted in? | Behavior                                                                                                                                                                                                                                                                                                                   |
+| ----------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| no                | —                     | **Standalone**: runs, logs its score, never persisted or acted on. Lets you evaluate the model with zero ongoing cost.                                                                                                                                                                                                     |
+| yes               | no                    | **Shadow**: runs alongside every paid-API call, logs a comparison between the two verdicts. Still never changes what gets persisted.                                                                                                                                                                                       |
+| yes               | yes                   | **Enforcing**: a confidently-clean score skips the paid call entirely (persists ok directly from the local result). Anything _not_ confidently clean (uncertain or confidently-nsfw) still goes to the paid API — the local model is only ever trusted to say "definitely fine," never to say "definitely bad" on its own. |
 
 The score is banded against two thresholds (`cleanBelow` / `nsfwAbove`) into
 `clean | uncertain | nsfw`; only `clean` is ever actionable, which bounds the
@@ -149,7 +149,7 @@ queue, not a blocking call):
   classifier's own network).
 - **Concurrency is gated, polling is not** — the paid call sits behind a
   small concurrency limit (respecting the API's rate limits); the readiness
-  probe's wait does *not* share that gate, or throughput would collapse to
+  probe's wait does _not_ share that gate, or throughput would collapse to
   `concurrency / probe_wait` for no reason (the probe is cheap, unrelated
   contention).
 - **Failure backoff, per content not per NFT** — a failure suppresses retries
