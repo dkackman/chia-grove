@@ -452,13 +452,17 @@ export class SafeSearchWorker {
     result: SafeSearchResult,
     source: "vision" | "reused"
   ): void {
-    this.opts.store.putSafeSearch(launcherId, result, checkedUri);
+    const signal = source === "vision" ? "vision" : "vision-reused";
+    this.opts.store.putSafeSearch(launcherId, result, checkedUri, signal);
     this.failedUntil.delete(launcherId);
-    log.info(
-      { launcherId, imageUri: checkedUri, source, verdict: result.sensitive ? "sensitive" : "ok" },
-      "safesearch: verdict"
-    );
     if (result.sensitive) {
+      // A clean result never reaches the client (the cheap tier already sent
+      // an unflagged sprout; nothing changes) so it's not logged here — only
+      // a promotion that actually goes out as a ContentFlagEvent is.
+      log.info(
+        { launcherId, imageUri: checkedUri, signal, disposition: "sensitive" },
+        "content-filter: verdict"
+      );
       // The verdict is already durably persisted above — a failure to notify
       // connected clients (e.g. a Hub publish error) is a delivery problem,
       // not a classification failure. Letting it propagate to run()'s catch

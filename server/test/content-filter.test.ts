@@ -318,7 +318,7 @@ test("mapMintgardenSignals: allow-list match on an otherwise-clean NFT sets whit
     { creator: { encoded_id: "did:chia:good" }, collection: { id: "col_good" } },
     { whitelist }
   );
-  expect(v).toEqual({ disposition: "ok", whitelisted: true });
+  expect(v).toEqual({ disposition: "ok", whitelisted: true, signal: "whitelist" });
 });
 
 test("mapMintgardenSignals: allow-list does not suppress a lexicon hit", () => {
@@ -331,7 +331,7 @@ test("mapMintgardenSignals: allow-list does not suppress a lexicon hit", () => {
     },
     { whitelist }
   );
-  expect(v).toEqual({ disposition: "sensitive" });
+  expect(v).toEqual({ disposition: "sensitive", signal: "lexicon" });
 });
 
 test("mapMintgardenSignals: allow-list does not suppress a denylist entry", () => {
@@ -341,7 +341,7 @@ test("mapMintgardenSignals: allow-list does not suppress a denylist entry", () =
     { creator: { encoded_id: "did:chia:good" }, collection: { id: "col_good" } },
     { whitelist, denylist }
   );
-  expect(v).toEqual({ disposition: "blocked" });
+  expect(v).toEqual({ disposition: "blocked", signal: "denylist" });
 });
 
 test("mapMintgardenSignals: allow-list does not suppress a sensitive_content flag", () => {
@@ -353,7 +353,7 @@ test("mapMintgardenSignals: allow-list does not suppress a sensitive_content fla
     },
     { whitelist }
   );
-  expect(v).toEqual({ disposition: "sensitive" });
+  expect(v).toEqual({ disposition: "sensitive", signal: "collection-sensitive" });
 });
 
 test("mapMintgardenSignals: allow-list does not suppress MintGarden authoritative blocked", () => {
@@ -362,7 +362,7 @@ test("mapMintgardenSignals: allow-list does not suppress MintGarden authoritativ
     { is_blocked: true, creator: { encoded_id: "did:chia:good" }, collection: { id: "col_good" } },
     { whitelist }
   );
-  expect(v).toEqual({ disposition: "blocked" });
+  expect(v).toEqual({ disposition: "blocked", signal: "collection-blocked" });
 });
 
 test("mapMintgardenSignals: collection id alone is enough to whitelist (OR semantics)", () => {
@@ -371,7 +371,7 @@ test("mapMintgardenSignals: collection id alone is enough to whitelist (OR seman
     { creator: { encoded_id: "did:chia:other" }, collection: { id: "col_good" } },
     { whitelist }
   );
-  expect(v).toEqual({ disposition: "ok", whitelisted: true });
+  expect(v).toEqual({ disposition: "ok", whitelisted: true, signal: "whitelist" });
 });
 
 test("mapMintgardenSignals: creator DID alone is enough to whitelist (OR semantics)", () => {
@@ -380,7 +380,7 @@ test("mapMintgardenSignals: creator DID alone is enough to whitelist (OR semanti
     { creator: { encoded_id: "did:chia:good" }, collection: { id: "col_unknown" } },
     { whitelist }
   );
-  expect(v).toEqual({ disposition: "ok", whitelisted: true });
+  expect(v).toEqual({ disposition: "ok", whitelisted: true, signal: "whitelist" });
 });
 
 test("mapMintgardenSignals: neither identifier on the list leaves the verdict plain ok", () => {

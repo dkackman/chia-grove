@@ -23,7 +23,7 @@ export { mapMintgarden, mapMintgardenSignals, extractContentHash } from "./signa
 export type { MapMintgardenOpts } from "./signals/mintgarden.js";
 export type { StoredVerdict } from "./store.js";
 
-const OK: Verdict = { disposition: "ok" };
+const OK: Verdict = { disposition: "ok", signal: "fail-open" };
 
 // MintGarden serves a static poster for video NFTs at its assets CDN, keyed by
 // content hash (the on-chain `data.thumbnail_uri`); the archive CDN does not.
@@ -218,7 +218,7 @@ export class ContentFilter {
     let verdict: Verdict;
     let contentHash: string | undefined;
     if (stored) {
-      verdict = { disposition: stored.disposition };
+      verdict = { disposition: stored.disposition, signal: stored.signal };
       contentHash = stored.contentHash;
     } else {
       const result = await this.resolve(event.nftId!);
@@ -263,12 +263,6 @@ export class ContentFilter {
     }
 
     if (verdict.disposition === "ok") {
-      if (verdict.whitelisted) {
-        log.info(
-          { launcherId, nftId: event.nftId },
-          "content-filter: allow-list hit, skipping SafeSearch"
-        );
-      }
       // maybeEnqueue self-skips a whitelisted NFT via the store's skip-stamp;
       // still call it so the store stamp stays the single source of truth
       // (and Vision runs anyway on the fail-open path where putCheap failed).
@@ -281,6 +275,20 @@ export class ContentFilter {
     } else if (verdict.disposition === "sensitive") {
       event.mediaFilter = "sensitive";
     }
+
+    // Every sprout event carries this verdict's disposition out to clients
+    // (as mediaFilter, or implicitly as unflagged for "ok"), so log it
+    // unconditionally — unlike the async SafeSearch tier, there's no
+    // intermediate/not-sent-to-client case here.
+    log.info(
+      {
+        launcherId,
+        nftId: event.nftId,
+        disposition: verdict.disposition,
+        signal: verdict.signal ?? "none",
+      },
+      "content-filter: verdict"
+    );
   }
 
   private resolve(nftId: string): Promise<FetchResult> {
@@ -324,7 +332,7 @@ export class ContentFilter {
       const res = await this.fetchImpl(`${this.baseUrl}/nfts/${nftId}`, {
         signal: controller.signal,
       });
-      if (res.status === 404) return { verdict: { disposition: "ok" } }; // genuinely unknown to MintGarden → cacheable permissive
+      if (res.status === 404) return { verdict: { disposition: "ok", signal: "not-found" } }; // genuinely unknown to MintGarden → cacheable permissive
       if (!res.ok) throw new Error(`mintgarden ${res.status}`); // 5xx/429/etc → transient, don't poison the cache
       const json = await res.json();
       return {
