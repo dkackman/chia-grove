@@ -10,9 +10,13 @@ import { FARM } from "./palette.js";
 import { CropSystem } from "./crops.js";
 import { Tractor } from "./tractor.js";
 import { createField } from "./field.js";
+import { createScenery } from "./scenery.js";
+import { createProps } from "./props.js";
 import { createFarmSky } from "./sky.js";
+import { createTerrain } from "./terrain.js";
 import { Chickens } from "./chickens.js";
 import { Crows } from "./crows.js";
+import { Turbines } from "./turbines.js";
 
 export const farm: Visualization = {
   id: "farm",
@@ -51,12 +55,16 @@ export const farm: Visualization = {
     });
 
     const sky = createFarmSky(scene);
+    createTerrain(scene, renderer.capabilities.getMaxAnisotropy());
     const field = createField(scene, reducedMotion);
+    createScenery(scene);
+    createProps(scene);
     const glow = glowTexture();
     const crops = new CropSystem(scene, glow);
     const tractor = new Tractor(scene, reducedMotion, glow);
     const chickens = new Chickens(scene, reducedMotion ? 40 : 120);
     const crows = new Crows(scene, reducedMotion ? 10 : 24);
+    const turbines = new Turbines(scene, reducedMotion);
     // pollen drifting in the sun, centred over the rows — atmosphere only
     const motes = new Motes(scene, {
       count: reducedMotion ? 35 : 100,
@@ -90,6 +98,7 @@ export const farm: Visualization = {
           tractor.startRow(currentRow, clockT);
           field.plow(currentRow);
           chickens.chase(0, rowZ(currentRow), clockT);
+          turbines.gust(clockT);
           break;
         case "sprout":
           crops.plant(event, currentRow, plantIndex);
@@ -104,6 +113,7 @@ export const farm: Visualization = {
           const newest = rowZ(currentRow);
           const oldest = rowZ(Math.max(0, currentRow - 5));
           crows.fly(Math.min(newest, oldest), Math.max(newest, oldest), clockT);
+          crops.clearAbove(event.forkHeight);
           crops.wilt(clockT);
           break;
         }
@@ -147,6 +157,7 @@ export const farm: Visualization = {
       crops.update(t, dt, tractor);
       chickens.update(t, dt);
       crows.update(t);
+      turbines.update(t, dt);
       motes.update(t, dt);
       for (const fn of frameCallbacks) fn();
       postfx.render();

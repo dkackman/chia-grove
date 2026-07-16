@@ -10,6 +10,29 @@ function safeBigInt(value: string): bigint {
   }
 }
 
+/** Peak opacity of a cloud shadow, out over the field. */
+const SHADOW_OPACITY = 0.34;
+
+/**
+ * How dark a cloud shadow is at x. The shadow planes are flat and drift out to
+ * x = ±60, but past |x| ≈ 26 the ground begins to roll (see terrain.ts) and a
+ * hummock would occlude part of a flat shadow — a shadow vanishing behind a rise
+ * reads as a bug. This reaches exactly zero at |x| = 38, taken from the plane's
+ * centre even though the planes themselves are 20-32 units wide, so the fade is
+ * not a tight guarantee that no part of a shadow ever sits over rolling ground.
+ * It is sufficient in practice for two independent reasons: the ground barely
+ * moves below |x| ≈ 30 (AMPLITUDE's damping is still mostly in its ramp there),
+ * and the radial-gradient glow map's alpha is already near zero at a plane's
+ * edge, so the part of a shadow that could reach unflattened ground is nearly
+ * invisible anyway. A future change to AMPLITUDE or FLAT should re-check both
+ * of those before relying on this fade alone. This also replaces the hard
+ * wrap-around pop with a fade.
+ */
+export function shadowOpacity(x: number): number {
+  const fade = THREE.MathUtils.clamp((38 - Math.abs(x)) / 14, 0, 1);
+  return SHADOW_OPACITY * fade * fade;
+}
+
 export interface FarmSky {
   update(dt: number, t: number): void;
   setNetspace(bytes: string): void;
@@ -64,7 +87,7 @@ export function createFarmSky(scene: THREE.Scene): FarmSky {
         map: glowMap,
         color: 0x33502a, // a darker turf green, so the patch reads as shade
         transparent: true,
-        opacity: 0.34,
+        opacity: SHADOW_OPACITY,
         depthWrite: false,
       })
     );
@@ -91,6 +114,7 @@ export function createFarmSky(scene: THREE.Scene): FarmSky {
       for (const shadow of shadows) {
         shadow.position.x += dt * 0.9;
         if (shadow.position.x > 60) shadow.position.x = -60;
+        shadow.material.opacity = shadowOpacity(shadow.position.x);
       }
     },
     setNetspace(bytes) {

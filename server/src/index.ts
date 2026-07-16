@@ -1,6 +1,6 @@
 import { RpcClient } from "chia-wallet-sdk";
 import type { GroveEvent, SproutEvent } from "@grove/shared";
-import { classifyBlock } from "./classify/classify.js";
+import { blockEvent, classifyBlock } from "./classify/classify.js";
 import { CatRegistry } from "./classify/cats.js";
 import { CoinsetPoller } from "./ingest/coinset-poller.js";
 import { coinsetView } from "./ingest/coinset-view.js";
@@ -78,8 +78,25 @@ const poller = new CoinsetPoller(
   rpcView,
   {
     async onBlock(block) {
-      const events = classifyBlock(block, cats, media);
-      await contentFilter.enrich(events);
+      // classifyBlock/enrich are only ever fed already-fetched RPC data (no
+      // network calls of their own — enrich() already swallows its lookup
+      // failures into a permissive verdict), so a throw here means a genuine
+      // bug, not transient trouble. The poller only advances past a block
+      // once onBlock resolves, so leaving this unguarded would let one bad
+      // block wedge ingestion at that height forever under the retry/backoff
+      // loop. Degrade to a bare block event instead, matching the fallback
+      // /block/:height already uses (block-lookup.ts) for the same pipeline.
+      let events: GroveEvent[];
+      try {
+        events = classifyBlock(block, cats, media);
+        await contentFilter.enrich(events);
+      } catch (err) {
+        log.error(
+          { err, height: block.height },
+          "block classify/enrich failed; publishing bare block event"
+        );
+        events = [blockEvent(block)];
+      }
       hub.publish(events);
       const sprouts = events.filter((e): e is SproutEvent => e.type === "sprout");
       log.info(

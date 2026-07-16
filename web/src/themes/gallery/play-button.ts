@@ -80,9 +80,4 @@ export class PlayButton$ {
     this.el.textContent = playing ? "⏸" : "▶";
     this.el.setAttribute("aria-label", playing ? "pause video" : "play video");
   }
-
-  dispose(): void {
-    this.hide();
-    this.el.remove();
-  }
 }

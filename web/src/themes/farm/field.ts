@@ -2,8 +2,8 @@ import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { FIELD, rowZ } from "./layout.js";
 import { FARM } from "./palette.js";
-import { furrowTexture, glowTexture, mottledTexture } from "../shared/textures.js";
-import { mulberry32 } from "../shared/util.js";
+import { blobShadow } from "./scenery.js";
+import { furrowTexture, glowTexture } from "../shared/textures.js";
 
 export interface Field {
   /** Reveal the soil strip for a row the first time the tractor plows it. */
@@ -325,217 +325,7 @@ function addFence(scene: THREE.Scene): void {
   );
 }
 
-/** Hand-placed perimeter trees: [x, z, scale]. Kept off the field and camera path. */
-const TREES: ReadonlyArray<readonly [number, number, number]> = [
-  [-30, 8, 1.2],
-  [-33, -6, 0.9],
-  [-28, -18, 1.4],
-  [-21, -31, 1.0],
-  [29, 12, 1.1],
-  [32, -2, 1.5],
-  [27, -15, 0.9],
-  [21, -30, 1.3],
-  [36, -24, 1.1],
-  [-38, 18, 1.3],
-  [-42, 2, 1.0],
-  [-34, 26, 0.85],
-  [40, 22, 1.2],
-  [34, -22, 1.0],
-];
-
-const canopyBase = new THREE.Color(FARM.treeCanopy);
-
-/** Bake a single flat color into every vertex so all canopies share one
- *  material (one draw call) yet each tree can carry its own tint. */
-function paint(geo: THREE.BufferGeometry, color: THREE.Color): THREE.BufferGeometry {
-  const n = geo.attributes.position.count;
-  const colors = new Float32Array(n * 3);
-  for (let i = 0; i < n; i++) {
-    colors[i * 3] = color.r;
-    colors[i * 3 + 1] = color.g;
-    colors[i * 3 + 2] = color.b;
-  }
-  geo.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-  return geo;
-}
-
-/** A leafy green near the base canopy color, jittered per tree. Conifers skew
- *  darker and cooler; broadleaves a touch lighter and warmer. */
-function leafColor(rand: () => number, warm: boolean): THREE.Color {
-  const hsl = { h: 0, s: 0, l: 0 };
-  canopyBase.getHSL(hsl);
-  const h = hsl.h + (rand() - 0.5) * 0.04 + (warm ? 0.012 : -0.016);
-  const s = THREE.MathUtils.clamp(hsl.s + (rand() - 0.5) * 0.14, 0.25, 0.78);
-  const l = THREE.MathUtils.clamp(hsl.l + (rand() - 0.5) * 0.12 + (warm ? 0.03 : -0.05), 0.16, 0.5);
-  return new THREE.Color().setHSL(h, s, l);
-}
-
-/** A tiered conifer: a slim trunk under three or four stacked, shrinking cones,
- *  each a little brighter than the one below it. */
-function makeConifer(rand: () => number): {
-  trunk: THREE.BufferGeometry;
-  canopy: THREE.BufferGeometry;
-} {
-  const trunkH = 0.6 + rand() * 0.3;
-  const trunk = new THREE.CylinderGeometry(0.06, 0.1, trunkH, 5);
-  trunk.translate(0, trunkH / 2, 0);
-
-  const tint = leafColor(rand, false);
-  const tiers: THREE.BufferGeometry[] = [];
-  const n = rand() < 0.4 ? 4 : 3;
-  let y = trunkH * 0.7;
-  let r = 0.7 + rand() * 0.25;
-  let h = 0.95 + rand() * 0.3;
-  for (let i = 0; i < n; i++) {
-    // non-indexed so conifer canopies merge with the non-indexed (Polyhedron-
-    // based) broadleaf blobs, and so flat shading reads as crisp facets
-    const cone = new THREE.ConeGeometry(r, h, 6).toNonIndexed();
-    cone.rotateY(rand() * Math.PI);
-    cone.translate(0, y + h / 2, 0);
-    paint(cone, tint.clone().multiplyScalar(0.82 + (i / n) * 0.18));
-    tiers.push(cone);
-    y += h * 0.5;
-    r *= 0.7;
-    h *= 0.82;
-  }
-  return { trunk, canopy: mergeGeometries(tiers) };
-}
-
-/** A broadleaf tree: a tapered trunk with a branch stub or two, under a cluster
- *  of faceted leaf blobs (one big central blob plus smaller satellites). */
-function makeBroadleaf(rand: () => number): {
-  trunk: THREE.BufferGeometry;
-  canopy: THREE.BufferGeometry;
-} {
-  const trunkH = 0.9 + rand() * 0.5;
-  const trunkParts: THREE.BufferGeometry[] = [];
-  const trunk = new THREE.CylinderGeometry(0.09, 0.16, trunkH, 6);
-  trunk.translate(0, trunkH / 2, 0);
-  trunkParts.push(trunk);
-  const stubs = rand() < 0.5 ? 2 : 1;
-  for (let i = 0; i < stubs; i++) {
-    const len = 0.4 + rand() * 0.3;
-    const stub = new THREE.CylinderGeometry(0.03, 0.06, len, 5);
-    stub.translate(0, len / 2, 0);
-    stub.rotateZ((0.5 + rand() * 0.5) * (rand() < 0.5 ? 1 : -1));
-    stub.rotateY(rand() * Math.PI * 2);
-    stub.translate(0, trunkH * (0.55 + rand() * 0.25), 0);
-    trunkParts.push(stub);
-  }
-
-  const tint = leafColor(rand, true);
-  const blobs: THREE.BufferGeometry[] = [];
-  const cy = trunkH + 0.45;
-  const count = 3 + Math.floor(rand() * 3); // 3..5
-  for (let i = 0; i < count; i++) {
-    const main = i === 0;
-    const r = main ? 0.7 + rand() * 0.2 : 0.4 + rand() * 0.3;
-    const blob = new THREE.IcosahedronGeometry(r, main ? 1 : 0);
-    const ang = rand() * Math.PI * 2;
-    const rad = main ? 0 : 0.3 + rand() * 0.35;
-    blob.scale(1, 0.85 + rand() * 0.3, 1);
-    blob.translate(
-      Math.cos(ang) * rad,
-      cy + (main ? 0.1 : (rand() - 0.4) * 0.5),
-      Math.sin(ang) * rad
-    );
-    paint(blob, tint.clone().multiplyScalar(0.8 + rand() * 0.2));
-    blobs.push(blob);
-  }
-  return { trunk: mergeGeometries(trunkParts), canopy: mergeGeometries(blobs) };
-}
-
-function addTrees(scene: THREE.Scene): void {
-  const trunks: THREE.BufferGeometry[] = [];
-  const canopies: THREE.BufferGeometry[] = [];
-  TREES.forEach(([x, z, s0], i) => {
-    const rand = mulberry32(((i + 1) * 0x9e3779b1) >>> 0);
-    const s = s0 * (0.9 + rand() * 0.25);
-    const { trunk, canopy } = rand() < 0.4 ? makeConifer(rand) : makeBroadleaf(rand);
-    const lean = (rand() - 0.5) * 0.1;
-    const yaw = rand() * Math.PI * 2;
-    // scale about the base, give a slight lean, then spin (which also turns the
-    // lean direction) and drop into place — trunk and canopy share the transform
-    for (const g of [trunk, canopy]) {
-      g.scale(s, s, s);
-      g.rotateZ(lean);
-      g.rotateY(yaw);
-      g.translate(x, 0, z);
-    }
-    trunks.push(trunk);
-    canopies.push(canopy);
-  });
-  scene.add(
-    new THREE.Mesh(
-      mergeGeometries(trunks),
-      new THREE.MeshStandardMaterial({ color: FARM.treeTrunk, roughness: 1 })
-    )
-  );
-  scene.add(
-    new THREE.Mesh(
-      mergeGeometries(canopies),
-      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, flatShading: true })
-    )
-  );
-}
-
-/** Hazy hills on the horizon; the fog does most of the softening. */
-function addHills(scene: THREE.Scene): void {
-  const hills: THREE.BufferGeometry[] = [];
-  for (const [x, z, r] of [
-    [-55, -85, 48],
-    [8, -95, 56],
-    [62, -78, 42],
-  ]) {
-    const hill = new THREE.SphereGeometry(r, 20, 10);
-    hill.scale(1.3, 0.16, 1);
-    hill.translate(x, 0, z);
-    hills.push(hill);
-  }
-  scene.add(
-    new THREE.Mesh(
-      mergeGeometries(hills),
-      new THREE.MeshStandardMaterial({ color: FARM.hill, roughness: 1 })
-    )
-  );
-}
-
-/** A soft dark patch on the ground that seats a prop (a cheap fake shadow). */
-function blobShadow(
-  scene: THREE.Scene,
-  map: THREE.Texture,
-  x: number,
-  z: number,
-  w: number,
-  d: number,
-  opacity: number
-): void {
-  const mesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(w, d),
-    new THREE.MeshBasicMaterial({
-      map,
-      color: 0x202a18,
-      transparent: true,
-      opacity,
-      depthWrite: false,
-    })
-  );
-  mesh.rotation.x = -Math.PI / 2;
-  mesh.position.set(x, 0.03, z);
-  scene.add(mesh);
-}
-
 export function createField(scene: THREE.Scene, reducedMotion = false): Field {
-  const turf = new THREE.Mesh(
-    new THREE.CircleGeometry(140, 48),
-    new THREE.MeshStandardMaterial({
-      map: mottledTexture(FARM.turf, 0x8fbf72, 0x5e8348),
-      roughness: 1,
-    })
-  );
-  turf.rotation.x = -Math.PI / 2;
-  scene.add(turf);
-
   // faint furrow lines give the field direction even before it's plowed; sits
   // just above the turf and below the soil strips, which cover it once plowed
   const furrows = new THREE.Mesh(
@@ -571,17 +361,12 @@ export function createField(scene: THREE.Scene, reducedMotion = false): Field {
   const weathervane = addBarn(scene, barnX, barnZ);
   addSilo(scene, barnX + 5.4, barnZ);
   addFence(scene);
-  addTrees(scene);
-  addHills(scene);
 
   // soft ground shadows so the props don't read as floating on the turf
   // (offset slightly toward the camera / away from the sun)
   const shadowMap = glowTexture();
   blobShadow(scene, shadowMap, barnX - 0.8, barnZ + 0.7, 10, 6.5, 0.34);
   blobShadow(scene, shadowMap, barnX + 5.4 - 0.4, barnZ + 0.4, 3.9, 3.9, 0.32);
-  for (const [tx, tz, s] of TREES) {
-    blobShadow(scene, shadowMap, tx - 0.3 * s, tz + 0.25 * s, 2.6 * s, 2.6 * s, 0.3);
-  }
 
   // smoke curling up from the barn's stove pipe
   const updateSmoke = createSmoke(scene, barnX - 2, 6, barnZ + 0.7, reducedMotion);
