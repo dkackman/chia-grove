@@ -55,35 +55,35 @@ export function mapMintgardenSignals(json: unknown, opts: MapMintgardenOpts = {}
   const creator = asRecord(nft.creator);
   const metadata = asRecord(asRecord(nft.data).metadata_json);
 
-  const parts: Array<{ disposition: Disposition }> = [];
+  const parts: Array<{ disposition: Disposition; signal: string }> = [];
 
   // creator verification → hard block
   if (creator.verification_state === CREATOR_VERIFICATION_FLAGGED) {
-    parts.push({ disposition: "blocked" });
+    parts.push({ disposition: "blocked", signal: "creator-verification" });
   }
 
   // MintGarden collection-level flags
   if (nft.is_blocked === true || collection.blocked_content === true) {
-    parts.push({ disposition: "blocked" });
+    parts.push({ disposition: "blocked", signal: "collection-blocked" });
   } else if (isSensitiveFlag(collection.sensitive_content)) {
-    parts.push({ disposition: "sensitive" });
+    parts.push({ disposition: "sensitive", signal: "collection-sensitive" });
   }
 
   // CHIP-0007 off-chain metadata sensitive_content
   if (isSensitiveFlag(metadata.sensitive_content)) {
-    parts.push({ disposition: "sensitive" });
+    parts.push({ disposition: "sensitive", signal: "metadata-sensitive-content" });
   }
 
   // curated collection denylist
   const collectionId = typeof collection.id === "string" ? collection.id : undefined;
   const deny = dispositionForCollection(denylist, collectionId);
-  if (deny) parts.push({ disposition: deny });
+  if (deny) parts.push({ disposition: deny, signal: "denylist" });
 
   // text-keyword heuristic over name / collection name / description
   const text = [nft.name, metadata.name, collection.name, metadata.description]
     .filter((s): s is string => typeof s === "string")
     .join(" ");
-  if (matchesLexicon(text, lexicon)) parts.push({ disposition: "sensitive" });
+  if (matchesLexicon(text, lexicon)) parts.push({ disposition: "sensitive", signal: "lexicon" });
 
   const verdict = combine(parts);
 
@@ -94,7 +94,7 @@ export function mapMintgardenSignals(json: unknown, opts: MapMintgardenOpts = {}
   if (verdict.disposition === "ok") {
     const creatorDid = typeof creator.encoded_id === "string" ? creator.encoded_id : undefined;
     if (isWhitelisted(whitelist, creatorDid, collectionId)) {
-      return { disposition: "ok", whitelisted: true };
+      return { disposition: "ok", whitelisted: true, signal: "whitelist" };
     }
   }
 
