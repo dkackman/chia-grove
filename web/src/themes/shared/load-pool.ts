@@ -16,6 +16,13 @@ export interface PooledLoad {
   start: (done: () => void) => void;
   /** Called instead of start() when the job is dropped — release any reservation. */
   onDrop?: () => void;
+  /**
+   * Called when timeoutMs elapses before start()'s done() fires — the slot is
+   * reclaimed either way, but start()'s own success/failure callbacks never run,
+   * so this is the caller's only chance to release state it set up before start()
+   * (e.g. a pending-load guard keyed off the same job).
+   */
+  onTimeout?: () => void;
 }
 
 export class LoadPool {
@@ -57,7 +64,12 @@ export class LoadPool {
         this.active--;
         this.pump();
       };
-      if (this.timeoutMs !== undefined) timer = setTimeout(finish, this.timeoutMs);
+      if (this.timeoutMs !== undefined) {
+        timer = setTimeout(() => {
+          job.onTimeout?.();
+          finish();
+        }, this.timeoutMs);
+      }
       job.start(finish);
     }
     // fully consumed → release the backing array. Advancing a head index rather

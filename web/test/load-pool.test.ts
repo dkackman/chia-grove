@@ -135,6 +135,38 @@ test("without a timeoutMs, a stalled job holds its slot forever (opt-in only)", 
   expect(started).toEqual(["stalled"]); // B never gets a turn
 });
 
+test("calls onTimeout so the caller can release its own state when a stalled job is reclaimed", () => {
+  vi.useFakeTimers();
+  const timedOut: string[] = [];
+  const pool = new LoadPool(1, 5000);
+  pool.submit({
+    stillWanted: () => true,
+    start: () => {}, // never calls done()
+    onTimeout: () => timedOut.push("stalled"),
+  });
+
+  vi.advanceTimersByTime(5000);
+  expect(timedOut).toEqual(["stalled"]);
+});
+
+test("does not call onTimeout for a job that completes normally before its timeout fires", () => {
+  vi.useFakeTimers();
+  const timedOut: string[] = [];
+  const pool = new LoadPool(1, 1000);
+  let releaseA!: () => void;
+  pool.submit({
+    stillWanted: () => true,
+    start: (done) => {
+      releaseA = done;
+    },
+    onTimeout: () => timedOut.push("A"),
+  });
+
+  releaseA();
+  vi.advanceTimersByTime(10_000);
+  expect(timedOut).toEqual([]);
+});
+
 test("a job that completes normally doesn't get double-reclaimed when its timeout later fires", () => {
   vi.useFakeTimers();
   const pool = new LoadPool(1, 1000);
