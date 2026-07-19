@@ -154,6 +154,7 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
           // wrapped straight off the wall — skip the fetch (and free its guard)
           stillWanted: () => nftSeq - mySeq < pieces.capacity,
           onDrop: () => pending.delete(launcher),
+          onTimeout: () => pending.delete(launcher),
           start: (done) => {
             loadArtTexture(
               src,
