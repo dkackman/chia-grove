@@ -210,7 +210,10 @@ export class ContentFilter {
           try {
             return this.store?.get(launcherId);
           } catch (err) {
-            log.warn({ err }, "content-filter store.get failed (cache miss)");
+            log.warn(
+              { launcherId, nftId: event.nftId, err },
+              "content-filter store.get failed (cache miss)"
+            );
             return undefined;
           }
         })()
@@ -230,7 +233,10 @@ export class ContentFilter {
       try {
         this.store?.putCheap(launcherId, event.nftId, verdict, contentHash, verdict.whitelisted);
       } catch (err) {
-        log.warn({ err }, "content-filter store.putCheap failed (verdict not persisted)");
+        log.warn(
+          { launcherId, nftId: event.nftId, err },
+          "content-filter store.putCheap failed (verdict not persisted)"
+        );
       }
     }
 

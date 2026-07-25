@@ -1,3 +1,4 @@
+import { Address } from "chia-wallet-sdk";
 import type { ContentFlagEvent, SproutEvent } from "@grove/shared";
 import type { MediaIndex } from "../web/media-index.js";
 import type { ContentStore } from "./store.js";
@@ -5,6 +6,18 @@ import { querySafeSearch, adultIsSensitive, type SafeSearchResult } from "./sign
 import type { LocalNsfwBand } from "./signals/local-nsfw.js";
 import { BoundedMap } from "../util/bounded-map.js";
 import { log } from "../logger.js";
+
+// Bech32m nft1... form of a launcherId, for logging alongside the raw hex —
+// pasteable straight into MintGarden/spacescan without a manual lookup. Must
+// never throw: a bad launcherId must not abort verdict persistence, only the
+// log line it decorates.
+function nftId(launcherId: string): string | undefined {
+  try {
+    return new Address(Buffer.from(launcherId, "hex"), "nft").encode();
+  } catch {
+    return undefined;
+  }
+}
 
 export interface SafeSearchWorkerOpts {
   media: MediaIndex;
@@ -174,7 +187,11 @@ export class SafeSearchWorker {
       // A store read failure means we can't honor the safesearchChecked guard,
       // so skip (don't burn paid Vision quota un-deduped) rather than throw.
       log.warn(
-        { launcherId, err: err instanceof Error ? err.message : String(err) },
+        {
+          launcherId,
+          nftId: nftId(launcherId),
+          err: err instanceof Error ? err.message : String(err),
+        },
         "safesearch: store.get failed (skipping)"
       );
       return;
@@ -263,7 +280,7 @@ export class SafeSearchWorker {
         if (outcome) this.persistVerdict(launcherId, imageUri, outcome.result, "reused");
         return;
       }
-      const work = this.checkVision(imageUri, fallbackUri);
+      const work = this.checkVision(launcherId, imageUri, fallbackUri);
       this.dedupInflight.set(dedupKey, work);
       // .finally() derives a new promise; it must carry its own rejection
       // handler; the "real" rejection is still caught below via `await work`.
@@ -276,7 +293,12 @@ export class SafeSearchWorker {
       if (outcome) this.persistVerdict(launcherId, outcome.checkedUri, outcome.result, "vision");
     } catch (err) {
       log.warn(
-        { launcherId, imageUri, err: err instanceof Error ? err.message : String(err) },
+        {
+          launcherId,
+          nftId: nftId(launcherId),
+          imageUri,
+          err: err instanceof Error ? err.message : String(err),
+        },
         "safesearch: vision api failed"
       );
       this.failedUntil.set(launcherId, this.now() + this.failTtlMs);
@@ -291,6 +313,7 @@ export class SafeSearchWorker {
   }
 
   private async checkVision(
+    launcherId: string,
     imageUri: string,
     fallbackUri?: string
   ): Promise<VisionOutcome | undefined> {
@@ -300,10 +323,16 @@ export class SafeSearchWorker {
       // Enforcement decides whether Vision runs at all, so (unlike shadow
       // mode below) the local result must be awaited before that decision —
       // it can't just race Vision for a post-hoc comparison log.
-      const local = await this.shadowClassifyLocal(target);
+      const local = await this.shadowClassifyLocal(launcherId, target);
       if (local?.band === "clean") {
         log.info(
-          { target, localScore: local.score, localBand: local.band },
+          {
+            launcherId,
+            nftId: nftId(launcherId),
+            target,
+            localScore: local.score,
+            localBand: local.band,
+          },
           "safesearch: local-nsfw enforced clean (Vision skipped)"
         );
         return {
@@ -318,14 +347,16 @@ export class SafeSearchWorker {
       // Not confidently clean (uncertain or nsfw): fall through to the normal
       // Vision-or-standalone handling below, reusing the local result already
       // computed above rather than re-running it.
-      return this.resolveVisionOutcome(target, Promise.resolve(local));
+      return this.resolveVisionOutcome(launcherId, target, Promise.resolve(local));
     }
 
     // Default (non-enforcing) path: local classification, if configured, runs
     // concurrently with Vision purely for comparison logging — started before
     // the Vision gate so it doesn't wait behind the paid concurrency limit.
-    const shadow = this.opts.localClassify ? this.shadowClassifyLocal(target) : undefined;
-    return this.resolveVisionOutcome(target, shadow);
+    const shadow = this.opts.localClassify
+      ? this.shadowClassifyLocal(launcherId, target)
+      : undefined;
+    return this.resolveVisionOutcome(launcherId, target, shadow);
   }
 
   /** Resolves the readiness-probed / fallback URL Vision (and the local
@@ -347,6 +378,7 @@ export class SafeSearchWorker {
    *  standalone result (if not) — shared by both the enforce and shadow
    *  paths in checkVision, which differ only in when `local` resolves. */
   private async resolveVisionOutcome(
+    launcherId: string,
     target: string,
     local: Promise<{ score: number; band: LocalNsfwBand } | undefined> | undefined
   ): Promise<VisionOutcome | undefined> {
@@ -357,7 +389,13 @@ export class SafeSearchWorker {
       const resolved = local ? await local : undefined;
       if (resolved) {
         log.info(
-          { target, localScore: resolved.score, localBand: resolved.band },
+          {
+            launcherId,
+            nftId: nftId(launcherId),
+            target,
+            localScore: resolved.score,
+            localBand: resolved.band,
+          },
           "safesearch: local-nsfw standalone result (no Vision key configured)"
         );
       }
@@ -375,6 +413,8 @@ export class SafeSearchWorker {
     if (resolved) {
       log.info(
         {
+          launcherId,
+          nftId: nftId(launcherId),
           target,
           localScore: resolved.score,
           localBand: resolved.band,
@@ -391,6 +431,7 @@ export class SafeSearchWorker {
    *  local classifier. Never throws — a failure here must not affect the real
    *  (Vision-derived) verdict, only forgo this round's comparison log. */
   private async shadowClassifyLocal(
+    launcherId: string,
     url: string
   ): Promise<{ score: number; band: LocalNsfwBand } | undefined> {
     try {
@@ -398,7 +439,12 @@ export class SafeSearchWorker {
       return await this.opts.localClassify!(bytes);
     } catch (err) {
       log.warn(
-        { url, err: err instanceof Error ? err.message : String(err) },
+        {
+          launcherId,
+          nftId: nftId(launcherId),
+          url,
+          err: err instanceof Error ? err.message : String(err),
+        },
         "safesearch: local-nsfw shadow classify failed (ignored)"
       );
       return undefined;
@@ -460,7 +506,13 @@ export class SafeSearchWorker {
       // an unflagged sprout; nothing changes) so it's not logged here — only
       // a promotion that actually goes out as a ContentFlagEvent is.
       log.info(
-        { launcherId, imageUri: checkedUri, signal, disposition: "sensitive" },
+        {
+          launcherId,
+          nftId: nftId(launcherId),
+          imageUri: checkedUri,
+          signal,
+          disposition: "sensitive",
+        },
         "content-filter: verdict"
       );
       // The verdict is already durably persisted above — a failure to notify
@@ -473,7 +525,11 @@ export class SafeSearchWorker {
         this.opts.onFlag({ type: "content-flag", launcherId, mediaFilter: "sensitive" });
       } catch (err) {
         log.warn(
-          { launcherId, err: err instanceof Error ? err.message : String(err) },
+          {
+            launcherId,
+            nftId: nftId(launcherId),
+            err: err instanceof Error ? err.message : String(err),
+          },
           "safesearch: onFlag failed (verdict persisted, client notification dropped)"
         );
       }
