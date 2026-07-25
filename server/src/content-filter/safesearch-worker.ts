@@ -1,3 +1,4 @@
+import { Address } from "chia-wallet-sdk";
 import type { ContentFlagEvent, SproutEvent } from "@grove/shared";
 import type { MediaIndex } from "../web/media-index.js";
 import type { ContentStore } from "./store.js";
@@ -5,6 +6,18 @@ import { querySafeSearch, adultIsSensitive, type SafeSearchResult } from "./sign
 import type { LocalNsfwBand } from "./signals/local-nsfw.js";
 import { BoundedMap } from "../util/bounded-map.js";
 import { log } from "../logger.js";
+
+// Bech32m nft1... form of a launcherId, for logging alongside the raw hex —
+// pasteable straight into MintGarden/spacescan without a manual lookup. Must
+// never throw: a bad launcherId must not abort verdict persistence, only the
+// log line it decorates.
+function nftId(launcherId: string): string | undefined {
+  try {
+    return new Address(Buffer.from(launcherId, "hex"), "nft").encode();
+  } catch {
+    return undefined;
+  }
+}
 
 export interface SafeSearchWorkerOpts {
   media: MediaIndex;
@@ -460,7 +473,7 @@ export class SafeSearchWorker {
       // an unflagged sprout; nothing changes) so it's not logged here — only
       // a promotion that actually goes out as a ContentFlagEvent is.
       log.info(
-        { launcherId, imageUri: checkedUri, signal, disposition: "sensitive" },
+        { launcherId, nftId: nftId(launcherId), imageUri: checkedUri, signal, disposition: "sensitive" },
         "content-filter: verdict"
       );
       // The verdict is already durably persisted above — a failure to notify
