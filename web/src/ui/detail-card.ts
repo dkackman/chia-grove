@@ -1,7 +1,7 @@
 import type { SproutEvent } from "@grove/shared";
 import type { CardMeta } from "../themes/types.js";
 import { mojosToXch, mojosToCAT, shortHex } from "./format.js";
-import { resolveMedia, nftMediaEl } from "./media.js";
+import { resolveMedia, nftMediaEl, sensitiveMediaEl } from "./media.js";
 import { spacescanLink, mintgardenLink } from "./links.js";
 
 const KIND_LABELS: Record<SproutEvent["kind"], string> = {
@@ -53,7 +53,7 @@ export function showCard(event: CardMeta): void {
     if (media.render === "art") {
       card.appendChild(nftMediaEl(media.src, media.kind));
     } else if (media.render === "blur") {
-      const node = nftMediaEl(media.src, media.kind);
+      const node = sensitiveMediaEl(event, media);
       node.classList.add("sensitive");
       card.appendChild(node);
       card.appendChild(el("div", "media-note", "sensitive content"));
