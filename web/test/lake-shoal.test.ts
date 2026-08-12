@@ -89,6 +89,30 @@ test("pickables are exposed only once something is planted", () => {
   expect(shoal.metaFor(new THREE.Mesh(), 0)).toBeNull();
 });
 
+test("a fractional block counter puts the fish between bands", () => {
+  const shoal = new Shoal(new THREE.Scene(), 0xffffff);
+  shoal.plant(xch(id(7)), 0, 1, null);
+  shoal.update(0, 0.5);
+  const y = yOf(shoal, 0);
+  expect(y).toBeLessThan(bandDepth(0) + 0.4);
+  expect(y).toBeGreaterThan(bandDepth(1) - 0.4);
+});
+
+test("fish paths wander rather than tracing a fixed circle", () => {
+  const shoal = new Shoal(new THREE.Scene(), 0xffffff);
+  shoal.plant(xch(id(7)), 0, 1, null);
+  const radii = new Set<number>();
+  const m = new THREE.Matrix4();
+  const v = new THREE.Vector3();
+  for (let t = 0; t < 60; t += 1) {
+    shoal.update(t, 0);
+    shoal.mesh.getMatrixAt(0, m);
+    v.setFromMatrixPosition(m);
+    radii.add(Math.round(Math.hypot(v.x, v.z) * 100));
+  }
+  expect(radii.size).toBeGreaterThan(3);
+});
+
 test("school members of one spend swim near each other", () => {
   const shoal = new Shoal(new THREE.Scene(), 0xffffff);
   shoal.plant(xch(id(4)), 0, 1, null, 0);
