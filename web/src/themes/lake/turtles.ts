@@ -41,6 +41,8 @@ export class Turtles {
       color: LAKE.turtle,
       roughness: 0.8,
       flatShading: true,
+      emissive: new THREE.Color(LAKE.turtle),
+      emissiveIntensity: 0.25,
     });
 
     this.pool = Array.from({ length: cap }, () => {

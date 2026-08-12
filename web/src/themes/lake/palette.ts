@@ -7,7 +7,7 @@ export const LAKE = {
   weed: 0x2f6b3f,
   xchFish: 0xd8e9a8, // pale green-gold — reads against blue at any depth
   jelly: 0xc9a6e8,
-  turtle: 0x5d7a4a,
+  turtle: 0x7a9a5d,
   bubble: 0xbfe8ff,
   predator: 0x0a1c26,
 } as const;
