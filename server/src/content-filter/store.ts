@@ -11,6 +11,10 @@ export interface StoredVerdict {
   /** Cheap signal that produced `disposition` (see Verdict.signal); persisted
    *  so a later cache-hit re-spend can still log which signal decided it. */
   signal?: string;
+  /** MintGarden's nftId (as recorded on the original spend), needed to re-query
+   *  `/nfts/:id` for launchers that still lack a content hash (video poster
+   *  backfill) without waiting for a re-spend to supply it. */
+  nftId?: string;
 }
 
 interface Row {
@@ -18,6 +22,7 @@ interface Row {
   safesearch_checked_at: number | null;
   content_hash: string | null;
   signal: string | null;
+  nft_id: string | null;
 }
 
 /**
@@ -63,7 +68,7 @@ export class ContentStore {
   get(launcherId: string): StoredVerdict | undefined {
     const row = this.db
       .prepare(
-        "SELECT disposition, safesearch_checked_at, content_hash, signal FROM nft WHERE launcher_id = ?"
+        "SELECT disposition, safesearch_checked_at, content_hash, signal, nft_id FROM nft WHERE launcher_id = ?"
       )
       .get(launcherId) as Row | undefined;
     if (!row) return undefined;
@@ -72,6 +77,7 @@ export class ContentStore {
       safesearchChecked: row.safesearch_checked_at !== null,
       contentHash: row.content_hash ?? undefined,
       signal: row.signal ?? undefined,
+      nftId: row.nft_id ?? undefined,
     };
   }
 
@@ -148,7 +154,13 @@ export class ContentStore {
         imageUri ?? null,
         rowSignal ?? null
       );
-    return { disposition, safesearchChecked: true, signal: rowSignal };
+    return {
+      disposition,
+      safesearchChecked: true,
+      signal: rowSignal,
+      contentHash: current.contentHash,
+      nftId: current.nftId,
+    };
   }
 
   /**

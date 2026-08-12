@@ -1019,6 +1019,130 @@ test("the sweep interval re-checks an unchecked NFT without a new spend, and clo
   }
 });
 
+// ── video poster backfill (stuck-thumbnail sweep) ───────────────────────────
+// A video whose content hash never resolved on its first spend has no way to
+// become SafeSearch-eligible without a re-spend — unlike an image, which
+// always has the on-chain original to fall back on. The sweep timer also
+// re-polls MintGarden for exactly these launchers so a poster (and therefore
+// a Vision check) can still show up later.
+
+test("sweep backfills a stuck video's poster once MintGarden resolves a data_hash, then Vision-checks it in the same tick", async () => {
+  vi.useFakeTimers();
+  try {
+    const media = new MediaIndex(10);
+    media.set("V".repeat(64), { url: "https://ipfs.mintgarden.io/ipfs/clip.mp4", kind: "video" });
+    const store = new ContentStore(":memory:");
+    // First spend: MintGarden hadn't indexed the video yet, so no data_hash.
+    store.putCheap("V".repeat(64), "nft1video", { disposition: "ok" });
+    let mintgardenCalls = 0;
+    let visionCalls = 0;
+    const filter = new ContentFilter(media, {
+      store,
+      googleApiKey: "k",
+      onFlag: () => {},
+      safesearchSweepIntervalMs: 1000,
+      fetchImpl: (async (url: string) => {
+        const u = String(url);
+        if (u.includes("images:annotate")) {
+          visionCalls++;
+          return new Response(
+            JSON.stringify({ responses: [{ safeSearchAnnotation: { adult: "UNLIKELY" } }] }),
+            { status: 200 }
+          );
+        }
+        let hostname: string;
+        try {
+          hostname = new URL(u).hostname;
+        } catch {
+          hostname = "";
+        }
+        if (hostname === "api.mintgarden.io") {
+          mintgardenCalls++;
+          return okJson({ data: { data_hash: CONTENT_HASH } });
+        }
+        // readiness probe (HEAD) against the assets CDN poster
+        return new Response(null, { status: 200 });
+      }) as typeof fetch,
+    });
+    await vi.advanceTimersByTimeAsync(1000); // first tick → backfill → poster resolves → sweep picks it up
+    expect(mintgardenCalls).toBe(1);
+    expect(media.get("V".repeat(64))?.thumbnailUrl).toBe(
+      `https://assets.mainnet.mintgarden.io/thumbnails/${CONTENT_HASH}_512.webp`
+    );
+    expect(visionCalls).toBe(1);
+    filter.close();
+    store.close();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("sweep backs off a video launcher whose MintGarden lookup still has no data_hash, instead of refetching every tick", async () => {
+  vi.useFakeTimers();
+  try {
+    const media = new MediaIndex(10);
+    media.set("W".repeat(64), { url: "https://ipfs.mintgarden.io/ipfs/clip.mp4", kind: "video" });
+    const store = new ContentStore(":memory:");
+    store.putCheap("W".repeat(64), "nft1video2", { disposition: "ok" });
+    let mintgardenCalls = 0;
+    const filter = new ContentFilter(media, {
+      store,
+      googleApiKey: "k",
+      onFlag: () => {},
+      safesearchSweepIntervalMs: 1000,
+      fetchImpl: (async (url: string) => {
+        const u = String(url);
+        let host: string;
+        try {
+          host = new URL(u).hostname;
+        } catch {
+          host = "";
+        }
+        if (host === "api.mintgarden.io") {
+          mintgardenCalls++;
+          return okJson({}); // still not indexed
+        }
+        return new Response("{}", { status: 404 });
+      }) as typeof fetch,
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(mintgardenCalls).toBe(1);
+    await vi.advanceTimersByTimeAsync(1000); // second tick, well within the 1h backoff
+    expect(mintgardenCalls).toBe(1); // suppressed, not refetched
+    filter.close();
+    store.close();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("sweep never backfills a blocked video (no poster needed — media is already unreachable)", async () => {
+  vi.useFakeTimers();
+  try {
+    const media = new MediaIndex(10);
+    media.set("X".repeat(64), { url: "https://ipfs.mintgarden.io/ipfs/clip.mp4", kind: "video" });
+    const store = new ContentStore(":memory:");
+    store.putCheap("X".repeat(64), "nft1video3", { disposition: "blocked" });
+    let mintgardenCalls = 0;
+    const filter = new ContentFilter(media, {
+      store,
+      googleApiKey: "k",
+      onFlag: () => {},
+      safesearchSweepIntervalMs: 1000,
+      fetchImpl: (async (url: string) => {
+        if (String(url).includes("api.mintgarden.io")) mintgardenCalls++;
+        return okJson({ data: { data_hash: CONTENT_HASH } });
+      }) as typeof fetch,
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(mintgardenCalls).toBe(0);
+    filter.close();
+    store.close();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
 test("localNsfwModelPath alone (no googleApiKey) still runs local classification standalone", async () => {
   const media = new MediaIndex(10);
   media.set("Lnsfw", { url: "https://e/local.png", kind: "image" });

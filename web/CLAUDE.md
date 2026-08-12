@@ -69,10 +69,3 @@ Minecraft-inspired voxel island growing on a phyllotaxis spiral. XCH spends pave
 ## Network
 
 `GroveFeed` (`src/net/feed.ts`) connects to the WebSocket server, handles `Hello`/`Snapshot`/`Batch` messages, and dispatches `GroveEvent`s to the active theme. The `DrainQueue` drains the snapshot at 120 events/frame (~1.5 s at 60 fps) to avoid a single-frame spike.
-
-## Tests
-
-```sh
-npm test                    # all web tests
-npx vitest run web/test/    # web tests only
-```

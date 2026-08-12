@@ -1,6 +1,6 @@
 import type { SproutEvent } from "@grove/shared";
 import { mojosToXch, shortHex } from "../../ui/format.js";
-import { resolveMedia, nftMediaEl, type MediaDisposition } from "../../ui/media.js";
+import { resolveMedia, sensitiveMediaEl, type MediaDisposition } from "../../ui/media.js";
 import { spacescanLink, mintgardenLink, type CardLink } from "../../ui/links.js";
 
 export interface Placard {
@@ -101,7 +101,7 @@ export class Placard$ {
     this.el.appendChild(head);
 
     if (model.media.render === "blur") {
-      const media = nftMediaEl(model.media.src, model.media.kind);
+      const media = sensitiveMediaEl(this.current.event, model.media);
       media.classList.add("sensitive");
       this.el.appendChild(media);
       const note = document.createElement("div");
