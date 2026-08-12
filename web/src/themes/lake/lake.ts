@@ -114,7 +114,7 @@ export function startLake(canvas: HTMLCanvasElement, feed: GroveFeed) {
   });
 
   return Object.assign(
-    { renderer, camera, scene, water, bedDepth: BED_Y },
+    { renderer, camera, scene, water },
     {
       setSproutHandler: (fn: typeof onSprout) => (onSprout = fn),
       setBlockHandler: (fn: typeof onBlockExtra) => (onBlockExtra = fn),

@@ -41,7 +41,7 @@ export const lake: Visualization = {
         return;
       }
       if (event.kind === "cat") {
-        const { h, s, l } = catColor(event.assetId ?? event.coinId);
+        const { h, s, l } = catColor(event.assetId ?? "0".repeat(64));
         schoolColor.setHSL(h, s, l);
         const count = schoolSize(event.amount);
         for (let member = 0; member < count; member++) {
@@ -55,6 +55,7 @@ export const lake: Visualization = {
         // per launcher id, the way the gallery dedupes its canvases
         if (event.launcherId && jellies.has(event.launcherId)) return;
         jellies.plant(event, blocksSeen);
+        return;
       }
       if (event.kind === "did") turtles.plant(event, blocksSeen);
     });
