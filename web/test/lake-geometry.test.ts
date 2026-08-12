@@ -2,7 +2,7 @@ import * as THREE from "three";
 import { expect, test } from "vitest";
 import { surfaceGeometry } from "../src/themes/lake/water.js";
 import { weedGeometry } from "../src/themes/lake/bed.js";
-import { fishGeometry } from "../src/themes/lake/shoal.js";
+import { fishGeometry } from "../src/themes/lake/bodies.js";
 import { shellGeometry } from "../src/themes/lake/turtles.js";
 
 test("surface geometry is a valid renderable plane", () => {
