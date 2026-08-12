@@ -1092,7 +1092,13 @@ test("sweep backs off a video launcher whose MintGarden lookup still has no data
       safesearchSweepIntervalMs: 1000,
       fetchImpl: (async (url: string) => {
         const u = String(url);
-        if (u.includes("api.mintgarden.io")) {
+        let host = "";
+        try {
+          host = new URL(u).hostname;
+        } catch {
+          host = "";
+        }
+        if (host === "api.mintgarden.io") {
           mintgardenCalls++;
           return okJson({}); // still not indexed
         }
