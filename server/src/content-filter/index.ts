@@ -12,6 +12,7 @@ import type { ContentFlagEvent, GroveEvent, SproutEvent } from "@grove/shared";
 import type { MediaIndex } from "../web/media-index.js";
 import type { Verdict } from "./types.js";
 import { mapMintgardenSignals, extractContentHash } from "./signals/mintgarden.js";
+import { strongest } from "./verdict.js";
 import type { ContentStore } from "./store.js";
 import { SafeSearchWorker } from "./safesearch-worker.js";
 import { createLocalNsfwClassifier } from "./signals/local-nsfw-runtime.js";
@@ -28,6 +29,15 @@ const OK: Verdict = { disposition: "ok", signal: "fail-open" };
 // MintGarden serves a static poster for video NFTs at its assets CDN, keyed by
 // content hash (the on-chain `data.thumbnail_uri`); the archive CDN does not.
 const THUMBNAIL_BASE_URL = "https://assets.mainnet.mintgarden.io/thumbnails";
+
+// A video NFT can only ever get a SafeSearch check once MintGarden resolves a
+// content hash for it (see apply()'s MediaIndex upgrade below) — and that only
+// happens on a launcher's first spend. If MintGarden hadn't indexed the video
+// yet at that moment, the poster is stuck missing forever with no re-spend to
+// retry it. The backfill sweep below re-polls MintGarden for exactly these
+// stuck launchers, capped and backed off so it stays cheap.
+const VIDEO_BACKFILL_BATCH = 25;
+const VIDEO_BACKFILL_TTL_MS = 60 * 60 * 1000; // 1h between retries per launcher
 
 interface FetchResult {
   verdict: Verdict;
@@ -104,6 +114,9 @@ export class ContentFilter {
   private readonly cache: BoundedMap<string, Verdict>;
   /** nftId -> epoch ms until which a recent failure keeps it permissive without refetch */
   private readonly negativeUntil: BoundedMap<string, number>;
+  /** launcherId -> epoch ms until which a video-poster backfill attempt is
+   *  suppressed, so a permanently-unindexed video isn't re-queried every sweep. */
+  private readonly videoBackfillUntil: BoundedMap<string, number>;
   private readonly inflight = new Map<string, Promise<FetchResult>>();
   private readonly fetchImpl: typeof fetch;
   private readonly baseUrl: string;
@@ -116,6 +129,7 @@ export class ContentFilter {
   private readonly archiveBaseUrl: string;
   private readonly whitelist?: Set<string>;
   private readonly store?: ContentStore;
+  private readonly onFlag?: (e: ContentFlagEvent) => void;
   private readonly worker?: SafeSearchWorker;
   private sweepTimer?: ReturnType<typeof setInterval>;
   private active = 0;
@@ -132,12 +146,14 @@ export class ContentFilter {
     this.cacheCapacity = opts.cacheCapacity ?? 10000;
     this.cache = new BoundedMap(this.cacheCapacity);
     this.negativeUntil = new BoundedMap(this.cacheCapacity);
+    this.videoBackfillUntil = new BoundedMap(this.cacheCapacity);
     this.enrichBudgetMs = opts.enrichBudgetMs ?? 1500;
     this.failTtlMs = opts.failTtlMs ?? 60000;
     this.now = opts.now ?? Date.now;
     this.archiveBaseUrl = opts.archiveBaseUrl ?? "https://archive.mintgarden.io";
     this.whitelist = opts.whitelist;
     this.store = opts.store;
+    this.onFlag = opts.onFlag;
     // The worker exists if there's anything for it to run: Vision (needs a key)
     // or the local classifier (standalone, no key needed — see
     // safesearch-worker.ts). Building it with neither would be a no-op.
@@ -165,7 +181,12 @@ export class ContentFilter {
       const sweepMs = opts.safesearchSweepIntervalMs ?? 600_000;
       if (sweepMs > 0) {
         const worker = this.worker;
-        this.sweepTimer = setInterval(() => worker.sweep(), sweepMs);
+        this.sweepTimer = setInterval(() => {
+          // Backfill first: a launcher whose poster resolves this tick becomes
+          // eligible for worker.sweep() to pick up in the same tick, rather
+          // than waiting a full interval.
+          void this.backfillVideoThumbnails().finally(() => worker.sweep());
+        }, sweepMs);
         this.sweepTimer.unref?.();
       }
     }
@@ -240,32 +261,8 @@ export class ContentFilter {
       }
     }
 
-    // Upgrade MediaIndex from IPFS to Archive CDN URL so SafeSearch passes a
-    // reliably reachable URL to Google Vision (MintGarden's IPFS gateway is
-    // inaccessible from Google's IP ranges).
     if (contentHash && launcherId && verdict.disposition !== "blocked") {
-      const existing = this.media.get(launcherId);
-      if (existing) {
-        const archiveUrl = `${this.archiveBaseUrl}/content/${contentHash}`;
-        // Keep the original on-chain art URL as the proxy fallback. On a re-spend
-        // `existing.url` may already be the Archive URL, so don't clobber the real
-        // fallback with itself — preserve the one captured on the first upgrade.
-        const fallbackUrl = existing.url === archiveUrl ? existing.fallbackUrl : existing.url;
-        // MintGarden's assets CDN serves a static poster for video NFTs, keyed by
-        // content hash (the 512px webp profile). The gallery uses it as the poster
-        // (/thumbnail?nft=) rather than seeking a video frame, which often gives a
-        // blank result without autoplay.
-        const thumbnailUrl =
-          existing.kind === "video"
-            ? `${THUMBNAIL_BASE_URL}/${contentHash}_512.webp`
-            : existing.thumbnailUrl;
-        this.media.set(launcherId, {
-          url: archiveUrl,
-          kind: existing.kind,
-          fallbackUrl,
-          thumbnailUrl,
-        });
-      }
+      this.upgradeMedia(launcherId, contentHash);
     }
 
     if (verdict.disposition === "ok") {
@@ -295,6 +292,119 @@ export class ContentFilter {
       },
       "content-filter: verdict"
     );
+  }
+
+  /** Upgrade MediaIndex from IPFS to Archive CDN URL so SafeSearch passes a
+   *  reliably reachable URL to Google Vision (MintGarden's IPFS gateway is
+   *  inaccessible from Google's IP ranges), and — for video — set the poster
+   *  URL SafeSearch and the client both use in place of the undecodable clip. */
+  private upgradeMedia(launcherId: string, contentHash: string): void {
+    const existing = this.media.get(launcherId);
+    if (!existing) return;
+    const archiveUrl = `${this.archiveBaseUrl}/content/${contentHash}`;
+    // Keep the original on-chain art URL as the proxy fallback. On a re-spend
+    // `existing.url` may already be the Archive URL, so don't clobber the real
+    // fallback with itself — preserve the one captured on the first upgrade.
+    const fallbackUrl = existing.url === archiveUrl ? existing.fallbackUrl : existing.url;
+    // MintGarden's assets CDN serves a static poster for video NFTs, keyed by
+    // content hash (the 512px webp profile). The gallery uses it as the poster
+    // (/thumbnail?nft=) rather than seeking a video frame, which often gives a
+    // blank result without autoplay.
+    const thumbnailUrl =
+      existing.kind === "video"
+        ? `${THUMBNAIL_BASE_URL}/${contentHash}_512.webp`
+        : existing.thumbnailUrl;
+    this.media.set(launcherId, {
+      url: archiveUrl,
+      kind: existing.kind,
+      fallbackUrl,
+      thumbnailUrl,
+    });
+  }
+
+  /** Re-polls MintGarden for launchers stuck without a video poster: a video
+   *  whose content hash never resolved on its first (and often only) spend has
+   *  no way to become SafeSearch-eligible otherwise (unlike an image, which
+   *  always has the on-chain original to fall back to). Bounded per tick
+   *  (`VIDEO_BACKFILL_BATCH`) and backed off per launcher
+   *  (`VIDEO_BACKFILL_TTL_MS`) so a batch of permanently-unindexed videos can't
+   *  grow into an unbounded, ever-repeating MintGarden polling load. */
+  private async backfillVideoThumbnails(): Promise<void> {
+    if (!this.store) return;
+    const now = this.now();
+    const candidates: string[] = [];
+    for (const [launcherId, entry] of this.media.entries()) {
+      if (entry.kind !== "video" || entry.thumbnailUrl) continue;
+      const until = this.videoBackfillUntil.get(launcherId);
+      if (until !== undefined && now < until) continue;
+      candidates.push(launcherId);
+      if (candidates.length >= VIDEO_BACKFILL_BATCH) break;
+    }
+    await Promise.all(candidates.map((launcherId) => this.backfillOne(launcherId)));
+  }
+
+  private async backfillOne(launcherId: string): Promise<void> {
+    this.videoBackfillUntil.set(launcherId, this.now() + VIDEO_BACKFILL_TTL_MS);
+    let stored;
+    try {
+      stored = this.store?.get(launcherId);
+    } catch (err) {
+      log.warn({ launcherId, err }, "content-filter video-backfill: store.get failed");
+      return;
+    }
+    // Already resolved by some other path since the candidate scan, blocked
+    // (no poster needed — media is unreachable regardless), or we have nothing
+    // to look up MintGarden by — nothing to do.
+    if (!stored?.nftId || stored.contentHash || stored.disposition === "blocked") return;
+
+    let result: FetchResult;
+    try {
+      result = await this.gate(() => this.fetchVerdict(stored.nftId!));
+    } catch (err) {
+      log.warn(
+        { launcherId, nftId: stored.nftId, err },
+        "content-filter video-backfill: mintgarden lookup failed"
+      );
+      return;
+    }
+    if (!result.contentHash) return; // still not indexed by MintGarden; retry next eligible sweep
+
+    // Merge rather than overwrite: a fresh MintGarden read must only ever be
+    // able to escalate this launcher's disposition, never quietly downgrade
+    // one already set by some other signal (e.g. lexicon) between spends.
+    const disposition = strongest(stored.disposition, result.verdict.disposition);
+    const verdict: Verdict =
+      disposition === result.verdict.disposition
+        ? result.verdict
+        : { disposition, signal: stored.signal };
+
+    try {
+      this.store?.putCheap(launcherId, stored.nftId, verdict, result.contentHash);
+    } catch (err) {
+      log.warn(
+        { launcherId, nftId: stored.nftId, err },
+        "content-filter video-backfill: store.putCheap failed"
+      );
+      // Still worth upgrading MediaIndex below even if the store write failed —
+      // the in-memory poster URL is what actually unblocks a SafeSearch check.
+    }
+
+    if (disposition === "blocked") {
+      this.media.delete(launcherId);
+      return;
+    }
+    this.upgradeMedia(launcherId, result.contentHash);
+
+    // The video was already streamed to clients as "ok" (or whatever the
+    // stale cheap verdict said); if this fresher MintGarden read now disagrees,
+    // tell connected clients the same way a SafeSearch promotion does.
+    if (disposition === "sensitive" && stored.disposition !== "sensitive") {
+      try {
+        this.onFlag?.({ type: "content-flag", launcherId, mediaFilter: "sensitive" });
+      } catch (err) {
+        log.warn({ launcherId, err }, "content-filter video-backfill: onFlag failed");
+      }
+    }
   }
 
   private resolve(nftId: string): Promise<FetchResult> {

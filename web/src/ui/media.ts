@@ -78,6 +78,30 @@ export function nftMediaEl(src: string, kind: MediaKind, escalated = false): HTM
 }
 
 /**
+ * Element for a `render: "blur"` disposition. Images render the real (blurred)
+ * art — a blurred `<img>` with `pointer-events: none` truly has nothing to
+ * interact with. Videos never get a real `<video>` here: native controls stay
+ * keyboard-reachable even under `pointer-events: none` (Tab + Space opens
+ * them), and the full clip would start fetching regardless of the sensitive
+ * flag. Show the static poster instead — same blurred/inert treatment as an
+ * image, no playable element, no full-resolution bytes touched.
+ */
+export function sensitiveMediaEl(
+  event: SproutEvent,
+  media: { src: string; kind: MediaKind }
+): HTMLElement {
+  if (media.kind !== "video") return createMediaEl(media.src, media.kind);
+  const poster = thumbnailSrc(event);
+  if (!poster) return mediaPlaceholder();
+  const img = document.createElement("img");
+  img.src = poster;
+  img.alt = "NFT";
+  img.loading = "lazy";
+  img.addEventListener("error", () => img.replaceWith(mediaPlaceholder()), { once: true });
+  return img;
+}
+
+/**
  * Resolve the loadable src for a sprout's art, or null if it has none. Returns
  * null for blocked NFTs so no surface can fetch the bytes. Demo/offline events
  * inline a data: URI; live events are addressed by launcher id through the
