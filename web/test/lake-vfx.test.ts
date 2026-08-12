@@ -47,3 +47,18 @@ test("a reorg strike runs and finishes without a renderer", () => {
     for (let i = 0; i < 200; i++) vfx.update(0.016, i * 0.016);
   }).not.toThrow();
 });
+
+test("the strike sweeps an S-curve from the centerline", () => {
+  const vfx = new Vfx(new THREE.Scene());
+  vfx.strike(0);
+  const zs: number[] = [];
+  for (let i = 0; i < 140; i++) {
+    vfx.update(0.016, i * 0.016);
+    zs.push(vfx.predatorZ());
+  }
+  // an S-curve enters on the centerline and swings to both sides;
+  // the old path entered at z ≈ +5 (cos starts at 1)
+  expect(Math.abs(zs[0])).toBeLessThan(1.5);
+  expect(Math.min(...zs)).toBeLessThan(-2);
+  expect(Math.max(...zs)).toBeGreaterThan(2);
+});

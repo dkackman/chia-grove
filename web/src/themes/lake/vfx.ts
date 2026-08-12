@@ -3,6 +3,7 @@ import { mulberry32 } from "../shared/util.js";
 import { BAND_RADIUS_MAX, BED_Y, TOP_BAND_Y } from "./layout.js";
 import { LAKE } from "./palette.js";
 import { SURFACE_Y } from "./water.js";
+import { pikeGeometry, applySwimShader } from "./bodies.js";
 
 const BUBBLE_CAP = 400;
 const STRIKE_SECONDS = 2.4;
@@ -24,6 +25,7 @@ export class Vfx {
   private readonly bubbles: THREE.Points;
   private readonly speeds: Float32Array;
   private readonly predator: THREE.Mesh;
+  private readonly predatorSwim: { uniforms: { uTime: { value: number } } };
   private readonly beacons: Beacon[];
   private nextBeacon = 0;
   private litCount = 0;
@@ -58,18 +60,23 @@ export class Vfx {
     this.bubbles.frustumCulled = false;
     scene.add(this.bubbles);
 
-    // the predator: a dark silhouette that sweeps the column on a reorg
-    const bodyGeo = new THREE.ConeGeometry(0.9, 5.5, 8);
-    bodyGeo.rotateZ(-Math.PI / 2); // point +X, the direction it travels
-    this.predator = new THREE.Mesh(
-      bodyGeo,
-      new THREE.MeshStandardMaterial({
-        color: LAKE.predator,
-        roughness: 0.7,
-        transparent: true,
-        opacity: 0,
-      })
-    );
+    // the predator: a pike silhouette that sweeps the column on a reorg
+    const predatorMat = new THREE.MeshStandardMaterial({
+      color: LAKE.predator,
+      roughness: 0.7,
+      transparent: true,
+      opacity: 0,
+      side: THREE.DoubleSide, // the fins are single-sided blades
+    });
+    this.predatorSwim = applySwimShader(predatorMat, {
+      instanced: false,
+      amp: 0.5,
+      freq: 5.0,
+      waveLen: 1.1,
+      nose: 2.8,
+      span: 5.2,
+    });
+    this.predator = new THREE.Mesh(pikeGeometry(), predatorMat);
     this.predator.visible = false;
     scene.add(this.predator);
 
@@ -140,6 +147,11 @@ export class Vfx {
     return this.beacons.filter((b) => b.active).length;
   }
 
+  /** The predator's lateral position. Test seam. */
+  predatorZ(): number {
+    return this.predator.position.z;
+  }
+
   update(dt: number, t: number): void {
     // bubbles rise and wrap back to the bed
     const attr = this.bubbles.geometry.getAttribute("position") as THREE.BufferAttribute;
@@ -161,6 +173,8 @@ export class Vfx {
       }
     }
 
+    this.predatorSwim.uniforms.uTime.value = t;
+
     if (this.strikeStart >= 0) {
       const age = t - this.strikeStart;
       const progress = age / STRIKE_SECONDS;
@@ -168,14 +182,21 @@ export class Vfx {
         this.predator.visible = false;
         this.strikeStart = -1;
       } else {
-        // crosses the column left to right, fading in and out at the edges
+        // an S-curve across the column: one full sine period in z while x sweeps
         const span = BAND_RADIUS_MAX + 22;
+        const zAmp = 9;
         this.predator.position.set(
           -span + progress * span * 2,
           TOP_BAND_Y - 6 + Math.sin(progress * Math.PI) * 3,
-          Math.cos(progress * 2.2) * 5
+          Math.sin(progress * Math.PI * 2) * zAmp
         );
-        this.predator.rotation.y = Math.sin(progress * 2.2) * 0.4;
+        // heading = path tangent; the body points +X, and a yaw θ sends +X to
+        // (cos θ, -sin θ), so θ = -atan2(dz, dx) along the parametric velocity
+        const dx = span * 2;
+        const dz = Math.cos(progress * Math.PI * 2) * Math.PI * 2 * zAmp;
+        const heading = -Math.atan2(dz, dx);
+        this.predator.rotation.y = heading;
+        this.predator.rotation.z = heading * 0.5; // bank into the curve
         (this.predator.material as THREE.MeshStandardMaterial).opacity =
           Math.sin(progress * Math.PI) * 0.9;
       }
