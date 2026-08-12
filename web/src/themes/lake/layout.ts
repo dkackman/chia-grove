@@ -27,12 +27,26 @@ export function bandDepth(age: number): number {
   return TOP_BAND_Y - clamped * BAND_STEP;
 }
 
+/**
+ * Exponential ease of the smooth block counter toward the integer target, so
+ * the whole lake glides down a band on each block instead of snapping 1.5
+ * units. Rate 2.2/s closes ~97% of a one-band step in ~1.6 s. Snaps exactly
+ * onto the target below 1e-3 so a settled lake stops writing new depths.
+ */
+export function easeBlocks(current: number, target: number, dt: number): number {
+  const next = current + (target - current) * (1 - Math.exp(-dt * 2.2));
+  return Math.abs(target - next) < 1e-3 ? target : next;
+}
+
 /** A spend's swim circuit within its band: where it loops and how fast. */
 export interface Seat {
   radius: number;
   angle: number;
   bob: number;
   speed: number;
+  /** phase/rate of the slow path wander that keeps circuits from being perfect circles */
+  wanderPhase: number;
+  wanderRate: number;
 }
 
 /**
@@ -51,5 +65,7 @@ export function seatOffset(coinIdHex: string): Seat {
     angle: rand() * Math.PI * 2,
     bob: rand() * Math.PI * 2,
     speed: 0.05 + rand() * 0.09,
+    wanderPhase: rand() * Math.PI * 2,
+    wanderRate: 0.1 + rand() * 0.25,
   };
 }
