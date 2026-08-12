@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "@axiomhq/pino": "^1.8.0",
-    "@fastify/static": "^10.1.0",
+    "@fastify/static": "^10.1.2",
     "@fastify/websocket": "^11.0.0",
     "@grove/shared": "*",
     "chia-wallet-sdk": "^0.34.0",
