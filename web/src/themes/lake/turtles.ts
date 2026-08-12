@@ -76,6 +76,9 @@ export class Turtles {
 
     this.pool = Array.from({ length: cap }, () => {
       const group = new THREE.Group();
+      // default XYZ order applies rotation.x outside the yaw, degrading the
+      // nose-up glide pitch into roll on part of the circuit — yaw first
+      group.rotation.order = "YXZ";
       const shell = new THREE.Mesh(shellGeo, material);
       const head = new THREE.Mesh(headGeo, material);
       head.position.set(0, 0.02, 0.85);

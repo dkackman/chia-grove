@@ -63,6 +63,35 @@ test("a non-instanced swim shader never references instanceMatrix", () => {
   expect(fake.vertexShader).not.toContain("instanceMatrix");
 });
 
+test("an instanced swim shader phases from a per-instance attribute, not the instance matrix translation", () => {
+  const material = new THREE.MeshStandardMaterial();
+  applySwimShader(material, {
+    instanced: true,
+    amp: 0.1,
+    freq: 6.5,
+    waveLen: 3.2,
+    nose: 0.6,
+    span: 1.2,
+  });
+  const fake = { uniforms: {} as Record<string, unknown>, vertexShader: "#include <begin_vertex>" };
+  material.onBeforeCompile!(fake as never, null as never);
+  expect(fake.vertexShader).toContain("attribute float aSwimPhase;");
+  expect(fake.vertexShader).toContain("aSwimPhase");
+  // bodyScale still legitimately comes from the instance matrix — only the
+  // phase derivation moved off it
+  expect(fake.vertexShader).toContain("instanceMatrix");
+});
+
+test("two swim shaders with different opts get different program cache keys", () => {
+  const a = new THREE.MeshStandardMaterial();
+  const b = new THREE.MeshStandardMaterial();
+  applySwimShader(a, { instanced: true, amp: 0.1, freq: 6.5, waveLen: 3.2, nose: 0.6, span: 1.2 });
+  applySwimShader(b, { instanced: false, amp: 0.5, freq: 5, waveLen: 1.1, nose: 2.8, span: 5.2 });
+  expect(a.customProgramCacheKey).toBeDefined();
+  expect(b.customProgramCacheKey).toBeDefined();
+  expect(a.customProgramCacheKey!()).not.toBe(b.customProgramCacheKey!());
+});
+
 test("PULSE_SKEW is exported for the GLSL copy to mirror", () => {
   expect(motion.PULSE_SKEW).toBeCloseTo(0.65, 10);
 });

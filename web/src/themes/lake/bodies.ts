@@ -132,10 +132,14 @@ export interface SwimOpts {
 /**
  * Spine undulation in the vertex shader — the weed-sway onBeforeCompile
  * pattern. Displacement is lateral (z), ramping from zero at the nose to full
- * at the tail. Instanced bodies read a per-instance phase from the instance
- * matrix translation (the trick bed.ts uses) and divide the beat frequency by
- * the instance scale, so big fish beat slowly and minnows flutter. Returns a
- * live uniforms holder; write holder.uniforms.uTime.value once per frame.
+ * at the tail. Instanced bodies read a per-instance constant phase from an
+ * `aSwimPhase` InstancedBufferAttribute (seeded per fish by the caller, e.g.
+ * `shoal.ts`'s `plant()`) and divide the beat frequency by the instance
+ * scale (still read from the instance matrix — scale IS constant per fish),
+ * so big fish beat slowly and minnows flutter. A phase drawn from the
+ * instance's translation instead would frequency-modulate the beat as the
+ * fish moves, which is wrong. Returns a live uniforms holder; write
+ * holder.uniforms.uTime.value once per frame.
  */
 export function applySwimShader(
   material: THREE.Material,
@@ -143,8 +147,11 @@ export function applySwimShader(
 ): { uniforms: { uTime: { value: number } } } {
   const holder = { uniforms: { uTime: { value: 0 } } };
   const f = (n: number) => n.toFixed(4);
+  // attributes must be declared at top level, alongside the uTime uniform —
+  // only the instanced branch has an aSwimPhase attribute to declare
+  const attributeDecl = opts.instanced ? "attribute float aSwimPhase;\n" : "";
   const perInstance = opts.instanced
-    ? `float swimPhase = instanceMatrix[3][0] * 1.7 + instanceMatrix[3][2] * 2.3;
+    ? `float swimPhase = aSwimPhase;
         float bodyScale = length(vec3(instanceMatrix[0][0], instanceMatrix[0][1], instanceMatrix[0][2]));`
     : `float swimPhase = 0.0;
         float bodyScale = 1.0;`;
@@ -152,6 +159,7 @@ export function applySwimShader(
     s.uniforms.uTime = holder.uniforms.uTime;
     s.vertexShader =
       "uniform float uTime;\n" +
+      attributeDecl +
       s.vertexShader.replace(
         "#include <begin_vertex>",
         `#include <begin_vertex>
@@ -162,5 +170,6 @@ export function applySwimShader(
                          * ${f(opts.amp)} * ramp * ramp;`
       );
   };
+  material.customProgramCacheKey = () => JSON.stringify(opts);
   return holder;
 }

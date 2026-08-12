@@ -103,6 +103,45 @@ test("tentacles are segmented ribbons, not rigid boxes", () => {
   expect(g.boundingBox!.max.y).toBeLessThanOrEqual(0.001); // hangs downward from its root
 });
 
+/** Walks the scene to find a jelly's bell and tentacle meshes by geometry shape. */
+function findJellyMaterials(scene: THREE.Scene): {
+  bell: THREE.Material;
+  tentacle: THREE.Material;
+} {
+  for (const group of scene.children) {
+    let bell: THREE.Material | undefined;
+    let tentacle: THREE.Material | undefined;
+    for (const child of group.children) {
+      if (!(child instanceof THREE.Mesh)) continue;
+      if (child.geometry.type === "SphereGeometry") bell = child.material as THREE.Material;
+      if (child.geometry.type === "PlaneGeometry") tentacle = child.material as THREE.Material;
+    }
+    if (bell && tentacle) return { bell, tentacle };
+  }
+  throw new Error("no jelly with a bell and a tentacle found in the scene");
+}
+
+test("bell and tentacle materials get distinct program cache keys (they compile different GLSL)", () => {
+  const scene = new THREE.Scene();
+  new Jellies(scene, 1);
+  const { bell, tentacle } = findJellyMaterials(scene);
+  expect(bell.customProgramCacheKey).toBeDefined();
+  expect(tentacle.customProgramCacheKey).toBeDefined();
+  expect(bell.customProgramCacheKey!()).not.toBe(tentacle.customProgramCacheKey!());
+});
+
+test("the injected pulse GLSL mirrors motion.ts's PULSE_SKEW and jellies.ts's PULSE_FREQ", () => {
+  const scene = new THREE.Scene();
+  new Jellies(scene, 1);
+  const { bell, tentacle } = findJellyMaterials(scene);
+  for (const material of [bell, tentacle]) {
+    const fake = { uniforms: {} as Record<string, unknown>, vertexShader: "#include <begin_vertex>" };
+    material.onBeforeCompile!(fake as never, null as never);
+    expect(fake.vertexShader).toContain("0.6500");
+    expect(fake.vertexShader).toContain("2.2000");
+  }
+});
+
 test("a jelly pulses vertically around its band depth", () => {
   const jellies = new Jellies(new THREE.Scene(), 2);
   jellies.plant(nft(id(1), lid(1)), 0);

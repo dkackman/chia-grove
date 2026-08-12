@@ -50,6 +50,10 @@ function applyPulseShader(
         `#include <begin_vertex>\n${PULSE_GLSL}\n${displacement}`
       );
   };
+  // The default cache key is onBeforeCompile.toString(), which cannot see the
+  // captured `displacement` — both materials would collide onto one compiled
+  // program and one displacement would be silently discarded.
+  material.customProgramCacheKey = () => displacement;
   return uniforms;
 }
 
@@ -157,7 +161,9 @@ export class Jellies {
         group.add(tentacle);
       }
       const centerTentacle = new THREE.Mesh(tentacleGeo, tentacleMat);
-      centerTentacle.position.set(0, -0.1, 0);
+      // offset off z=0 so it isn't coplanar with the art panel near its root
+      // (that coplanarity z-fights a stripe across the NFT art)
+      centerTentacle.position.set(0, -0.1, -0.15);
       group.add(centerTentacle);
 
       group.visible = false;

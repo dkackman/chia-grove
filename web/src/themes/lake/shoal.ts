@@ -33,6 +33,7 @@ export class Shoal {
   readonly mesh: THREE.InstancedMesh;
   private readonly slots: FishSlot[];
   private readonly swim: { uniforms: { uTime: { value: number } } };
+  private readonly swimPhase: THREE.InstancedBufferAttribute;
   private next = 0;
   private readonly matrix = new THREE.Matrix4();
   private readonly position = new THREE.Vector3();
@@ -58,6 +59,11 @@ export class Shoal {
     });
     this.mesh = new THREE.InstancedMesh(fishGeometry(), material, cap);
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    // per-instance constant swim phase — a seeded value, not derived from the
+    // moving instance translation, so the beat frequency stays true to `freq`
+    this.swimPhase = new THREE.InstancedBufferAttribute(new Float32Array(cap), 1);
+    this.swimPhase.setUsage(THREE.DynamicDrawUsage);
+    this.mesh.geometry.setAttribute("aSwimPhase", this.swimPhase);
     this.slots = Array.from({ length: cap }, () => ({
       meta: null,
       bornBlock: 0,
@@ -109,6 +115,10 @@ export class Shoal {
     this.mesh.setColorAt(i, slot.baseColor);
     this.mesh.instanceColor!.addUpdateRange(i * 3, 3);
     this.mesh.instanceColor!.needsUpdate = true;
+    // deterministic per-fish phase (already seeded from the coin id via seat.bob)
+    this.swimPhase.setX(i, seat.bob + member);
+    this.swimPhase.addUpdateRange(i, 1);
+    this.swimPhase.needsUpdate = true;
   }
 
   update(t: number, blocksSeen: number): void {
