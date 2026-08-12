@@ -76,7 +76,7 @@ export const lake: Visualization = {
       xchFish.update(t, blocksSeen);
       catFish.update(t, blocksSeen);
       jellies.update(runtime.camera, t, blocksSeen);
-      turtles.update(t, blocksSeen);
+      turtles.update(dt, t, blocksSeen);
       vfx.update(dt, t);
       for (const fn of frameCallbacks) fn();
     });
