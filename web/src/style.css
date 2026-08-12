@@ -326,6 +326,41 @@ body {
   background: #5bbb5b;
   border: 1px solid rgba(0, 0, 0, 0.3);
 }
+.sw-fish {
+  width: 11px;
+  height: 6px;
+  border-radius: 50% 20% 20% 50%;
+  background: #d8e9a8;
+}
+.sw-school {
+  width: 11px;
+  height: 6px;
+  border-radius: 50% 20% 20% 50%;
+  background: linear-gradient(90deg, #4fd0c0, #3a8fd0);
+}
+.sw-jelly {
+  border-radius: 50% 50% 30% 30%;
+  background: #c9a6e8;
+  box-shadow: 0 0 6px rgba(201, 166, 232, 0.8);
+}
+.sw-turtle {
+  border-radius: 50%;
+  background: #5d7a4a;
+  border: 1px solid #3d5230;
+}
+.sw-bubble {
+  width: 6px;
+  height: 6px;
+  margin: 0 2px;
+  border-radius: 50%;
+  background: rgba(191, 232, 255, 0.5);
+  border: 1px solid #bfe8ff;
+}
+.sw-shaft {
+  width: 5px;
+  height: 13px;
+  background: linear-gradient(to bottom, #a8e0f5, rgba(168, 224, 245, 0));
+}
 
 #console {
   position: fixed;
