@@ -1,7 +1,7 @@
 # Lake Animation Overhaul — Design
 
 **Date:** 2026-08-12
-**Status:** Approved direction: stylized naturalism, approach A (organic geometry + GPU animation)
+**Status:** Implemented
 
 ## Problem
 

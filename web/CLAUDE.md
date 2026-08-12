@@ -70,9 +70,11 @@ Minecraft-inspired voxel island growing on a phyllotaxis spiral. XCH spends pave
 
 Submerged freshwater lake. The camera orbits inside the water column looking slightly upward. Each block is a horizontal band: the newest sits just under the surface and older bands sink, so chain history reads as depth. XCH spends are fish sized by amount (a whale spend is a whale), CATs are schools colored by `assetId`, NFT mints are jellyfish carrying their art in a translucent bell, DIDs are turtles. Mempool drives bubble columns off the bed, netspace drives water clarity and light-shaft strength, each block ripples the surface, and a reorg sends a predator through.
 
-Sinking has no per-band bookkeeping: each planted object stores the global block counter as `bornBlock`, and its Y is `bandDepth(blocksSeen - bornBlock)`, recomputed each frame. Objects older than `MAX_BANDS` (40) clamp at the bed until their pool slot is recycled by wrapping.
+Sinking has no per-band bookkeeping: each planted object stores the global block counter as `bornBlock`, and its Y is `bandDepth(blocksSeen - bornBlock)`, recomputed each frame. Objects older than `MAX_BANDS` (40) clamp at the bed until their pool slot is recycled by wrapping. `lake.ts` eases a float block counter (`easeBlocks`) so sinking glides between bands instead of snapping down a full band on every block.
 
 `shoal.ts` deliberately does not use `InstancedKind`: that class pins instances at `(x, z)` and grows them upward from a base, which cannot express a fish that follows a path and turns to face its heading. It owns its own `InstancedMesh` and reproduces only the parts of `InstancedKind` that earned their keep (wrapping pool, reorg cull with draw-count shrink, `metaAt` picking, white color init). `jellies.ts` is a close port of `mine`'s `Paintings` — the launcher dedupe, `LoadPool` `stillWanted` guard, and `resolveMedia` filtering all carry over unchanged. `bed.ts` weeds are static instanced scenery swayed in the vertex shader, costing one uniform write per frame.
+
+Creature bodies are procedural swept geometry (`bodies.ts`); all body animation (fish/pike spine undulation, jelly bell contraction and tentacle whip) runs in vertex shaders via `onBeforeCompile`, phased per instance from the instance matrix so big fish beat slower. Path motion (wander, banking, turtle stroke-surge, jelly pulse-and-coast) is pure math in `motion.ts`.
 
 ## Network
 
