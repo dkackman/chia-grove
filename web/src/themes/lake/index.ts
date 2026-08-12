@@ -2,11 +2,13 @@ import * as THREE from "three";
 import type { Visualization } from "../types.js";
 import { catColor } from "../shared/cat-color.js";
 import { startLake } from "./lake.js";
+import { seatOffset } from "./layout.js";
 import { LAKE } from "./palette.js";
 import { fishSize, schoolSize } from "./scales.js";
 import { Shoal } from "./shoal.js";
 import { Jellies } from "./jellies.js";
 import { Turtles } from "./turtles.js";
+import { Vfx } from "./vfx.js";
 
 export const lake: Visualization = {
   id: "lake",
@@ -27,10 +29,13 @@ export const lake: Visualization = {
     const catFish = new Shoal(runtime.scene, 0xffffff);
     const jellies = new Jellies(runtime.scene);
     const turtles = new Turtles(runtime.scene);
+    const vfx = new Vfx(runtime.scene);
+    const clock = { t: 0 };
     const schoolColor = new THREE.Color();
     let hovered: { object: THREE.Object3D; index: number } | null = null;
 
     runtime.setSproutHandler((event, blocksSeen) => {
+      if (event.mint) vfx.beacon(seatOffset(event.coinId).radius, clock.t);
       if (event.kind === "xch") {
         xchFish.plant(event, blocksSeen, fishSize(event.amount), null);
         return;
@@ -58,15 +63,20 @@ export const lake: Visualization = {
       catFish.clearAbove(forkHeight);
       jellies.clearAbove(forkHeight);
       turtles.clearAbove(forkHeight);
+      vfx.strike(clock.t);
     });
     runtime.setContentFlagHandler((launcherId) => jellies.markSensitive(launcherId));
+    runtime.setBlockHandler(() => runtime.water.ripple(clock.t));
+    runtime.setAmbientHandler((mempoolSize) => vfx.setMempool(mempoolSize));
 
     const frameCallbacks: Array<() => void> = [];
-    runtime.setUpdateHandler((_dt, t, blocksSeen) => {
+    runtime.setUpdateHandler((dt, t, blocksSeen) => {
+      clock.t = t;
       xchFish.update(t, blocksSeen);
       catFish.update(t, blocksSeen);
       jellies.update(runtime.camera, t, blocksSeen);
       turtles.update(t, blocksSeen);
+      vfx.update(dt, t);
       for (const fn of frameCallbacks) fn();
     });
 
