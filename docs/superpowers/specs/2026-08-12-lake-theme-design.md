@@ -50,7 +50,7 @@ The split mirrors `mine/`, which is the closest existing analogue:
 | `shoal.ts`   | `Shoal`: instanced swimming fish for XCH and CAT.                              |
 | `jellies.ts` | `Jellies`: NFT jellyfish pool with art bells.                                  |
 | `turtles.ts` | `Turtles`: DID figures, slow drift.                                            |
-| `bed.ts`     | Lake bed floor plus rooted weeds (uses `InstancedKind`).                       |
+| `bed.ts`     | Lake bed floor plus static instanced weeds (vertex-shader sway).               |
 | `water.ts`   | Surface seen from below, light shafts, depth fog, caustics.                    |
 | `vfx.ts`     | Mempool bubble columns, per-block ripple, reorg predator strike.               |
 | `palette.ts` | Scene colors.                                                                  |
@@ -68,8 +68,19 @@ instantiates the systems and wires those hooks, then returns the
 Reused as-is from `themes/shared/`: `createOrbitControl` (`orbit.ts`),
 `createPostFx` (`postfx.ts`), `createFrameLimiter` (`frame-limiter.ts`),
 `LoadPool` (`load-pool.ts`), `catColor` (`cat-color.ts`), `mulberry32`
-(`util.ts`), `sensitivePlaceholderTexture` (`textures.ts`), and `InstancedKind`
-**for the bed weeds only**.
+(`util.ts`), and `sensitivePlaceholderTexture` (`textures.ts`).
+
+`InstancedKind` is **not** used anywhere in this theme. An earlier draft of this
+spec had the bed weeds using it, on the reasoning that weeds are rooted and sway
+just like grass. On inspection that does not hold: `InstancedKind.plant()`
+requires a `SproutEvent` as its `meta`, because every existing caller plants
+event-driven objects that the picker can later identify. Weeds are scenery with
+no event behind them, so using the class would mean fabricating synthetic
+`SproutEvent`s purely to satisfy the signature, and `metaAt()` would then hand
+out fake spends. The weeds are instead one plain `InstancedMesh` with static
+matrices written once at construction and sway done in the vertex shader — the
+same `onBeforeCompile` technique `mine/water.ts` already uses, and cheaper than
+`InstancedKind`'s per-frame CPU pass since the matrices never change.
 
 `InstancedKind` deliberately does **not** back the fish. Its model is a rooted
 plant: an instance is pinned at `(x, z)`, grows upward from a base over
@@ -86,21 +97,24 @@ reimplements only the parts that earned their place in `InstancedKind`:
 - initializing every instance color to white at construction (skipping this
   renders untinted instances black).
 
-Bed weeds are rooted and sway in a current, which is precisely
-`InstancedKind`'s existing behavior, so they use it unchanged.
-
 ## Layout — depth strata
 
 `layout.ts` is pure (no `THREE` imports beyond types, no DOM) and unit-tested.
 
-- A ring of `MAX_BANDS` band slots (200, matching `mine`'s `MAX_BLOCK_SLOTS`)
-  indexed by block arrival order.
-- `bandDepth(age)` maps a band's age in blocks to its Y position: the newest
-  band sits just below the surface, each older band a fixed step deeper, down
-  to the bed. Bands sink by one step per new block.
-- Bands that sink past the bed are recycled. Because every system's slot pool
-  wraps at its cap, this needs no explicit eviction pass — the oldest slots are
-  overwritten naturally.
+- `bandDepth(age)` maps a band's age **in blocks** to its Y position: the newest
+  band sits just below the surface, each older band a fixed step deeper, down to
+  the bed, where it clamps.
+- There is no band ring or per-band state. Each planted object stores the global
+  block counter at plant time (`bornBlock`); its depth is
+  `bandDepth(blocksSeen - bornBlock)`, recomputed each frame. This is the whole
+  sinking mechanism — one subtraction, no bookkeeping to keep in sync.
+- `MAX_BANDS` is 40, not the 200 block slots `mine` uses. It is the clamp depth,
+  and it has to be a number of bands that actually fits in a viewable column:
+  at `BAND_STEP` 1.5 units, 40 bands is a 60-unit descent, which frames from
+  mid-column. 200 bands would be a 300-unit shaft, most of it out of sight.
+  Forty bands is roughly 12 minutes of chain at 18.75 s blocks.
+- Objects older than the clamp keep rendering at the bed until their slot is
+  recycled by the pool wrapping at its cap. No explicit eviction pass is needed.
 - Within a band, `seatOffset(coinId)` uses `mulberry32` seeded from the coin id
   to scatter spends deterministically in radius and angle, the same technique
   `grove/layout.ts` uses. This matters because the WebSocket snapshot replays
@@ -134,12 +148,15 @@ depth-history legible while still making the scene feel alive.
 
 ### `Shoal` (`shoal.ts`)
 
-Two instanced fish meshes (XCH and CAT) with a small set of geometry variants,
-following how `FloraSystem` and `CropSystem` vary their kinds.
+Two instanced fish meshes, one for XCH and one for CAT. Each uses a single
+hand-built fish geometry rather than the 3-variant sets `FloraSystem` and
+`CropSystem` use: a shoal already varies by per-instance size, color, loop
+radius, and speed, so geometry variants would add tripled setup for variety the
+eye cannot separate at swimming distance.
 
-Per-slot state: `meta` (the `SproutEvent`), band slot, loop radius, angular
+Per-slot state: `meta` (the `SproutEvent`), `bornBlock`, loop radius, angular
 speed, angular phase, vertical bob phase, size, base color. Each frame the
-update pass advances the angle, composes position from the band's current
+update pass advances the angle, composes position from the slot's current band
 depth plus bob, and orients the instance along its tangent. A per-instance tail
 phase adds a wiggle so neighbors are not in lockstep — the same desync idea
 `InstancedKind`'s sway uses.
@@ -178,7 +195,9 @@ filtering path is introduced.
 `Turtles`: small `Group` pool (cap 30) on slow drift paths, same pool-and-
 recycle shape as `Jellies` without the media pipeline.
 
-`bed.ts`: the lake floor plus `InstancedKind` weeds swaying in the current.
+`bed.ts`: the lake floor plus one `InstancedMesh` of weeds, matrices written
+once at construction from a `mulberry32` scatter and swayed in the vertex
+shader, so the bed costs nothing per frame.
 
 `water.ts`: the surface plane viewed from below (starting from `mine/water.ts`'s
 vertex wave shader), volumetric-ish light shafts, `FogExp2` for depth murk, and
@@ -199,13 +218,28 @@ lake has no block detail view.
 
 ## Testing
 
-Pure modules only, matching how `mine/layout.ts`, `mine/material.ts`, and
-`board/rows.ts` are covered. No rendering tests.
+Two tiers, both already established in this repo. Pure logic is unit-tested the
+way `mine/layout.ts` and `board/rows.ts` are. Scene-graph classes are tested by
+constructing them against a real `new THREE.Scene()` in Node, exactly as
+`web/test/mine-structures.test.ts` tests `Paintings` — no renderer, no DOM, so
+it runs in plain vitest. `Shoal`, `Jellies`, and `Turtles` therefore take an
+optional cap constructor parameter, the way `Paintings` does, so a test can pass
+a cap of 1 and force the pool to wrap on the next plant.
 
-- `web/test/lake-layout.test.ts` — band depth mapping, sinking, ring wrap at
-  `MAX_BANDS`, and determinism of `seatOffset` for a given coin id.
-- `web/test/lake-scales.test.ts` — amount → fish size is monotonic, bounded at
-  both ends, and handles dust and whale amounts.
+- `web/test/lake-layout.test.ts` — band depth mapping, monotonic sinking, the
+  clamp at `MAX_BANDS`, and determinism of `seatOffset` for a given coin id.
+- `web/test/lake-scales.test.ts` — amount → fish size is monotonic and bounded
+  at both ends, school size is a positive integer, and both handle dust, whale,
+  empty-string, and non-numeric amounts.
+- `web/test/lake-geometry.test.ts` — fish, weed, bell, and surface geometries
+  are valid renderable `BufferGeometry` with a non-zero position count, matching
+  `web/test/mine-geometry.test.ts`.
+- `web/test/lake-shoal.test.ts` — plant/`metaAt` round-trip, pool wrap at cap,
+  `clearAbove` removing only slots at or above the fork height and shrinking
+  `mesh.count`, and an `update()` pass placing an instance at the Y that
+  `bandDepth` predicts for its age.
+- `web/test/lake-jellies.test.ts` — launcher dedupe, wrap freeing the launcher
+  mapping, and `clearAbove` dropping launcher mappings alongside slots.
 - `web/test/themes.test.ts` — extend with the registration test each theme has:
   `lake` is in `THEMES` and resolvable by URL param and stored value.
 
