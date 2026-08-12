@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import type { SproutEvent } from "@grove/shared";
-import { bandDepth, seatOffset } from "./layout.js";
+import { BAND_RADIUS_MAX, BED_Y, TOP_BAND_Y, bandDepth, seatOffset } from "./layout.js";
 import type { Seat } from "./layout.js";
 import { fishGeometry, applySwimShader } from "./bodies.js";
 import { wanderedRadius, wanderedAngle, bankRoll } from "./motion.js";
@@ -78,8 +78,12 @@ export class Shoal {
     }
     // An InstancedMesh caches its bounding sphere on first raycast, which would
     // otherwise happen while every slot is still scale-0 and leave a radius-0
-    // sphere that makes every later pick miss.
-    this.mesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, -33, 0), 70);
+    // sphere that makes every later pick miss. Derived from the column so a
+    // reshaped column cannot silently break picking.
+    this.mesh.boundingSphere = new THREE.Sphere(
+      new THREE.Vector3(0, (TOP_BAND_Y + BED_Y) / 2, 0),
+      (TOP_BAND_Y - BED_Y) / 2 + BAND_RADIUS_MAX + 8
+    );
     this.mesh.count = 0;
     scene.add(this.mesh);
   }

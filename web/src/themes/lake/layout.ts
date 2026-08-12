@@ -1,22 +1,39 @@
 import { mulberry32 } from "../shared/util.js";
 
 /**
- * Depth strata. One band per block: the newest sits just under the surface and
+ * Depth strata. One band per block: the newest sits below the churn layer and
  * every older band is one step deeper, so history reads as depth.
  *
- * MAX_BANDS is 40 rather than the 200 block slots `mine` uses because this is a
- * clamp depth, not a slot ring — it has to be a column a submerged camera can
- * actually frame. At 1.5 units a band, 40 bands is a 60-unit descent (~12
- * minutes of chain at 18.75 s blocks); 200 would be a 300-unit shaft with most
- * of its history out of sight.
+ * MAX_BANDS is 18 rather than the 40 the theme shipped with. Forty 1.5-unit
+ * bands were indistinguishable at any framing that fit the column, so the one
+ * cue the theme is built on could not be seen. Eighteen 2.6-unit bands keep
+ * roughly the same column height (46.8 units) while being countable, at the
+ * cost of history depth: ~5.5 minutes of chain at 18.75 s blocks rather than
+ * ~12. That trade is deliberate — see the legibility design spec.
  */
-export const MAX_BANDS = 40;
-export const BAND_STEP = 1.5;
-export const TOP_BAND_Y = -3;
+export const MAX_BANDS = 18;
+export const BAND_STEP = 2.6;
+
+/**
+ * The top band hangs well below the surface (0) to leave y in
+ * [PENDING_Y_MIN, PENDING_Y_MAX] for the mempool churn layer, so pending
+ * silhouettes visibly cross into the newest band when a block confirms.
+ */
+export const TOP_BAND_Y = -12;
+export const PENDING_Y_MIN = -9;
+export const PENDING_Y_MAX = -2;
+
 export const BED_Y = TOP_BAND_Y - MAX_BANDS * BAND_STEP;
 
 export const BAND_RADIUS_MIN = 6;
 export const BAND_RADIUS_MAX = 26;
+
+/**
+ * Where the per-band rim rings sit: outside the creature annulus so they never
+ * intersect a fish, and inside the god-ray cones (parked at 42–66) so the
+ * camera has somewhere to stand between the two.
+ */
+export const RIM_RADIUS = 28;
 
 /**
  * Y of a band `age` blocks old, clamped at both ends. Objects older than

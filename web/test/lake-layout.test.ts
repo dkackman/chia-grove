@@ -6,10 +6,14 @@ import {
   BED_Y,
   BAND_RADIUS_MIN,
   BAND_RADIUS_MAX,
+  RIM_RADIUS,
+  PENDING_Y_MIN,
+  PENDING_Y_MAX,
   bandDepth,
   seatOffset,
   easeBlocks,
 } from "../src/themes/lake/layout.js";
+import { SURFACE_Y } from "../src/themes/lake/water.js";
 
 test("the newest band sits at the top of the column", () => {
   expect(bandDepth(0)).toBeCloseTo(TOP_BAND_Y, 5);
@@ -36,8 +40,28 @@ test("a negative age (clock skew, replay) never floats above the top band", () =
 });
 
 test("the whole column fits in a viewable depth", () => {
-  // 40 bands at 1.5 units is a 60-unit descent — framable from mid-column.
+  // 18 bands at 2.6 units is a 46.8-unit descent — fewer, thicker, countable
+  // bands rather than 40 the eye cannot separate.
+  expect(TOP_BAND_Y - BED_Y).toBeCloseTo(MAX_BANDS * BAND_STEP, 5);
   expect(TOP_BAND_Y - BED_Y).toBeLessThanOrEqual(70);
+});
+
+test("bands are thick enough to read as separate strata", () => {
+  expect(MAX_BANDS).toBe(18);
+  expect(BAND_STEP).toBeGreaterThanOrEqual(2.5);
+});
+
+test("the churn layer sits clear of the surface and of band 0", () => {
+  expect(PENDING_Y_MAX).toBeLessThan(SURFACE_Y);
+  expect(PENDING_Y_MIN).toBeLessThan(PENDING_Y_MAX);
+  // a full band step of clearance so a descending silhouette visibly crosses
+  // into the newest band rather than starting inside it
+  expect(PENDING_Y_MIN - bandDepth(0)).toBeGreaterThanOrEqual(BAND_STEP);
+});
+
+test("the rim rings sit outside the creatures and inside the god rays", () => {
+  expect(RIM_RADIUS).toBeGreaterThan(BAND_RADIUS_MAX);
+  expect(RIM_RADIUS).toBeLessThan(42); // the nearest god-ray cone
 });
 
 test("a coin always gets the same swim circuit", () => {
