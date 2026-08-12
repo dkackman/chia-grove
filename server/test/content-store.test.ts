@@ -11,6 +11,7 @@ test("putCheap then get round-trips disposition, safesearch not yet checked", ()
   expect(store.get("launch1")).toEqual({
     disposition: "sensitive",
     safesearchChecked: false,
+    nftId: "nft1abc",
   });
   expect(store.get("missing")).toBeUndefined();
   store.close();

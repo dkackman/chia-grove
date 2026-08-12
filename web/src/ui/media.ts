@@ -86,7 +86,10 @@ export function nftMediaEl(src: string, kind: MediaKind, escalated = false): HTM
  * flag. Show the static poster instead — same blurred/inert treatment as an
  * image, no playable element, no full-resolution bytes touched.
  */
-export function sensitiveMediaEl(event: SproutEvent, media: { src: string; kind: MediaKind }): HTMLElement {
+export function sensitiveMediaEl(
+  event: SproutEvent,
+  media: { src: string; kind: MediaKind }
+): HTMLElement {
   if (media.kind !== "video") return createMediaEl(media.src, media.kind);
   const poster = thumbnailSrc(event);
   if (!poster) return mediaPlaceholder();
