@@ -34,10 +34,3 @@ Node/Fastify process that polls the Chia blockchain, classifies coin spends, fil
 | `SAFESEARCH_SWEEP_INTERVAL_MS` | `600000`                       | Re-check cadence for still-unchecked NFTs in MediaIndex; `0` disables |
 | `LOCAL_NSFW_MODEL_PATH`        | (unset)                        | Enables local NSFW pre-classification (standalone or shadow mode)     |
 | `LOCAL_NSFW_ENFORCE_CLEAN`     | (unset)                        | `true` promotes confident-clean local scores to skip Vision entirely  |
-
-## Tests
-
-```sh
-npm test                                          # all server tests
-npx vitest run server/test/classify.test.ts      # single file
-```
