@@ -8,7 +8,7 @@ Open `http://localhost:5173/?demo=1` for synthetic events without a running serv
 
 The frontend supports multiple visualizations ("themes") behind the `Visualization` interface (`src/themes/types.ts`). The registry in `src/themes/index.ts` resolves the active theme from `?theme=` query param or `localStorage["grove.theme"]` (default: `grove`). Switching from the legend persists the choice and reloads; the WebSocket snapshot replay repopulates the new scene. Themes own their entire Three.js scene.
 
-Five themes ship: `grove`, `farm`, `gallery`, `mine`, `board`. Shared helpers (instancing, textures, CAT colors, amount scales, PRNG) live in `src/themes/shared/`.
+Six themes ship: `grove`, `farm`, `gallery`, `mine`, `board`, `lake`. Shared helpers (instancing, textures, CAT colors, amount scales, PRNG) live in `src/themes/shared/`.
 
 ### `InstancedKind` (`src/themes/shared/instanced.ts`)
 
@@ -65,6 +65,14 @@ Minecraft-inspired voxel island growing on a phyllotaxis spiral. XCH spends pave
 ### board (`src/themes/board/`)
 
 "The Big Board" — a Solari split-flap departure board rendering the chain as a live spend ledger. Each spend flips in as a new row (per-character riffle via `FlapGrid`, an instanced cell grid with a per-instance glyph attribute); a header strip shows block/mempool/netspace/clock, the wheel scrolls back through history (newest-first, 500-deep, with a LIVE/HISTORY header marker), and reorg riffles rows back to the fork height. Pure formatting (`rows.ts`, `glyphs.ts`, `palette.ts`) is unit-tested.
+
+### lake (`src/themes/lake/`)
+
+Submerged freshwater lake. The camera orbits inside the water column looking slightly upward. Each block is a horizontal band: the newest sits just under the surface and older bands sink, so chain history reads as depth. XCH spends are fish sized by amount (a whale spend is a whale), CATs are schools colored by `assetId`, NFT mints are jellyfish carrying their art in a translucent bell, DIDs are turtles. Mempool drives bubble columns off the bed, netspace drives water clarity and light-shaft strength, each block ripples the surface, and a reorg sends a predator through.
+
+Sinking has no per-band bookkeeping: each planted object stores the global block counter as `bornBlock`, and its Y is `bandDepth(blocksSeen - bornBlock)`, recomputed each frame. Objects older than `MAX_BANDS` (40) clamp at the bed until their pool slot is recycled by wrapping.
+
+`shoal.ts` deliberately does not use `InstancedKind`: that class pins instances at `(x, z)` and grows them upward from a base, which cannot express a fish that follows a path and turns to face its heading. It owns its own `InstancedMesh` and reproduces only the parts of `InstancedKind` that earned their keep (wrapping pool, reorg cull with draw-count shrink, `metaAt` picking, white color init). `jellies.ts` is a close port of `mine`'s `Paintings` — the launcher dedupe, `LoadPool` `stillWanted` guard, and `resolveMedia` filtering all carry over unchanged. `bed.ts` weeds are static instanced scenery swayed in the vertex shader, costing one uniform write per frame.
 
 ## Network
 
