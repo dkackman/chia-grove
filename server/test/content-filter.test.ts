@@ -1050,7 +1050,13 @@ test("sweep backfills a stuck video's poster once MintGarden resolves a data_has
             { status: 200 }
           );
         }
-        if (u.includes("api.mintgarden.io")) {
+        let hostname = "";
+        try {
+          hostname = new URL(u).hostname;
+        } catch {
+          hostname = "";
+        }
+        if (hostname === "api.mintgarden.io") {
           mintgardenCalls++;
           return okJson({ data: { data_hash: CONTENT_HASH } });
         }
