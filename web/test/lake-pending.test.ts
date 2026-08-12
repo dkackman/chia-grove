@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { expect, test } from "vitest";
 import { Pending, litCount, churnRate } from "../src/themes/lake/pending.js";
-import { PENDING_Y_MIN, PENDING_Y_MAX } from "../src/themes/lake/layout.js";
+import { PENDING_Y_MIN, PENDING_Y_MAX, TOP_BAND_Y } from "../src/themes/lake/layout.js";
 
 test("lit silhouettes scale with mempool size and clamp at the cap", () => {
   expect(litCount(0, 600)).toBe(0);
@@ -58,4 +58,44 @@ test("the layer is deterministic across rebuilds", () => {
     return new THREE.Vector3().setFromMatrixPosition(m).toArray();
   };
   expect(read()).toEqual(read());
+});
+
+test("a block releases silhouettes, which sink past the newest band and vanish", () => {
+  const pending = new Pending(new THREE.Scene(), 100);
+  pending.setMempool(5000, String(5000 * 1e7));
+  expect(pending.release(20, 0)).toBe(20);
+  expect(pending.falling()).toBe(20);
+
+  const m = new THREE.Matrix4();
+  const v = new THREE.Vector3();
+  const firstFalling = pending.fallSlotIndex(0);
+  pending.update(0.05, 0.05);
+  pending.mesh.getMatrixAt(firstFalling, m);
+  const early = v.setFromMatrixPosition(m).y;
+
+  for (let step = 2; step <= 12; step++) pending.update(0.1, step * 0.1);
+  pending.mesh.getMatrixAt(firstFalling, m);
+  const late = v.setFromMatrixPosition(m).y;
+
+  expect(late).toBeLessThan(early);
+  expect(late).toBeLessThanOrEqual(TOP_BAND_Y);
+
+  // the descent finishes and the slots return to the pool
+  for (let step = 13; step <= 60; step++) pending.update(0.1, step * 0.1);
+  expect(pending.falling()).toBe(0);
+});
+
+test("a block bigger than the mempool releases what there is and no more", () => {
+  const pending = new Pending(new THREE.Scene(), 100);
+  pending.setMempool(250, String(250 * 1e7)); // 5 lit
+  expect(pending.lit()).toBe(5);
+  expect(pending.release(400, 0)).toBe(5);
+  expect(pending.falling()).toBe(5);
+});
+
+test("releasing from an empty mempool is a no-op, not a crash", () => {
+  const pending = new Pending(new THREE.Scene(), 100);
+  pending.setMempool(0, "0");
+  expect(pending.release(30, 0)).toBe(0);
+  expect(pending.falling()).toBe(0);
 });
