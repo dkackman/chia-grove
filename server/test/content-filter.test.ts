@@ -1050,7 +1050,7 @@ test("sweep backfills a stuck video's poster once MintGarden resolves a data_has
             { status: 200 }
           );
         }
-        let hostname = "";
+        let hostname: string;
         try {
           hostname = new URL(u).hostname;
         } catch {
@@ -1092,7 +1092,7 @@ test("sweep backs off a video launcher whose MintGarden lookup still has no data
       safesearchSweepIntervalMs: 1000,
       fetchImpl: (async (url: string) => {
         const u = String(url);
-        let host = "";
+        let host: string;
         try {
           host = new URL(u).hostname;
         } catch {
