@@ -8,12 +8,16 @@ export interface StoredVerdict {
   disposition: Disposition;
   safesearchChecked: boolean;
   contentHash?: string;
+  /** Cheap signal that produced `disposition` (see Verdict.signal); persisted
+   *  so a later cache-hit re-spend can still log which signal decided it. */
+  signal?: string;
 }
 
 interface Row {
   disposition: string;
   safesearch_checked_at: number | null;
   content_hash: string | null;
+  signal: string | null;
 }
 
 /**
@@ -45,6 +49,9 @@ export class ContentStore {
     if (!columns.some((c) => c.name === "checked_uri")) {
       this.db.exec("ALTER TABLE nft ADD COLUMN checked_uri TEXT;");
     }
+    if (!columns.some((c) => c.name === "signal")) {
+      this.db.exec("ALTER TABLE nft ADD COLUMN signal TEXT;");
+    }
     // Index the content-hash dedup lookup (getSafeSearchByContentHash); without
     // it that query full-scans a table that grows one row per NFT ever seen.
     this.db.exec("CREATE INDEX IF NOT EXISTS idx_nft_content_hash ON nft (content_hash);");
@@ -56,7 +63,7 @@ export class ContentStore {
   get(launcherId: string): StoredVerdict | undefined {
     const row = this.db
       .prepare(
-        "SELECT disposition, safesearch_checked_at, content_hash FROM nft WHERE launcher_id = ?"
+        "SELECT disposition, safesearch_checked_at, content_hash, signal FROM nft WHERE launcher_id = ?"
       )
       .get(launcherId) as Row | undefined;
     if (!row) return undefined;
@@ -64,6 +71,7 @@ export class ContentStore {
       disposition: row.disposition as Disposition,
       safesearchChecked: row.safesearch_checked_at !== null,
       contentHash: row.content_hash ?? undefined,
+      signal: row.signal ?? undefined,
     };
   }
 
@@ -77,8 +85,8 @@ export class ContentStore {
     const now = Date.now();
     this.db
       .prepare(
-        `INSERT INTO nft (launcher_id, nft_id, disposition, content_hash, checked_at, safesearch_checked_at)
-         VALUES (?, ?, ?, ?, ?, ?)
+        `INSERT INTO nft (launcher_id, nft_id, disposition, content_hash, checked_at, safesearch_checked_at, signal)
+         VALUES (?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(launcher_id) DO UPDATE SET
            nft_id = excluded.nft_id,
            disposition = excluded.disposition,
@@ -87,7 +95,8 @@ export class ContentStore {
            -- nft.safesearch_checked_at first: once a row is stamped (real check or
            -- allow-list skip-stamp), a later un-flagged putCheap (e.g. a re-spend
            -- cache-miss with skipSafesearch left undefined) must never un-check it.
-           safesearch_checked_at = COALESCE(nft.safesearch_checked_at, excluded.safesearch_checked_at)`
+           safesearch_checked_at = COALESCE(nft.safesearch_checked_at, excluded.safesearch_checked_at),
+           signal = excluded.signal`
       )
       .run(
         launcherId,
@@ -95,14 +104,19 @@ export class ContentStore {
         verdict.disposition,
         contentHash ?? null,
         now,
-        skipSafesearch ? now : null
+        skipSafesearch ? now : null,
+        verdict.signal ?? null
       );
   }
 
   putSafeSearch(
     launcherId: string,
     result: { sensitive: boolean; adult: string; raw: unknown },
-    imageUri?: string
+    imageUri?: string,
+    /** Signal that decided a promotion (e.g. "vision", "vision-reused");
+     *  only applied when `result.sensitive` actually flips the disposition —
+     *  a clean SafeSearch result leaves the cheap-tier signal in place. */
+    signal?: string
   ): StoredVerdict {
     const current = this.get(launcherId) ?? {
       disposition: "ok" as Disposition,
@@ -111,16 +125,18 @@ export class ContentStore {
     const disposition = result.sensitive
       ? strongest(current.disposition, "sensitive")
       : current.disposition;
+    const rowSignal = result.sensitive ? (signal ?? current.signal) : current.signal;
     this.db
       .prepare(
-        `INSERT INTO nft (launcher_id, disposition, safesearch_adult, safesearch_raw_json, safesearch_checked_at, checked_at, checked_uri)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO nft (launcher_id, disposition, safesearch_adult, safesearch_raw_json, safesearch_checked_at, checked_at, checked_uri, signal)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(launcher_id) DO UPDATE SET
            disposition = excluded.disposition,
            safesearch_adult = excluded.safesearch_adult,
            safesearch_raw_json = excluded.safesearch_raw_json,
            safesearch_checked_at = excluded.safesearch_checked_at,
-           checked_uri = excluded.checked_uri`
+           checked_uri = excluded.checked_uri,
+           signal = excluded.signal`
       )
       .run(
         launcherId,
@@ -129,9 +145,10 @@ export class ContentStore {
         JSON.stringify(result.raw),
         Date.now(),
         Date.now(),
-        imageUri ?? null
+        imageUri ?? null,
+        rowSignal ?? null
       );
-    return { disposition, safesearchChecked: true };
+    return { disposition, safesearchChecked: true, signal: rowSignal };
   }
 
   /**
