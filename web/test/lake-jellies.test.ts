@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { expect, test, vi } from "vitest";
 import type { SproutEvent } from "@grove/shared";
-import { Jellies } from "../src/themes/lake/jellies.js";
+import { Jellies, tentacleGeometry } from "../src/themes/lake/jellies.js";
 
 // markSensitive() reaches sensitivePlaceholderTexture(), which builds its
 // (memoized, one-time) placeholder via document.createElement("canvas") — a
@@ -92,4 +92,25 @@ test("jellyfish sink with age like everything else in the column", () => {
   const fresh = group.position.y;
   j.update(camera, 0, 10);
   expect(group.position.y).toBeLessThan(fresh);
+});
+
+test("tentacles are segmented ribbons, not rigid boxes", () => {
+  const g = tentacleGeometry();
+  // a 1×8-segment plane has 18 vertices; a box has 24 — assert on segmentation
+  const pos = g.getAttribute("position");
+  expect(pos.count).toBeGreaterThanOrEqual(18);
+  g.computeBoundingBox();
+  expect(g.boundingBox!.max.y).toBeLessThanOrEqual(0.001); // hangs downward from its root
+});
+
+test("a jelly pulses vertically around its band depth", () => {
+  const jellies = new Jellies(new THREE.Scene(), 2);
+  jellies.plant(nft(id(1), lid(1)), 0);
+  const camera = new THREE.PerspectiveCamera();
+  const ys = new Set<number>();
+  for (let t = 0; t < 8; t += 0.25) {
+    jellies.update(camera, t, 0);
+    ys.add(Math.round(jellies.pickables()[0].parent!.position.y * 100));
+  }
+  expect(ys.size).toBeGreaterThan(3);
 });

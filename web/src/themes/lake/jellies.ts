@@ -5,26 +5,66 @@ import { loadArtTexture } from "../gallery/media.js";
 import { LoadPool } from "../shared/load-pool.js";
 import { sensitivePlaceholderTexture } from "../shared/textures.js";
 import { bandDepth, seatOffset } from "./layout.js";
+import { jellyPulse, PULSE_SKEW } from "./motion.js";
 import { LAKE } from "./palette.js";
 
 const JELLY_CAP = 40;
 const PLACEHOLDER = 0x9fb6c9;
+const PULSE_FREQ = 2.2;
 
-/** The bell: a dome, open underneath, with the art panel hanging inside it. */
+/** The bell: a dome, open underneath, finely segmented so the rim can flare. */
 export function bellGeometry(): THREE.SphereGeometry {
-  return new THREE.SphereGeometry(0.95, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.55);
+  return new THREE.SphereGeometry(0.95, 24, 16, 0, Math.PI * 2, 0, Math.PI * 0.6);
+}
+
+/** One tentacle: a segmented ribbon hanging from its root at the origin. */
+export function tentacleGeometry(): THREE.BufferGeometry {
+  const g = new THREE.PlaneGeometry(0.09, 1.5, 1, 8);
+  g.translate(0, -0.75, 0);
+  return g;
+}
+
+interface PulseUniforms {
+  uTime: { value: number };
+  uPhase: { value: number };
+}
+
+/** Shared preamble: the asymmetric medusa beat, mirroring motion.ts jellyPulse. */
+const PULSE_GLSL = `
+  float pulseP = uTime * ${PULSE_FREQ.toFixed(4)} + uPhase;
+  float pulse = sin(pulseP + ${PULSE_SKEW.toFixed(4)} * sin(pulseP));`;
+
+function applyPulseShader(
+  material: THREE.Material,
+  phase: number,
+  displacement: string
+): PulseUniforms {
+  const uniforms: PulseUniforms = { uTime: { value: 0 }, uPhase: { value: phase } };
+  material.onBeforeCompile = (s) => {
+    s.uniforms.uTime = uniforms.uTime;
+    s.uniforms.uPhase = uniforms.uPhase;
+    s.vertexShader =
+      "uniform float uTime;\nuniform float uPhase;\n" +
+      s.vertexShader.replace(
+        "#include <begin_vertex>",
+        `#include <begin_vertex>\n${PULSE_GLSL}\n${displacement}`
+      );
+  };
+  return uniforms;
 }
 
 interface Jelly {
   group: THREE.Group;
   panel: THREE.Mesh;
   bell: THREE.Mesh;
+  bellUniforms: PulseUniforms;
+  tentacleUniforms: PulseUniforms;
+  phase: number;
   meta: SproutEvent | null;
   bornBlock: number;
   radius: number;
   angle: number;
   speed: number;
-  bob: number;
 }
 
 /**
@@ -39,6 +79,10 @@ interface Jelly {
  *   proxy's rate limit.
  * - resolveMedia for every render decision, so content filtering is uniform by
  *   construction: blocked and sensitive art is never fetched, only placeheld.
+ *
+ * Bell contraction and tentacle whip are GPU-side (per-jelly shader uniforms,
+ * driven from `update()`), synced to the CPU pulse-and-coast vertical motion
+ * through the shared `jellyPulse` waveform in `motion.ts`.
  */
 export class Jellies {
   private readonly pool: Jelly[];
@@ -52,36 +96,59 @@ export class Jellies {
   ) {
     const bellGeo = bellGeometry();
     const panelGeo = new THREE.PlaneGeometry(0.9, 0.9);
-    const tentacleGeo = new THREE.BoxGeometry(0.05, 1.5, 0.05);
-    tentacleGeo.translate(0, -0.75, 0);
+    const tentacleGeo = tentacleGeometry();
 
-    this.pool = Array.from({ length: cap }, () => {
+    this.pool = Array.from({ length: cap }, (_, idx) => {
+      const phase = idx * 2.399; // golden-angle spacing keeps neighbours out of sync
       const group = new THREE.Group();
-      const bell = new THREE.Mesh(
-        bellGeo,
-        new THREE.MeshStandardMaterial({
-          color: LAKE.jelly,
-          transparent: true,
-          opacity: 0.42,
-          roughness: 0.25,
-          emissive: new THREE.Color(LAKE.jelly),
-          emissiveIntensity: 0.35,
-          side: THREE.DoubleSide,
-          depthWrite: false,
-        })
+
+      const bellMat = new THREE.MeshStandardMaterial({
+        color: LAKE.jelly,
+        transparent: true,
+        opacity: 0.42,
+        roughness: 0.25,
+        emissive: new THREE.Color(LAKE.jelly),
+        emissiveIntensity: 0.35,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      });
+      // radial squeeze traveling apex→rim: zero at the apex (y≈0.95), full at the rim
+      const bellUniforms = applyPulseShader(
+        bellMat,
+        phase,
+        `float rim = clamp(1.0 - position.y / 0.95, 0.0, 1.2);
+         float squeeze = max(pulse, 0.0);
+         transformed.x *= 1.0 - squeeze * 0.16 * rim;
+         transformed.z *= 1.0 - squeeze * 0.16 * rim;
+         transformed.y += squeeze * 0.10 * rim;`
       );
+      const bell = new THREE.Mesh(bellGeo, bellMat);
+
       // the art hangs inside the bell, billboarded to the camera each frame
       const panel = new THREE.Mesh(
         panelGeo,
         new THREE.MeshBasicMaterial({ color: PLACEHOLDER, side: THREE.DoubleSide })
       );
       panel.position.y = -0.25;
+
       const tentacleMat = new THREE.MeshStandardMaterial({
         color: LAKE.jelly,
         transparent: true,
         opacity: 0.3,
         depthWrite: false,
+        side: THREE.DoubleSide, // ribbons are planes, visible from both sides
       });
+      // whip follow-through: displacement grows with droop², lagging the bell by 1.1 rad
+      const tentacleUniforms = applyPulseShader(
+        tentacleMat,
+        phase,
+        `float droop = clamp(-position.y / 1.5, 0.0, 1.0);
+         float lagP = pulseP - 1.1 - droop * 1.6;
+         float lag = sin(lagP + ${PULSE_SKEW.toFixed(4)} * sin(lagP));
+         transformed.x += lag * droop * droop * 0.45;
+         transformed.z += sin(uTime * 1.7 + uPhase - droop * 2.1) * droop * droop * 0.25;`
+      );
+
       group.add(bell, panel);
       for (let i = 0; i < 5; i++) {
         const angle = (i / 5) * Math.PI * 2;
@@ -89,18 +156,24 @@ export class Jellies {
         tentacle.position.set(Math.cos(angle) * 0.55, -0.1, Math.sin(angle) * 0.55);
         group.add(tentacle);
       }
+      const centerTentacle = new THREE.Mesh(tentacleGeo, tentacleMat);
+      centerTentacle.position.set(0, -0.1, 0);
+      group.add(centerTentacle);
+
       group.visible = false;
       scene.add(group);
       return {
         group,
         panel,
         bell,
+        bellUniforms,
+        tentacleUniforms,
+        phase,
         meta: null,
         bornBlock: 0,
         radius: 0,
         angle: 0,
         speed: 0,
-        bob: 0,
       };
     });
   }
@@ -121,7 +194,6 @@ export class Jellies {
     j.radius = seat.radius * 0.8;
     j.angle = seat.angle;
     j.speed = seat.speed * 0.35;
-    j.bob = seat.bob;
     j.group.visible = true;
     if (event.launcherId) this.byLauncher.set(event.launcherId, slot);
 
@@ -169,15 +241,15 @@ export class Jellies {
   update(camera: THREE.Camera, t: number, blocksSeen: number): void {
     for (const j of this.pool) {
       if (!j.meta) continue;
+      j.bellUniforms.uTime.value = t;
+      j.tentacleUniforms.uTime.value = t;
       const angle = j.angle + t * j.speed;
+      const { lift } = jellyPulse(t * PULSE_FREQ + j.phase);
       j.group.position.set(
         Math.cos(angle) * j.radius,
-        bandDepth(blocksSeen - j.bornBlock) + Math.sin(t * 0.5 + j.bob) * 0.5,
+        bandDepth(blocksSeen - j.bornBlock) + lift * 0.55,
         Math.sin(angle) * j.radius
       );
-      // pulse the bell; the panel keeps its own scale so the art never squashes
-      const pulse = 1 + Math.sin(t * 1.4 + j.bob) * 0.12;
-      j.bell.scale.set(pulse, 2 - pulse, pulse);
       // same-Y lookAt is a pure yaw, so the dome stays upright while the art
       // panel turns to face the camera — the trick `Paintings.update` uses
       j.group.lookAt(camera.position.x, j.group.position.y, camera.position.z);
