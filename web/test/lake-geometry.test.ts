@@ -3,6 +3,7 @@ import { expect, test } from "vitest";
 import { surfaceGeometry, createLakeWater } from "../src/themes/lake/water.js";
 import { weedGeometry, createBed } from "../src/themes/lake/bed.js";
 import { BED_Y } from "../src/themes/lake/layout.js";
+import { fishGeometry } from "../src/themes/lake/shoal.js";
 
 test("surface geometry is a valid renderable plane", () => {
   const g = surfaceGeometry();
@@ -60,4 +61,10 @@ test("the bed adds a floor and a weed field at the bottom of the column", () => 
 test("bed update runs without a renderer present", () => {
   const bed = createBed(new THREE.Scene());
   expect(() => bed.update(3.0)).not.toThrow();
+});
+
+test("fish geometry is valid and renderable", () => {
+  const g = fishGeometry();
+  expect(g.getAttribute("position").count).toBeGreaterThan(0);
+  expect(g.getAttribute("normal")).toBeDefined();
 });
