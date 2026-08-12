@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import type { GroveEvent, SproutEvent } from "@grove/shared";
+import type { AmbientEvent, BlockEvent, GroveEvent, SproutEvent } from "@grove/shared";
 import type { GroveFeed } from "../../net/feed.js";
 import { createFrameLimiter } from "../shared/frame-limiter.js";
 import { createOrbitControl } from "../shared/orbit.js";
@@ -48,8 +48,8 @@ export function startLake(canvas: HTMLCanvasElement, feed: GroveFeed) {
 
   // wired up by index.ts once the systems exist
   let onSprout = (_event: SproutEvent, _blocksSeen: number) => {};
-  let onBlockExtra = (_blocksSeen: number) => {};
-  let onAmbientExtra = (_mempoolSize: number) => {};
+  let onBlockExtra = (_event: BlockEvent, _blocksSeen: number) => {};
+  let onAmbientExtra = (_event: AmbientEvent) => {};
   let onReorgExtra = (_forkHeight: number) => {};
   let onContentFlag = (_launcherId: string) => {};
   let extraUpdate = (_dt: number, _t: number, _blocksSeen: number) => {};
@@ -70,14 +70,14 @@ export function startLake(canvas: HTMLCanvasElement, feed: GroveFeed) {
     switch (event.type) {
       case "block":
         blocksSeen++;
-        onBlockExtra(blocksSeen);
+        onBlockExtra(event, blocksSeen);
         break;
       case "sprout":
         onSprout(event, blocksSeen);
         break;
       case "ambient":
         water.setNetspace(event.netspace);
-        onAmbientExtra(event.mempoolSize);
+        onAmbientExtra(event);
         break;
       case "reorg":
         onReorgExtra(event.forkHeight);

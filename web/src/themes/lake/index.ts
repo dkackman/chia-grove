@@ -68,7 +68,7 @@ export const lake: Visualization = {
     });
     runtime.setContentFlagHandler((launcherId) => jellies.markSensitive(launcherId));
     runtime.setBlockHandler(() => runtime.water.ripple(clock.t));
-    runtime.setAmbientHandler((mempoolSize) => vfx.setMempool(mempoolSize));
+    runtime.setAmbientHandler((event) => vfx.setMempool(event.mempoolSize));
 
     const frameCallbacks: Array<() => void> = [];
     runtime.setUpdateHandler((dt, t, blocksSeen) => {

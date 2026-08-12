@@ -330,7 +330,9 @@ test("classifies a heterogeneous block (cat + nft + did + xch) correctly", () =>
     )
   );
 
-  const result = sprouts(catClvm.coinSpends().concat(nftClvm.coinSpends()));
+  const spends = catClvm.coinSpends().concat(nftClvm.coinSpends());
+  const events = classifyBlock(block(spends));
+  const result = events.filter((e): e is SproutEvent => e.type === "sprout");
 
   const cats = result.filter((s) => s.kind === "cat");
   expect(cats).toHaveLength(1);
@@ -338,6 +340,13 @@ test("classifies a heterogeneous block (cat + nft + did + xch) correctly", () =>
   expect(result.filter((s) => s.kind === "nft").length).toBeGreaterThanOrEqual(1);
   expect(result.filter((s) => s.kind === "did").length).toBeGreaterThan(0);
   expect(result.filter((s) => s.kind === "xch").length).toBeGreaterThan(0);
+
+  // A later task sinks `spendCount` silhouettes the instant a block event
+  // arrives, which is only correct if the block event reliably precedes
+  // every one of its block's spends — pin that ordering on this multi-spend
+  // block, the richest fixture the file builds.
+  expect(events[0].type).toBe("block");
+  expect(events.slice(1).every((e) => e.type !== "block")).toBe(true);
 });
 
 test("nft with http art url writes to MediaIndex and emits mediaKind", () => {
