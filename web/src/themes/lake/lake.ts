@@ -9,8 +9,13 @@ import { BED_Y, TOP_BAND_Y } from "./layout.js";
 import { LAKE } from "./palette.js";
 import { createLakeWater } from "./water.js";
 
-/** Where the camera hangs in the column — high enough to see the surface. */
-const CAM_Y = TOP_BAND_Y - 11;
+/**
+ * Where the camera hangs in the column. Centered between the surface and the
+ * bed (rather than hugging the surface) so both ends of the water column
+ * land inside the frustum at once — a wide vertical FOV plus this midpoint
+ * height is what gets the ceiling and the bed into the same shot.
+ */
+const CAM_Y = (TOP_BAND_Y + BED_Y) / 2;
 const CAM_RADIUS = 34;
 
 export function startLake(canvas: HTMLCanvasElement, feed: GroveFeed) {
@@ -23,7 +28,9 @@ export function startLake(canvas: HTMLCanvasElement, feed: GroveFeed) {
   const orbit = createOrbitControl(canvas);
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(LAKE.deep);
-  const camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.1, 400);
+  // A wide vertical FOV so the midpoint camera height still catches both the
+  // surface (up) and the bed (down) inside the frame instead of only one.
+  const camera = new THREE.PerspectiveCamera(84, innerWidth / innerHeight, 0.1, 400);
 
   const water = createLakeWater(scene);
   const bed = createBed(scene);
@@ -33,7 +40,10 @@ export function startLake(canvas: HTMLCanvasElement, feed: GroveFeed) {
     exposure: 1.0,
     bloomStrength: 0.12,
     bloomRadius: 0.6,
-    bloomThreshold: 0.75,
+    // Raised from 0.75 — the pale shaft color (0xa8e0f5) is bright enough on
+    // its own to trip a low threshold even at the low opacities the shafts
+    // render at, blowing them out into solid wedges instead of a soft glow.
+    bloomThreshold: 0.92,
   });
 
   // wired up by index.ts once the systems exist
@@ -83,9 +93,11 @@ export function startLake(canvas: HTMLCanvasElement, feed: GroveFeed) {
     const angle = (reducedMotion ? 0.6 : t * 0.02) + orbit.getOffset();
     const y = reducedMotion ? CAM_Y : CAM_Y + Math.sin(t * 0.05) * 2.2;
     camera.position.set(Math.cos(angle) * CAM_RADIUS, y, Math.sin(angle) * CAM_RADIUS);
-    // look slightly upward so the surface and its shafts stay in frame — the
-    // whole point of being submerged rather than looking down at a bed
-    camera.lookAt(0, y + 5, 0);
+    // Look toward the column's centerline, with only a light upward bias.
+    // Combined with the wide FOV and the midpoint camera height, this keeps
+    // the bright surface in the upper part of the frame and a dim glimpse of
+    // the bed in the lower part — both ends of the water column at once.
+    camera.lookAt(0, y + 2, 0);
 
     water.update(t);
     bed.update(t);

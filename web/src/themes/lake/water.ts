@@ -35,11 +35,20 @@ export interface LakeWater {
  * the CPU regardless of how finely the plane is subdivided.
  */
 export function createLakeWater(scene: THREE.Scene): LakeWater {
-  const fog = new THREE.FogExp2(LAKE.deep, 0.02);
+  // Fog density is tuned so the bed (~60 units down) stays dimly legible at
+  // the default clarity of 0.5, rather than resolving to a black wall a few
+  // bands down. Clearer water (higher clarity) still thins the fog further.
+  const fog = new THREE.FogExp2(LAKE.deep, 0.0095);
   scene.fog = fog;
 
+  // Seen from below, the surface is the brightest thing in frame — a lit
+  // ceiling, not a shaded plane. A single overhead DirectionalLight can't
+  // reach its underside, so the surface carries its own emissive glow;
+  // setNetspace scales that glow with clarity alongside the fog and shafts.
   const material = new THREE.MeshStandardMaterial({
     color: LAKE.surface,
+    emissive: new THREE.Color(LAKE.surface),
+    emissiveIntensity: 1.3,
     transparent: true,
     opacity: 0.85,
     roughness: 0.15,
@@ -79,22 +88,28 @@ export function createLakeWater(scene: THREE.Scene): LakeWater {
   const sun = new THREE.DirectionalLight(0xfff0d0, 1.1);
   sun.position.set(18, 60, 10);
   scene.add(sun);
-  scene.add(new THREE.HemisphereLight(0x9fd8f0, 0x14202a, 0.5));
+  // Brighter fill than a night theme needs — this is midday light scattering
+  // through open water, and it's what makes the bed and weeds legible at all.
+  scene.add(new THREE.HemisphereLight(0x9fd8f0, 0x14202a, 1.1));
 
-  // God rays: wide, near-invisible additive cones hanging from the surface.
-  // fog:false keeps them from being eaten by their own depth fog.
-  const shaftGeo = new THREE.ConeGeometry(3.4, 70, 6, 1, true);
+  // God rays: thin, near-invisible additive cones hanging from the surface,
+  // parked well outside the camera's orbit radius (CAM_RADIUS in lake.ts is
+  // 34) so the camera glides past them at a distance instead of clipping
+  // through their walls — up close a hollow double-sided cone reads as a
+  // solid, hard-edged spike rather than a soft shaft. fog:false keeps them
+  // from being eaten by their own depth fog.
+  const shaftGeo = new THREE.ConeGeometry(1.8, 70, 6, 1, true);
   shaftGeo.translate(0, -35, 0);
   const shafts: THREE.Mesh[] = [];
   for (let i = 0; i < SHAFT_COUNT; i++) {
     const angle = (i / SHAFT_COUNT) * Math.PI * 2;
-    const radius = 10 + (i % 3) * 9;
+    const radius = 42 + (i % 3) * 12;
     const shaft = new THREE.Mesh(
       shaftGeo,
       new THREE.MeshBasicMaterial({
         color: LAKE.shaft,
         transparent: true,
-        opacity: 0.05,
+        opacity: 0.03,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
         side: THREE.DoubleSide,
@@ -115,13 +130,16 @@ export function createLakeWater(scene: THREE.Scene): LakeWater {
       for (let i = 0; i < shafts.length; i++) {
         const mat = shafts[i].material as THREE.MeshBasicMaterial;
         // slow independent breathing so the rays never pulse in lockstep
-        mat.opacity = (0.03 + clarity * 0.06) * (0.7 + 0.3 * Math.sin(t * 0.25 + i));
+        mat.opacity = (0.015 + clarity * 0.025) * (0.7 + 0.3 * Math.sin(t * 0.25 + i));
       }
     },
     setNetspace(bytes) {
       clarity = clarityFromNetspace(bytes);
-      // clear water → thin fog you can see across; murky → close horizon
-      fog.density = 0.035 - clarity * 0.023;
+      material.emissiveIntensity = 0.9 + clarity * 0.8;
+      // clear water → thin fog you can see across; murky → close horizon.
+      // Tuned so the bed (~60 units below the surface) stays dimly visible
+      // even at the murkiest end, rather than resolving to a black wall.
+      fog.density = 0.014 - clarity * 0.009;
       sun.intensity = 0.6 + clarity * 0.9;
     },
     ripple(t) {

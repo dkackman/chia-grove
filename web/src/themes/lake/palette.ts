@@ -1,6 +1,6 @@
 /** Scene colors for the lake. Cool, desaturated, with warm light from above. */
 export const LAKE = {
-  deep: 0x04141f, // fog and the unlit far water
+  deep: 0x0a2436, // fog and the unlit far water — dark teal, not flat black
   surface: 0x2f86ad, // underside of the surface plane
   shaft: 0xa8e0f5, // god rays
   bed: 0x2b3a2a, // silty floor
