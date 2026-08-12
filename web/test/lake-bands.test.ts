@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { expect, test } from "vitest";
 import type { BlockEvent } from "@grove/shared";
-import { Bands, ringBrightness, feeWarmth } from "../src/themes/lake/bands.js";
+import { Bands, ringBrightness, feeWarmth, labelOpacity } from "../src/themes/lake/bands.js";
 import { MAX_BANDS, RIM_RADIUS, bandDepth } from "../src/themes/lake/layout.js";
 
 const block = (height: number, spendCount = 10, fees = "0"): BlockEvent => ({
@@ -81,4 +81,39 @@ test("a cap of 1 forces a wrap on the second block", () => {
   bands.push(block(2), 2);
   expect(bands.count()).toBe(1);
   expect(bands.entryAt(0)?.height).toBe(2);
+});
+
+test("only the newest bands are labelled", () => {
+  expect(labelOpacity(0)).toBe(1);
+  expect(labelOpacity(6)).toBe(0);
+  expect(labelOpacity(2)).toBeGreaterThan(0);
+  expect(labelOpacity(2)).toBeLessThanOrEqual(1);
+  expect(labelOpacity(-1)).toBe(1); // smoothed counter can dip below zero
+});
+
+test("labels ride the near edge of the ring as the camera orbits", () => {
+  const bands = new Bands(new THREE.Scene());
+  bands.push(block(4200), 1);
+  const camera = new THREE.PerspectiveCamera();
+
+  camera.position.set(40, -20, 0);
+  bands.update(1, camera);
+  const east = bands.labelPosition(0).clone();
+
+  camera.position.set(0, -20, 40);
+  bands.update(1, camera);
+  const north = bands.labelPosition(0).clone();
+
+  expect(east.x).toBeGreaterThan(east.z);
+  expect(north.z).toBeGreaterThan(north.x);
+  // always just outside the ring, never inside the creature annulus
+  expect(Math.hypot(east.x, east.z)).toBeGreaterThan(RIM_RADIUS);
+});
+
+test("a culled band takes its label with it", () => {
+  const bands = new Bands(new THREE.Scene());
+  bands.push(block(100), 1);
+  expect(bands.labelVisible(0)).toBe(true);
+  bands.clearAbove(100);
+  expect(bands.labelVisible(0)).toBe(false);
 });

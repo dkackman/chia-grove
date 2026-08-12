@@ -15,6 +15,9 @@ const SPENDS_FULL = 120;
 const RING_TUBE = 0.07;
 /** How far down the column a ring has faded to nothing. */
 const FADE_BANDS = MAX_BANDS;
+/** Labels only on the newest few bands; the deep column stays quiet. */
+const LABELLED_BANDS = 5;
+const LABEL_RADIUS = RIM_RADIUS + 2.5;
 
 export interface BandEntry {
   height: number;
@@ -40,6 +43,35 @@ export function feeWarmth(fees: string): number {
   return Math.min(1, Math.log10(1 + mojos) / Math.log10(1 + FEE_FULL));
 }
 
+/** Band age (in blocks) → label opacity. Pure. */
+export function labelOpacity(age: number): number {
+  if (age <= 0) return 1;
+  if (age >= LABELLED_BANDS) return 0;
+  return 1 - age / LABELLED_BANDS;
+}
+
+/**
+ * A block height drawn to a canvas texture. Redrawn once per block — at 18.75 s
+ * a block this is free. Returns null under Node (tests), where the sprite is
+ * still created and positioned but carries no texture.
+ */
+function labelTexture(height: number): THREE.CanvasTexture | null {
+  if (typeof document === "undefined") return null;
+  const canvas = document.createElement("canvas");
+  canvas.width = 256;
+  canvas.height = 64;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  ctx.font = "600 34px ui-monospace, Menlo, monospace";
+  ctx.fillStyle = "#a8e0f5";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(String(height), 128, 32);
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
 /**
  * The visible strata. The original lake deliberately kept no per-band state —
  * depth was `bandDepth(blocksSeen - bornBlock)` and nothing else. That was
@@ -63,6 +95,7 @@ export class Bands {
   private readonly color = new THREE.Color();
   private readonly base = new THREE.Color(LAKE.rim);
   private readonly warm = new THREE.Color(LAKE.rimWarm);
+  private readonly labels: THREE.Sprite[];
 
   constructor(scene: THREE.Scene, cap = MAX_BANDS) {
     const geometry = new THREE.TorusGeometry(RIM_RADIUS, RING_TUBE, 6, 120);
@@ -84,6 +117,15 @@ export class Bands {
     }
     this.mesh.count = 0;
     scene.add(this.mesh);
+    this.labels = Array.from({ length: cap }, () => {
+      const sprite = new THREE.Sprite(
+        new THREE.SpriteMaterial({ transparent: true, depthWrite: false, fog: false, opacity: 0 })
+      );
+      sprite.scale.set(7, 1.75, 1);
+      sprite.visible = false;
+      scene.add(sprite);
+      return sprite;
+    });
   }
 
   push(event: BlockEvent, bornBlock: number): void {
@@ -96,9 +138,15 @@ export class Bands {
       fees: event.fees,
       bornBlock,
     };
+    const sprite = this.labels[i];
+    const material = sprite.material as THREE.SpriteMaterial;
+    material.map?.dispose(); // the recycled slot's texture is now unreachable
+    material.map = labelTexture(event.height);
+    material.needsUpdate = true;
+    sprite.visible = true;
   }
 
-  update(blocksSmooth: number, _camera: THREE.Camera): void {
+  update(blocksSmooth: number, camera: THREE.Camera): void {
     for (let i = 0; i < this.entries.length; i++) {
       const entry = this.entries[i];
       if (!entry) continue;
@@ -115,6 +163,21 @@ export class Bands {
       this.color.copy(this.base).lerp(this.warm, feeWarmth(entry.fees));
       this.color.multiplyScalar(brightness * fade * fade);
       this.mesh.setColorAt(i, this.color);
+
+      const sprite = this.labels[i];
+      const opacity = labelOpacity(age);
+      sprite.visible = opacity > 0;
+      if (sprite.visible) {
+        // ride the near edge: the bearing of the camera, so an orbiting camera
+        // always reads the label face-on rather than watching it swing behind
+        const bearing = Math.atan2(camera.position.z, camera.position.x);
+        sprite.position.set(
+          Math.cos(bearing) * LABEL_RADIUS,
+          bandDepth(age),
+          Math.sin(bearing) * LABEL_RADIUS
+        );
+        (sprite.material as THREE.SpriteMaterial).opacity = opacity;
+      }
     }
     this.mesh.instanceMatrix.needsUpdate = true;
     if (this.mesh.instanceColor) this.mesh.instanceColor.needsUpdate = true;
@@ -130,6 +193,7 @@ export class Bands {
         this.entries[i] = null;
         this.matrix.makeScale(0, 0, 0);
         this.mesh.setMatrixAt(i, this.matrix);
+        this.labels[i].visible = false;
         clearedAny = true;
       } else if (entry) {
         highestActive = i;
@@ -154,5 +218,15 @@ export class Bands {
     const c = new THREE.Color();
     this.mesh.getColorAt(i, c);
     return c;
+  }
+
+  /** Test seam. */
+  labelPosition(i: number): THREE.Vector3 {
+    return this.labels[i].position;
+  }
+
+  /** Test seam. */
+  labelVisible(i: number): boolean {
+    return this.labels[i].visible;
   }
 }
