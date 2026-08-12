@@ -5,7 +5,7 @@ import { createFrameLimiter } from "../shared/frame-limiter.js";
 import { createOrbitControl } from "../shared/orbit.js";
 import { createPostFx } from "../shared/postfx.js";
 import { createBed } from "./bed.js";
-import { BED_Y, TOP_BAND_Y } from "./layout.js";
+import { BED_Y, TOP_BAND_Y, easeBlocks } from "./layout.js";
 import { LAKE } from "./palette.js";
 import { createLakeWater } from "./water.js";
 
@@ -57,7 +57,14 @@ export function startLake(canvas: HTMLCanvasElement, feed: GroveFeed) {
   // Monotonic block counter. Every planted object stores this value as its
   // bornBlock; its depth is bandDepth(blocksSeen - bornBlock). That subtraction
   // is the entire sinking mechanism — there is no per-band state to keep in sync.
+  // A smoothed copy is eased toward this counter each frame and passed to per-frame
+  // updates, so the lake glides down a band instead of snapping.
   let blocksSeen = 0;
+
+  // Smoothed copy of the counter handed to per-frame updates: the lake glides
+  // down a band over ~1.6 s per block instead of snapping 1.5 units. Planting
+  // still uses the integer counter, so bornBlock stays exact.
+  let blocksSmooth = 0;
 
   feed.onEvent((event: GroveEvent) => {
     switch (event.type) {
@@ -101,7 +108,8 @@ export function startLake(canvas: HTMLCanvasElement, feed: GroveFeed) {
 
     water.update(t);
     bed.update(t);
-    extraUpdate(dt, t, blocksSeen);
+    blocksSmooth = easeBlocks(blocksSmooth, blocksSeen, dt);
+    extraUpdate(dt, t, blocksSmooth);
     postfx.render();
   }
   frame();
