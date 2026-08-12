@@ -8,7 +8,7 @@
     "start": "tsx --env-file-if-exists=.env src/index.ts"
   },
   "dependencies": {
-    "@axiomhq/pino": "^1.8.0",
+    "@axiomhq/pino": "^2.0.0",
     "@fastify/static": "^10.1.0",
     "@fastify/websocket": "^11.0.0",
     "@grove/shared": "*",
