@@ -666,3 +666,22 @@ body {
   display: flex;
   gap: 8px;
 }
+
+#lake-strip {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  font:
+    12px/1.4 ui-monospace,
+    monospace;
+  color: #a8e0f5;
+  pointer-events: none;
+  text-shadow: 0 1px 3px rgba(2, 8, 6, 0.9);
+}
+
+@media (max-width: 640px) {
+  #lake-strip {
+    font-size: 10px;
+  }
+}
