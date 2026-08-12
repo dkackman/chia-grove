@@ -3,7 +3,12 @@ import type { BlockEvent } from "@grove/shared";
 import { MAX_BANDS, RIM_RADIUS, bandDepth } from "./layout.js";
 import { LAKE } from "./palette.js";
 
-/** Fee level (mojos) at which a ring is fully warm. ~10 XCH of fees. */
+/**
+ * Fee level (mojos) at which a ring is fully warm: ~0.01 XCH. Chia block fees
+ * are typically well under 0.001 XCH, so saturating any higher would pin the
+ * warmth channel at zero for nearly every block and waste the encoding —
+ * this keeps realistically fee-heavy blocks in the visible part of the curve.
+ */
 const FEE_FULL = 1e10;
 /** Spend count at which a ring is fully bright. */
 const SPENDS_FULL = 120;
@@ -118,16 +123,19 @@ export class Bands {
   /** Reorg: drop the orphaned bands and shrink the draw count. */
   clearAbove(forkHeight: number): void {
     let highestActive = -1;
+    let clearedAny = false;
     for (let i = 0; i < this.entries.length; i++) {
       const entry = this.entries[i];
       if (entry && entry.height >= forkHeight) {
         this.entries[i] = null;
         this.matrix.makeScale(0, 0, 0);
         this.mesh.setMatrixAt(i, this.matrix);
+        clearedAny = true;
       } else if (entry) {
         highestActive = i;
       }
     }
+    if (!clearedAny) return;
     this.mesh.count = Math.min(this.mesh.count, highestActive + 1);
     this.mesh.instanceMatrix.needsUpdate = true;
   }
