@@ -6,6 +6,7 @@ import { LAKE } from "./palette.js";
 import { fishSize, schoolSize } from "./scales.js";
 import { Shoal } from "./shoal.js";
 import { Jellies } from "./jellies.js";
+import { Turtles } from "./turtles.js";
 
 export const lake: Visualization = {
   id: "lake",
@@ -25,6 +26,7 @@ export const lake: Visualization = {
     const xchFish = new Shoal(runtime.scene, LAKE.xchFish);
     const catFish = new Shoal(runtime.scene, 0xffffff);
     const jellies = new Jellies(runtime.scene);
+    const turtles = new Turtles(runtime.scene);
     const schoolColor = new THREE.Color();
     let hovered: { object: THREE.Object3D; index: number } | null = null;
 
@@ -49,11 +51,13 @@ export const lake: Visualization = {
         if (event.launcherId && jellies.has(event.launcherId)) return;
         jellies.plant(event, blocksSeen);
       }
+      if (event.kind === "did") turtles.plant(event, blocksSeen);
     });
     runtime.setReorgHandler((forkHeight) => {
       xchFish.clearAbove(forkHeight);
       catFish.clearAbove(forkHeight);
       jellies.clearAbove(forkHeight);
+      turtles.clearAbove(forkHeight);
     });
     runtime.setContentFlagHandler((launcherId) => jellies.markSensitive(launcherId));
 
@@ -62,6 +66,7 @@ export const lake: Visualization = {
       xchFish.update(t, blocksSeen);
       catFish.update(t, blocksSeen);
       jellies.update(runtime.camera, t, blocksSeen);
+      turtles.update(t, blocksSeen);
       for (const fn of frameCallbacks) fn();
     });
 
@@ -69,11 +74,17 @@ export const lake: Visualization = {
       camera: runtime.camera,
       onFrame: (fn) => frameCallbacks.push(fn),
       isDragging: () => runtime.isDragging(),
-      pickables: () => [...xchFish.pickables(), ...catFish.pickables(), ...jellies.pickables()],
+      pickables: () => [
+        ...xchFish.pickables(),
+        ...catFish.pickables(),
+        ...jellies.pickables(),
+        ...turtles.pickables(),
+      ],
       metaFor: (object, instanceId) =>
         xchFish.metaFor(object, instanceId) ??
         catFish.metaFor(object, instanceId) ??
-        jellies.metaFor(object),
+        jellies.metaFor(object) ??
+        turtles.metaFor(object),
       setHovered: (object, instanceId) => {
         if (hovered) {
           if (!xchFish.setHighlight(hovered.object, hovered.index, false)) {
