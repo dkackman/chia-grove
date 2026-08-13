@@ -348,13 +348,18 @@ body {
   background: #7a9a5d;
   border: 1px solid #51663d;
 }
-.sw-bubble {
+.sw-pending {
   width: 6px;
   height: 6px;
   margin: 0 2px;
   border-radius: 50%;
-  background: rgba(191, 232, 255, 0.5);
-  border: 1px solid #bfe8ff;
+  background: #1c4a63;
+  border: 1px solid rgba(191, 232, 255, 0.4);
+}
+.sw-rim {
+  background: transparent;
+  border: 2px solid rgba(127, 212, 232, 0.8);
+  box-shadow: 0 0 5px rgba(127, 212, 232, 0.5);
 }
 .sw-shaft {
   width: 5px;

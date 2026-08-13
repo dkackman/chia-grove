@@ -8,7 +8,9 @@ import { entryScale, entryDrop } from "./entry.js";
 
 const WHITE = new THREE.Color(0xffffff);
 const HIGHLIGHT_BOOST = 2.2;
-const DEFAULT_CAP = 1200;
+// 18 bands rather than 40 means a smaller standing population; a cap far above
+// it only delays pool wrap without ever being reached.
+const DEFAULT_CAP = 500;
 const BOB_AMPLITUDE = 0.35;
 
 interface FishSlot {

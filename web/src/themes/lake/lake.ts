@@ -99,8 +99,9 @@ export function startLake(canvas: HTMLCanvasElement, feed: GroveFeed) {
     const t = timer.getElapsed();
 
     const target = frameTarget(Math.min(blocksSeen, MAX_BANDS), LAKE_FOV, camera.aspect);
-    // ease at the same rate the bands sink, so framing and sinking read as one
-    // motion rather than two systems arguing
+    // ease at rate 0.8 — slower than easeBlocks's 2.2, so the camera lags the
+    // band sink instead of racing it. Framing should follow the motion it is
+    // tracking, not fight it for who leads.
     const k = 1 - Math.exp(-dt * 0.8);
     camDistance += (target.distance - camDistance) * k;
     camCenterY += (target.centerY - camCenterY) * k;

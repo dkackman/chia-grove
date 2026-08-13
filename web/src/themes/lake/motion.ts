@@ -1,8 +1,8 @@
 import type { Seat } from "./layout.js";
 import { BAND_RADIUS_MIN, BAND_RADIUS_MAX } from "./layout.js";
 
-const WANDER_RADIUS = 1.8;
-const WANDER_SWAY = 0.3;
+const WANDER_RADIUS = 0.9;
+const WANDER_SWAY = 0.18;
 const SWAY_RATE = 0.63; // sway runs slower than the radial wander so paths never loop
 
 /**

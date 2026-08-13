@@ -17,9 +17,10 @@ interface Beacon {
 }
 
 /**
- * Ambient effects: bubble columns rising off the bed (mempool), mint beacons,
- * and the reorg predator. The per-block surface ripple lives in `water.ts`,
- * which owns the surface shader.
+ * Ambient effects: bubble columns rising off the bed (fixed-density scenery —
+ * the mempool now renders in `pending.ts`'s churn layer), mint beacons, and
+ * the reorg predator. The per-block surface ripple lives in `water.ts`, which
+ * owns the surface shader.
  */
 export class Vfx {
   private readonly bubbles: THREE.Points;
@@ -59,6 +60,10 @@ export class Vfx {
     );
     this.bubbles.frustumCulled = false;
     scene.add(this.bubbles);
+    // Bubbles are scenery now, not data — the mempool moved to the churn layer
+    // under the surface, where pending work belongs. A steady low density keeps
+    // the bed from reading as dead water.
+    this.litCount = Math.round(BUBBLE_CAP * 0.22);
 
     // the predator: a pike silhouette that sweeps the column on a reorg
     const predatorMat = new THREE.MeshStandardMaterial({
@@ -102,11 +107,6 @@ export class Vfx {
     });
   }
 
-  /** Mempool size → how much of the bubble field is active. */
-  setMempool(size: number): void {
-    this.litCount = Math.max(0, Math.min(BUBBLE_CAP, Math.round(size * 4)));
-  }
-
   /**
    * Mint flag → a beacon at the given circuit radius, on a random bearing so
    * repeated mints in one block do not stack into a single brighter column.
@@ -127,11 +127,6 @@ export class Vfx {
   strike(t: number): void {
     this.strikeStart = t;
     this.predator.visible = true;
-  }
-
-  /** How many bubbles are currently drawn. Test seam. */
-  bubbleCount(): number {
-    return this.litCount;
   }
 
   /** The Y of the highest active bubble. Test seam. */

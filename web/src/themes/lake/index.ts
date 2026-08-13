@@ -9,6 +9,9 @@ import { Shoal } from "./shoal.js";
 import { Jellies } from "./jellies.js";
 import { Turtles } from "./turtles.js";
 import { Vfx } from "./vfx.js";
+import { Bands } from "./bands.js";
+import { Pending } from "./pending.js";
+import { createLakeStrip } from "./strip.js";
 
 export const lake: Visualization = {
   id: "lake",
@@ -18,8 +21,8 @@ export const lake: Visualization = {
     ["sw-school", "school — CAT (color = asset)"],
     ["sw-jelly", "jellyfish — NFT (clickable)"],
     ["sw-turtle", "turtle — DID"],
-    ["sw-ripple", "ripple — new block"],
-    ["sw-bubble", "bubbles — mempool"],
+    ["sw-pending", "shoal near the surface — mempool"],
+    ["sw-rim", "ring — one block (bright = busy)"],
     ["sw-shaft", "light shafts — netspace"],
     ["sw-reorg", "strike — reorg"],
   ],
@@ -30,6 +33,12 @@ export const lake: Visualization = {
     const jellies = new Jellies(runtime.scene);
     const turtles = new Turtles(runtime.scene);
     const vfx = new Vfx(runtime.scene);
+    const bands = new Bands(runtime.scene);
+    const pending = new Pending(runtime.scene);
+    const stripRoot = document.getElementById("lake-strip");
+    // A missing #lake-strip element would otherwise take the whole theme down
+    // at startup over a status readout; skip the strip and let the scene run.
+    const strip = stripRoot ? createLakeStrip(stripRoot) : null;
     const clock = { t: 0 };
     const schoolColor = new THREE.Color();
     let hovered: { object: THREE.Object3D; index: number } | null = null;
@@ -64,15 +73,26 @@ export const lake: Visualization = {
       catFish.clearAbove(forkHeight);
       jellies.clearAbove(forkHeight);
       turtles.clearAbove(forkHeight);
+      bands.clearAbove(forkHeight);
       vfx.strike(clock.t);
     });
     runtime.setContentFlagHandler((launcherId) => jellies.markSensitive(launcherId));
-    runtime.setBlockHandler(() => runtime.water.ripple(clock.t));
-    runtime.setAmbientHandler((event) => vfx.setMempool(event.mempoolSize));
+    runtime.setBlockHandler((event, blocksSeen) => {
+      bands.push(event, blocksSeen);
+      pending.release(event.spendCount, clock.t);
+      runtime.water.ripple(clock.t);
+    });
+    runtime.setAmbientHandler((event) => {
+      pending.setMempool(event.mempoolSize, event.mempoolCost);
+      strip?.setMempool(event.mempoolSize);
+      strip?.setNetspace(event.netspace);
+    });
 
     const frameCallbacks: Array<() => void> = [];
     runtime.setUpdateHandler((dt, t, blocksSeen) => {
       clock.t = t;
+      bands.update(blocksSeen, runtime.camera);
+      pending.update(dt, t);
       xchFish.update(t, blocksSeen);
       catFish.update(t, blocksSeen);
       jellies.update(runtime.camera, t, blocksSeen);
