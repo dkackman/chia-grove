@@ -6,6 +6,11 @@
  * Both functions are pure functions of age in seconds, so replay is safe: a
  * snapshot plants hundreds of sprouts across a handful of frames and every one
  * of them animating in is correct — they genuinely are arriving.
+ *
+ * The envelope is scale-only. The spec's "fading in" was dropped deliberately:
+ * per-instance opacity on an InstancedMesh means a custom attribute threaded
+ * through every creature shader, and a creature growing from zero scale
+ * already cannot pop — the fade would buy nothing visible for the cost.
  */
 export const ENTRY_SECONDS = 0.8;
 /** How far above its band a creature starts. */

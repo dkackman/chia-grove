@@ -42,7 +42,7 @@ export function startLake(canvas: HTMLCanvasElement, feed: GroveFeed) {
   let onAmbientExtra = (_event: AmbientEvent) => {};
   let onReorgExtra = (_forkHeight: number) => {};
   let onContentFlag = (_launcherId: string) => {};
-  let extraUpdate = (_dt: number, _t: number, _blocksSeen: number) => {};
+  let extraUpdate = (_dt: number, _t: number, _blocksSmooth: number) => {};
 
   // Monotonic block counter. Every planted object stores this value as its
   // bornBlock; its depth is bandDepth(blocksSeen - bornBlock). That subtraction

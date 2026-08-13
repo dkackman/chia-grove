@@ -89,14 +89,16 @@ export const lake: Visualization = {
     });
 
     const frameCallbacks: Array<() => void> = [];
-    runtime.setUpdateHandler((dt, t, blocksSeen) => {
+    // blocksSmooth, not blocksSeen: rendering rides the eased float so the
+    // lake glides between bands. Planting (above) uses the integer counter.
+    runtime.setUpdateHandler((dt, t, blocksSmooth) => {
       clock.t = t;
-      bands.update(blocksSeen, runtime.camera);
+      bands.update(blocksSmooth, runtime.camera);
       pending.update(dt, t);
-      xchFish.update(t, blocksSeen);
-      catFish.update(t, blocksSeen);
-      jellies.update(runtime.camera, t, blocksSeen);
-      turtles.update(dt, t, blocksSeen);
+      xchFish.update(t, blocksSmooth);
+      catFish.update(t, blocksSmooth);
+      jellies.update(runtime.camera, t, blocksSmooth);
+      turtles.update(dt, t, blocksSmooth);
       vfx.update(dt, t);
       for (const fn of frameCallbacks) fn();
     });

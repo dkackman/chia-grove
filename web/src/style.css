@@ -622,6 +622,13 @@ body {
   }
 }
 
+#board-nav[hidden] {
+  /* `display: flex` below beats the [hidden] user-agent default, so without
+     this the empty nav leaks into every other theme as a dark pill at the
+     top of the frame */
+  display: none;
+}
+
 #board-nav {
   position: fixed;
   top: 14px;
@@ -674,9 +681,12 @@ body {
 
 #lake-strip {
   position: fixed;
-  top: 12px;
-  left: 50%;
-  transform: translateX(-50%);
+  /* bottom-left: the band height labels billboard at the camera's bearing, so
+     they always project at the horizontal center of the frame — a top-centered
+     strip sat exactly on the newest label. Legend is top-left, status
+     top-right, console bottom-right; this corner is the quiet one. */
+  bottom: 24px;
+  left: 16px;
   font:
     12px/1.4 ui-monospace,
     monospace;
