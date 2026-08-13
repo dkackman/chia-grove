@@ -29,6 +29,16 @@ test("fee-heavy blocks shade warm, bounded, and junk fees read as zero", () => {
   expect(feeWarmth("10000000000")).toBeGreaterThan(feeWarmth("1000000"));
 });
 
+test("fees in the range blocks actually carry get a visible warmth spread", () => {
+  // the demo feed's observed span, 7.3e7–9e8 mojos — a 12× fee spread must
+  // not collapse into a hair's width of warmth the way the shipped curve did
+  const low = feeWarmth("73000000");
+  const high = feeWarmth("900000000");
+  expect(high - low).toBeGreaterThan(0.3);
+  expect(low).toBeGreaterThan(0);
+  expect(high).toBeLessThanOrEqual(1);
+});
+
 test("one ring per block, wrapping at the column depth", () => {
   const bands = new Bands(new THREE.Scene());
   for (let h = 0; h < MAX_BANDS + 5; h++) bands.push(block(h), h);

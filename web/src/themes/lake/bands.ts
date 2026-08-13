@@ -4,15 +4,25 @@ import { MAX_BANDS, RIM_RADIUS, bandDepth } from "./layout.js";
 import { LAKE } from "./palette.js";
 
 /**
- * Fee level (mojos) at which a ring is fully warm: ~0.01 XCH. Chia block fees
- * are typically well under 0.001 XCH, so saturating any higher would pin the
- * warmth channel at zero for nearly every block and waste the encoding —
- * this keeps realistically fee-heavy blocks in the visible part of the curve.
+ * Warmth window in log10(mojos): 1e7 (0.00001 XCH) is cold, 1e9 (0.001 XCH)
+ * is fully warm. Calibrated to the band block fees actually occupy — mainnet
+ * blocks mostly land between ~1e7 and ~1e9 mojos total, and the demo feed
+ * spans 7e7–9e8. The shipped curve normalized log10(fees) against log10(1e10)
+ * instead, which compressed a 12× fee spread into a 0.10 warmth spread and
+ * rendered every ring the same tan; a window over the occupied decades is
+ * what gives the channel visible spread.
  */
-const FEE_FULL = 1e10;
+const FEE_LOG_COLD = 7;
+const FEE_LOG_SPAN = 2;
 /** Spend count at which a ring is fully bright. */
 const SPENDS_FULL = 120;
 const RING_TUBE = 0.07;
+/**
+ * Overall ring level. Rings are strata markers, not the subject — additively
+ * blended near-white at full brightness they out-shout the creatures, which
+ * are the actual data, so the whole channel is pulled down to a murmur.
+ */
+const RING_LEVEL = 0.55;
 /** How far down the column a ring has faded to nothing. */
 const FADE_BANDS = MAX_BANDS;
 /** Labels only on the newest few bands; the deep column stays quiet. */
@@ -40,7 +50,7 @@ export function ringBrightness(spendCount: number): number {
 export function feeWarmth(fees: string): number {
   const mojos = Number(fees);
   if (!Number.isFinite(mojos) || mojos <= 0) return 0;
-  return Math.min(1, Math.log10(1 + mojos) / Math.log10(1 + FEE_FULL));
+  return Math.min(1, Math.max(0, (Math.log10(1 + mojos) - FEE_LOG_COLD) / FEE_LOG_SPAN));
 }
 
 /** Band age (in blocks) → label opacity. Pure. */
@@ -155,13 +165,13 @@ export class Bands {
       // vertical scale thickens the tube for a busy block without moving the
       // ring's radius, which a uniform scale would
       const brightness = ringBrightness(entry.spendCount);
-      this.scale.set(1, 1 + brightness * 2.5, 1);
+      this.scale.set(1, 1 + brightness * 1.1, 1);
       this.matrix.compose(this.position, this.quaternion, this.scale);
       this.mesh.setMatrixAt(i, this.matrix);
 
       const fade = Math.max(0, 1 - Math.max(0, age) / FADE_BANDS);
       this.color.copy(this.base).lerp(this.warm, feeWarmth(entry.fees));
-      this.color.multiplyScalar(brightness * fade * fade);
+      this.color.multiplyScalar(brightness * fade * fade * RING_LEVEL);
       this.mesh.setColorAt(i, this.color);
 
       const sprite = this.labels[i];
@@ -193,6 +203,9 @@ export class Bands {
         this.entries[i] = null;
         this.matrix.makeScale(0, 0, 0);
         this.mesh.setMatrixAt(i, this.matrix);
+        const material = this.labels[i].material as THREE.SpriteMaterial;
+        material.map?.dispose(); // orphaned band, orphaned texture — same idiom as push
+        material.map = null;
         this.labels[i].visible = false;
         clearedAny = true;
       } else if (entry) {
