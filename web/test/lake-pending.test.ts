@@ -85,6 +85,27 @@ test("a block releases silhouettes, which sink past the newest band and vanish",
   expect(pending.falling()).toBe(0);
 });
 
+test("a release visibly drains the churn layer by the released count", () => {
+  const pending = new Pending(new THREE.Scene(), 100);
+  pending.setMempool(5000, String(5000 * 1e7));
+  expect(pending.lit()).toBe(100);
+  expect(pending.release(30, 0)).toBe(30);
+  // detaches, not duplicates: the layer thins while the silhouettes fall
+  expect(pending.lit()).toBe(70);
+  // the next ambient snapshot restores truth from the real mempool size
+  pending.setMempool(5000, String(5000 * 1e7));
+  expect(pending.lit()).toBe(100);
+});
+
+test("released fall slots carry distinct swim phases — churn, not a parade", () => {
+  const pending = new Pending(new THREE.Scene(), 10);
+  const phase = pending.mesh.geometry.getAttribute("aSwimPhase") as THREE.BufferAttribute;
+  const seen = new Set<number>();
+  for (let n = 0; n < 8; n++) seen.add(phase.getX(pending.fallSlotIndex(n)));
+  expect(seen.size).toBeGreaterThan(1);
+  for (const p of seen) expect(p).not.toBe(0);
+});
+
 test("a block bigger than the mempool releases what there is and no more", () => {
   const pending = new Pending(new THREE.Scene(), 100);
   pending.setMempool(250, String(250 * 1e7)); // 5 lit

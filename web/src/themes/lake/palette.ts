@@ -12,5 +12,5 @@ export const LAKE = {
   predator: 0x0a1c26,
   rim: 0x7fd4e8, // rim rings marking each block's band
   rimWarm: 0xe8c07f, // fee-heavy blocks shade the ring warm
-  pending: 0x1c4a63, // mempool silhouettes: barely above the fog
+  pending: 0x4a7d99, // mempool silhouettes: desaturated slate, clear of the fog but duller than any creature
 } as const;

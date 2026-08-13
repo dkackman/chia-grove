@@ -15,7 +15,11 @@ const MEMPOOL_FULL = 5000;
 /** Average cost per pending spend at which churn is fully agitated. */
 const COST_FULL = 5e8;
 const CHURN_CAP = 600;
-const SILHOUETTE_SIZE = 0.32;
+// Sized to read as a churning layer from the adaptive framing distance
+// (~60–86 units out) — at the shipped 0.32 the silhouettes were dust specks
+// and one of the theme's three story beats was illegible. Still well under
+// creature scale: these must be visible, not competitive.
+const SILHOUETTE_SIZE = 0.6;
 /** Reserved tail-region instance slots for released silhouettes mid-descent. */
 const FALL_CAP = 200;
 /** Seconds a released silhouette takes to sink through the newest band. */
@@ -126,6 +130,10 @@ export class Pending {
         bob: rand() * Math.PI * 2,
       };
     });
+    // the fall-region slots need phases too: released silhouettes all flexing
+    // in perfect synchrony would turn the scene's one dramatic beat into a
+    // parade. Drawn after the churn slots so their seeds are undisturbed.
+    for (let i = cap; i < cap + FALL_CAP; i++) phase.setX(i, rand() * Math.PI * 2);
     phase.needsUpdate = true;
 
     this.falls = Array.from({ length: FALL_CAP }, () => ({
@@ -175,6 +183,10 @@ export class Pending {
       fall.bornAt = t;
       fall.active = true;
     }
+    // the churn layer actually thins — without this the tail keeps rendering
+    // at full strength and the descent reads as duplication, not detachment.
+    // The next setMempool restores truth from the real mempool size.
+    this.litSlots -= n;
     return n;
   }
 
