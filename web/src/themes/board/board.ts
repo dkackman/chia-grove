@@ -19,7 +19,7 @@ import {
   HEIGHT_COLS,
 } from "./rows.js";
 import type { DisplayRow } from "./rows.js";
-import { fitDistance } from "./fit.js";
+import { fitDistance } from "../shared/fit.js";
 import { BlockDetail, type DetailStatus } from "./detail.js";
 import { readBlockParam, writeBlockParam } from "./url-state.js";
 import { BoardNav } from "./block-nav.js";

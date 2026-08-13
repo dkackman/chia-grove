@@ -5,18 +5,10 @@ import { createFrameLimiter } from "../shared/frame-limiter.js";
 import { createOrbitControl } from "../shared/orbit.js";
 import { createPostFx } from "../shared/postfx.js";
 import { createBed } from "./bed.js";
-import { BED_Y, TOP_BAND_Y, easeBlocks } from "./layout.js";
+import { LAKE_FOV, ORBIT_RATE, frameTarget } from "./camera.js";
+import { MAX_BANDS, easeBlocks } from "./layout.js";
 import { LAKE } from "./palette.js";
 import { createLakeWater } from "./water.js";
-
-/**
- * Where the camera hangs in the column. Centered between the surface and the
- * bed (rather than hugging the surface) so both ends of the water column
- * land inside the frustum at once — a wide vertical FOV plus this midpoint
- * height is what gets the ceiling and the bed into the same shot.
- */
-const CAM_Y = (TOP_BAND_Y + BED_Y) / 2;
-const CAM_RADIUS = 34;
 
 export function startLake(canvas: HTMLCanvasElement, feed: GroveFeed) {
   const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -28,9 +20,7 @@ export function startLake(canvas: HTMLCanvasElement, feed: GroveFeed) {
   const orbit = createOrbitControl(canvas);
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(LAKE.deep);
-  // A wide vertical FOV so the midpoint camera height still catches both the
-  // surface (up) and the bed (down) inside the frame instead of only one.
-  const camera = new THREE.PerspectiveCamera(84, innerWidth / innerHeight, 0.1, 400);
+  const camera = new THREE.PerspectiveCamera(LAKE_FOV, innerWidth / innerHeight, 0.1, 400);
 
   const water = createLakeWater(scene);
   const bed = createBed(scene);
@@ -66,6 +56,17 @@ export function startLake(canvas: HTMLCanvasElement, feed: GroveFeed) {
   // still uses the integer counter, so bornBlock stays exact.
   let blocksSmooth = 0;
 
+  // Eased camera state. Neither is a function of time — see frameTarget.
+  // Seeded from the empty framing so the first frame does not sweep in from
+  // the origin.
+  let camDistance = 0;
+  let camCenterY = 0;
+  {
+    const initial = frameTarget(0, LAKE_FOV, camera.aspect);
+    camDistance = initial.distance;
+    camCenterY = initial.centerY;
+  }
+
   feed.onEvent((event: GroveEvent) => {
     switch (event.type) {
       case "block":
@@ -97,14 +98,16 @@ export function startLake(canvas: HTMLCanvasElement, feed: GroveFeed) {
     const dt = Math.min(timer.getDelta(), 0.1);
     const t = timer.getElapsed();
 
-    const angle = (reducedMotion ? 0.6 : t * 0.02) + orbit.getOffset();
-    const y = reducedMotion ? CAM_Y : CAM_Y + Math.sin(t * 0.05) * 2.2;
-    camera.position.set(Math.cos(angle) * CAM_RADIUS, y, Math.sin(angle) * CAM_RADIUS);
-    // Look toward the column's centerline, with only a light upward bias.
-    // Combined with the wide FOV and the midpoint camera height, this keeps
-    // the bright surface in the upper part of the frame and a dim glimpse of
-    // the bed in the lower part — both ends of the water column at once.
-    camera.lookAt(0, y + 2, 0);
+    const target = frameTarget(Math.min(blocksSeen, MAX_BANDS), LAKE_FOV, camera.aspect);
+    // ease at the same rate the bands sink, so framing and sinking read as one
+    // motion rather than two systems arguing
+    const k = 1 - Math.exp(-dt * 0.8);
+    camDistance += (target.distance - camDistance) * k;
+    camCenterY += (target.centerY - camCenterY) * k;
+
+    const angle = (reducedMotion ? 0.6 : t * ORBIT_RATE) + orbit.getOffset();
+    camera.position.set(Math.cos(angle) * camDistance, camCenterY, Math.sin(angle) * camDistance);
+    camera.lookAt(0, camCenterY, 0);
 
     water.update(t);
     bed.update(t);
