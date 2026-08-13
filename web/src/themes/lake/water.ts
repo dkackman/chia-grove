@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { MAX_FRAME_DISTANCE } from "./camera.js";
 import { LAKE } from "./palette.js";
 import { clarityFromNetspace } from "./scales.js";
 
@@ -6,6 +7,16 @@ import { clarityFromNetspace } from "./scales.js";
 export const SURFACE_Y = 0;
 
 const SHAFT_COUNT = 7;
+
+/**
+ * Nearest god-ray radius: derived from the camera's framing ceiling rather
+ * than asserted as a bare number, so reshaping the framing cannot silently
+ * strand the shafts between the camera and the column again. The 8-unit
+ * margin is glide room — the camera passes the nearest cone at that range,
+ * and up close a hollow double-sided cone reads as a solid, hard-edged spike
+ * rather than a soft shaft. `lake-layout.test.ts` pins the relation.
+ */
+export const SHAFT_RADIUS_MIN = MAX_FRAME_DISTANCE + 8;
 
 /**
  * The surface plane, rotated to face DOWN — this theme only ever views it from
@@ -93,17 +104,18 @@ export function createLakeWater(scene: THREE.Scene): LakeWater {
   scene.add(new THREE.HemisphereLight(0x9fd8f0, 0x14202a, 1.1));
 
   // God rays: thin, near-invisible additive cones hanging from the surface,
-  // parked well outside the camera's orbit radius (CAM_RADIUS in lake.ts is
-  // 34) so the camera glides past them at a distance instead of clipping
-  // through their walls — up close a hollow double-sided cone reads as a
-  // solid, hard-edged spike rather than a soft shaft. fog:false keeps them
-  // from being eaten by their own depth fog.
-  const shaftGeo = new THREE.ConeGeometry(1.8, 70, 6, 1, true);
-  shaftGeo.translate(0, -35, 0);
+  // parked beyond SHAFT_RADIUS_MIN — outside everywhere the adaptive framing
+  // can stand the camera — so they always read as background light past the
+  // column, never as geometry between the lens and the rings. fog:false keeps
+  // them from being eaten by their own depth fog. Fatter and taller than they
+  // were at the old fixed orbit: at 100+ units out a 1.8-radius cone
+  // disappears into a hairline.
+  const shaftGeo = new THREE.ConeGeometry(3, 110, 6, 1, true);
+  shaftGeo.translate(0, -55, 0);
   const shafts: THREE.Mesh[] = [];
   for (let i = 0; i < SHAFT_COUNT; i++) {
     const angle = (i / SHAFT_COUNT) * Math.PI * 2;
-    const radius = 42 + (i % 3) * 12;
+    const radius = SHAFT_RADIUS_MIN + (i % 3) * 14;
     const shaft = new THREE.Mesh(
       shaftGeo,
       new THREE.MeshBasicMaterial({

@@ -16,6 +16,17 @@ export const ORBIT_RATE = 0.012;
 const MIN_DISTANCE = RIM_RADIUS + 8;
 
 /**
+ * Hard ceiling on the framing distance. Fitting the full column at 16:9 needs
+ * ~86, so the cap never binds on a landscape viewport; it exists for narrow
+ * portrait aspects, where the width fit would otherwise push the camera
+ * arbitrarily far and the column's edges may as well crop instead. It is also
+ * the bound `water.ts` parks the god-ray cones beyond, so nothing can drift
+ * between the camera and the column — `lake-layout.test.ts` pins that
+ * relation.
+ */
+export const MAX_FRAME_DISTANCE = 92;
+
+/**
  * Where the camera should stand to frame everything that currently exists:
  * the churn layer at the top down to the deepest occupied band. An empty lake
  * frames the shallows; a full one pulls back to the whole column. This is the
@@ -39,6 +50,12 @@ export function frameTarget(
   const bottom = bandDepth(filled);
   const contentH = top - bottom;
   const contentW = RIM_RADIUS * 2;
-  const distance = Math.max(MIN_DISTANCE, fitDistance(contentW, contentH, vFovDeg, aspect));
+  // fitDistance frames a centered flat plane, but the lake is a cylinder of
+  // radius RIM_RADIUS: the fit answers for the column's NEAR face, while the
+  // camera orbits the axis one radius further back. Without the added radius
+  // the nearest ring arc ends up just a few units from the lens and the scene
+  // reads as standing inside a barrel of hoops.
+  const fit = fitDistance(contentW, contentH, vFovDeg, aspect) + RIM_RADIUS;
+  const distance = Math.min(MAX_FRAME_DISTANCE, Math.max(MIN_DISTANCE, fit));
   return { distance, centerY: (top + bottom) / 2 };
 }

@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { frameTarget, LAKE_FOV } from "../src/themes/lake/camera.js";
+import { frameTarget, LAKE_FOV, MAX_FRAME_DISTANCE } from "../src/themes/lake/camera.js";
 import { MAX_BANDS, RIM_RADIUS, PENDING_Y_MAX, bandDepth } from "../src/themes/lake/layout.js";
 
 const ASPECT = 16 / 9;
@@ -24,6 +24,26 @@ test("the framing never pulls the camera inside the rim rings", () => {
   for (let n = 0; n <= MAX_BANDS; n++) {
     expect(frameTarget(n, LAKE_FOV, ASPECT).distance).toBeGreaterThan(RIM_RADIUS);
   }
+});
+
+test("the near ring arc never fills the frame — fit distance is measured past the radius", () => {
+  // frameTarget frames a cylinder, not a plane: the fit answers for the near
+  // face, so the axis distance must leave at least the fit's worth of room
+  // in front of the nearest ring arc. The shipped bug collapsed this gap to
+  // 8 units and the scene read as standing inside a barrel of hoops.
+  for (let n = 0; n <= MAX_BANDS; n++) {
+    const { distance } = frameTarget(n, LAKE_FOV, ASPECT);
+    expect(distance - RIM_RADIUS).toBeGreaterThan(RIM_RADIUS);
+  }
+});
+
+test("framing is bounded, and the cap does not bind on a landscape viewport", () => {
+  for (let n = 0; n <= MAX_BANDS; n++) {
+    expect(frameTarget(n, LAKE_FOV, ASPECT).distance).toBeLessThanOrEqual(MAX_FRAME_DISTANCE);
+  }
+  // at 16:9 the full column fits inside the ceiling — the cap exists for
+  // narrow portrait aspects, not for the common case
+  expect(frameTarget(MAX_BANDS, LAKE_FOV, ASPECT).distance).toBeLessThan(MAX_FRAME_DISTANCE);
 });
 
 test("the look target stays inside the column", () => {

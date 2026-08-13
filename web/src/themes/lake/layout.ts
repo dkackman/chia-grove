@@ -30,8 +30,9 @@ export const BAND_RADIUS_MAX = 26;
 
 /**
  * Where the per-band rim rings sit: outside the creature annulus so they never
- * intersect a fish, and inside the god-ray cones (parked at 42–66) so the
- * camera has somewhere to stand between the two.
+ * intersect a fish, and inside the god-ray cones (parked beyond the camera's
+ * framing ceiling — see SHAFT_RADIUS_MIN in water.ts) so the camera has
+ * somewhere to stand between the two.
  */
 export const RIM_RADIUS = 28;
 

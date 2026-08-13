@@ -13,7 +13,8 @@ import {
   seatOffset,
   easeBlocks,
 } from "../src/themes/lake/layout.js";
-import { SURFACE_Y } from "../src/themes/lake/water.js";
+import { SURFACE_Y, SHAFT_RADIUS_MIN } from "../src/themes/lake/water.js";
+import { MAX_FRAME_DISTANCE } from "../src/themes/lake/camera.js";
 
 test("the newest band sits at the top of the column", () => {
   expect(bandDepth(0)).toBeCloseTo(TOP_BAND_Y, 5);
@@ -61,7 +62,14 @@ test("the churn layer sits clear of the surface and of band 0", () => {
 
 test("the rim rings sit outside the creatures and inside the god rays", () => {
   expect(RIM_RADIUS).toBeGreaterThan(BAND_RADIUS_MAX);
-  expect(RIM_RADIUS).toBeLessThan(42); // the nearest god-ray cone
+  expect(RIM_RADIUS).toBeLessThan(SHAFT_RADIUS_MIN);
+});
+
+test("the god rays sit beyond everywhere the camera can stand", () => {
+  // the shafts must never end up between the lens and the column — a hollow
+  // double-sided cone seen up close reads as a hard-edged spike, and a shaft
+  // in front of the rings breaks the depth story entirely
+  expect(SHAFT_RADIUS_MIN).toBeGreaterThan(MAX_FRAME_DISTANCE);
 });
 
 test("a coin always gets the same swim circuit", () => {
