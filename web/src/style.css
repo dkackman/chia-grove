@@ -326,6 +326,46 @@ body {
   background: #5bbb5b;
   border: 1px solid rgba(0, 0, 0, 0.3);
 }
+.sw-fish {
+  width: 11px;
+  height: 6px;
+  border-radius: 50% 20% 20% 50%;
+  background: #d8e9a8;
+}
+.sw-school {
+  width: 11px;
+  height: 6px;
+  border-radius: 50% 20% 20% 50%;
+  background: linear-gradient(90deg, #4fd0c0, #3a8fd0);
+}
+.sw-jelly {
+  border-radius: 50% 50% 30% 30%;
+  background: #c9a6e8;
+  box-shadow: 0 0 6px rgba(201, 166, 232, 0.8);
+}
+.sw-turtle {
+  border-radius: 50%;
+  background: #7a9a5d;
+  border: 1px solid #51663d;
+}
+.sw-pending {
+  width: 6px;
+  height: 6px;
+  margin: 0 2px;
+  border-radius: 50%;
+  background: #1c4a63;
+  border: 1px solid rgba(191, 232, 255, 0.4);
+}
+.sw-rim {
+  background: transparent;
+  border: 2px solid rgba(127, 212, 232, 0.8);
+  box-shadow: 0 0 5px rgba(127, 212, 232, 0.5);
+}
+.sw-shaft {
+  width: 5px;
+  height: 13px;
+  background: linear-gradient(to bottom, #a8e0f5, rgba(168, 224, 245, 0));
+}
 
 #console {
   position: fixed;
@@ -582,6 +622,13 @@ body {
   }
 }
 
+#board-nav[hidden] {
+  /* `display: flex` below beats the [hidden] user-agent default, so without
+     this the empty nav leaks into every other theme as a dark pill at the
+     top of the frame */
+  display: none;
+}
+
 #board-nav {
   position: fixed;
   top: 14px;
@@ -630,4 +677,26 @@ body {
 #board-nav-controls {
   display: flex;
   gap: 8px;
+}
+
+#lake-strip {
+  position: fixed;
+  /* bottom-left: the band height labels billboard at the camera's bearing, so
+     they always project at the horizontal center of the frame — a top-centered
+     strip sat exactly on the newest label. Legend is top-left, status
+     top-right, console bottom-right; this corner is the quiet one. */
+  bottom: 24px;
+  left: 16px;
+  font:
+    12px/1.4 ui-monospace,
+    monospace;
+  color: #a8e0f5;
+  pointer-events: none;
+  text-shadow: 0 1px 3px rgba(2, 8, 6, 0.9);
+}
+
+@media (max-width: 640px) {
+  #lake-strip {
+    font-size: 10px;
+  }
 }

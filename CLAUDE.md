@@ -8,7 +8,7 @@ This is an npm workspaces monorepo with three packages. Each has its own `CLAUDE
 
 - **[`shared/`](shared/CLAUDE.md)** — TypeScript event types only (`@grove/shared`). No build step; both server and web import `.ts` source directly.
 - **[`server/`](server/CLAUDE.md)** — Node/Fastify process that polls the Chia blockchain and serves the frontend.
-- **[`web/`](web/CLAUDE.md)** — Three.js browser app that renders the 3D scene (five themes: grove, farm, gallery, mine, board).
+- **[`web/`](web/CLAUDE.md)** — Three.js browser app that renders the 3D scene (six themes: grove, farm, gallery, mine, board, lake).
 
 ## Commands
 

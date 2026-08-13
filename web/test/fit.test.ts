@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { fitDistance } from "../src/themes/board/fit.js";
+import { fitDistance } from "../src/themes/shared/fit.js";
 
 test("square content in a square viewport fits at the height distance", () => {
   // vFov 90° → tan(45°)=1, so half-extent = distance; a 10×10 box needs distance 5
