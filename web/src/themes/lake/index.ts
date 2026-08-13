@@ -37,7 +37,7 @@ export const lake: Visualization = {
     runtime.setSproutHandler((event, blocksSeen) => {
       if (event.mint) vfx.beacon(seatOffset(event.coinId).radius, clock.t);
       if (event.kind === "xch") {
-        xchFish.plant(event, blocksSeen, fishSize(event.amount), null);
+        xchFish.plant(event, blocksSeen, fishSize(event.amount), null, 0, clock.t);
         return;
       }
       if (event.kind === "cat") {
@@ -45,7 +45,7 @@ export const lake: Visualization = {
         schoolColor.setHSL(h, s, l);
         const count = schoolSize(event.amount);
         for (let member = 0; member < count; member++) {
-          catFish.plant(event, blocksSeen, 0.5, schoolColor, member);
+          catFish.plant(event, blocksSeen, 0.5, schoolColor, member, clock.t);
         }
         return;
       }
@@ -54,10 +54,10 @@ export const lake: Visualization = {
         // spend; transfers spend it again) arrives as repeat events — one jellyfish
         // per launcher id, the way the gallery dedupes its canvases
         if (event.launcherId && jellies.has(event.launcherId)) return;
-        jellies.plant(event, blocksSeen);
+        jellies.plant(event, blocksSeen, clock.t);
         return;
       }
-      if (event.kind === "did") turtles.plant(event, blocksSeen);
+      if (event.kind === "did") turtles.plant(event, blocksSeen, clock.t);
     });
     runtime.setReorgHandler((forkHeight) => {
       xchFish.clearAbove(forkHeight);

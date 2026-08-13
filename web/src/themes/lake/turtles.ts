@@ -3,6 +3,7 @@ import type { SproutEvent } from "@grove/shared";
 import { bandDepth, seatOffset } from "./layout.js";
 import { turtleStroke } from "./motion.js";
 import { LAKE } from "./palette.js";
+import { entryScale, entryDrop } from "./entry.js";
 
 const TURTLE_CAP = 30;
 
@@ -37,6 +38,7 @@ interface Turtle {
   flippers: THREE.Mesh[];
   meta: SproutEvent | null;
   bornBlock: number;
+  bornAt: number;
   radius: number;
   angle: number; // integrated per frame — surge speeds it up mid-stroke
   speed: number;
@@ -107,6 +109,7 @@ export class Turtles {
         flippers,
         meta: null,
         bornBlock: 0,
+        bornAt: 0,
         radius: 0,
         angle: 0,
         speed: 0,
@@ -115,7 +118,7 @@ export class Turtles {
     });
   }
 
-  plant(event: SproutEvent, bornBlock: number): void {
+  plant(event: SproutEvent, bornBlock: number, bornAt = 0): void {
     const slot = this.next;
     const turtle = this.pool[slot];
     this.next = (this.next + 1) % this.cap;
@@ -123,6 +126,7 @@ export class Turtles {
     const seat = seatOffset(event.coinId);
     turtle.meta = event;
     turtle.bornBlock = bornBlock;
+    turtle.bornAt = bornAt;
     turtle.radius = seat.radius * 1.05;
     turtle.angle = seat.angle;
     turtle.speed = seat.speed * 0.25; // patient
@@ -135,11 +139,17 @@ export class Turtles {
       if (!turtle.meta) continue;
       const stroke = turtleStroke(t * 1.6 + turtle.bob);
       turtle.angle += turtle.speed * stroke.surge * dt;
+      const entryAge = t - turtle.bornAt;
       turtle.group.position.set(
         Math.cos(turtle.angle) * turtle.radius,
-        bandDepth(blocksSeen - turtle.bornBlock) + Math.sin(t * 0.35 + turtle.bob) * 0.4,
+        bandDepth(blocksSeen - turtle.bornBlock) +
+          Math.sin(t * 0.35 + turtle.bob) * 0.4 +
+          entryDrop(entryAge),
         Math.sin(turtle.angle) * turtle.radius
       );
+      // the flipper stroke is untouched by this — only the group's overall
+      // size grows in, so a resolving turtle still paddles at full cadence
+      turtle.group.scale.setScalar(entryScale(entryAge));
       // the head points +Z, so yaw by -angle lines it up with the tangent
       turtle.group.rotation.y = -turtle.angle;
       turtle.group.rotation.x = -stroke.pitch; // nose-up during the glide

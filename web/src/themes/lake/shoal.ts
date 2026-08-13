@@ -4,6 +4,7 @@ import { BAND_RADIUS_MAX, BED_Y, TOP_BAND_Y, bandDepth, seatOffset } from "./lay
 import type { Seat } from "./layout.js";
 import { fishGeometry, applySwimShader } from "./bodies.js";
 import { wanderedRadius, wanderedAngle, bankRoll } from "./motion.js";
+import { entryScale, entryDrop } from "./entry.js";
 
 const WHITE = new THREE.Color(0xffffff);
 const HIGHLIGHT_BOOST = 2.2;
@@ -13,6 +14,7 @@ const BOB_AMPLITUDE = 0.35;
 interface FishSlot {
   meta: SproutEvent | null;
   bornBlock: number;
+  bornAt: number;
   seat: Seat;
   size: number;
   baseColor: THREE.Color;
@@ -67,6 +69,7 @@ export class Shoal {
     this.slots = Array.from({ length: cap }, () => ({
       meta: null,
       bornBlock: 0,
+      bornAt: 0,
       seat: { radius: 0, angle: 0, bob: 0, speed: 0, wanderPhase: 0, wanderRate: 0.2 },
       size: 1,
       baseColor: WHITE.clone(),
@@ -97,7 +100,8 @@ export class Shoal {
     bornBlock: number,
     size: number,
     color: THREE.Color | null,
-    member = 0
+    member = 0,
+    bornAt = 0
   ): void {
     const i = this.next;
     this.next = (this.next + 1) % this.slots.length;
@@ -107,6 +111,7 @@ export class Shoal {
     const slot = this.slots[i];
     slot.meta = event;
     slot.bornBlock = bornBlock;
+    slot.bornAt = bornAt;
     slot.seat = {
       ...seat,
       radius: seat.radius + member * 0.4,
@@ -133,8 +138,11 @@ export class Shoal {
       const seat = slot.seat;
       const angle = wanderedAngle(seat, t);
       const radius = wanderedRadius(seat, t);
+      const entryAge = t - slot.bornAt;
       const y =
-        bandDepth(blocksSeen - slot.bornBlock) + Math.sin(t * 0.8 + seat.bob) * BOB_AMPLITUDE;
+        bandDepth(blocksSeen - slot.bornBlock) +
+        Math.sin(t * 0.8 + seat.bob) * BOB_AMPLITUDE +
+        entryDrop(entryAge);
       // Heading: the fish points +X; the circuit tangent at `angle` is
       // (-sin a, cos a) in XZ, and a Y-rotation by θ sends +X to (cos θ, -sin θ),
       // so θ = -(a + π/2) lines the nose up with the tangent.
@@ -144,7 +152,7 @@ export class Shoal {
       this.matrix.compose(
         this.position.set(Math.cos(angle) * radius, y, Math.sin(angle) * radius),
         this.quaternion,
-        this.scale.setScalar(slot.size)
+        this.scale.setScalar(slot.size * entryScale(entryAge))
       );
       this.mesh.setMatrixAt(i, this.matrix);
     }

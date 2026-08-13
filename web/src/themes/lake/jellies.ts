@@ -7,6 +7,7 @@ import { sensitivePlaceholderTexture } from "../shared/textures.js";
 import { bandDepth, seatOffset } from "./layout.js";
 import { jellyPulse, PULSE_SKEW } from "./motion.js";
 import { LAKE } from "./palette.js";
+import { entryScale, entryDrop } from "./entry.js";
 
 const JELLY_CAP = 40;
 const PLACEHOLDER = 0x9fb6c9;
@@ -66,6 +67,7 @@ interface Jelly {
   phase: number;
   meta: SproutEvent | null;
   bornBlock: number;
+  bornAt: number;
   radius: number;
   angle: number;
   speed: number;
@@ -177,6 +179,7 @@ export class Jellies {
         phase,
         meta: null,
         bornBlock: 0,
+        bornAt: 0,
         radius: 0,
         angle: 0,
         speed: 0,
@@ -184,7 +187,7 @@ export class Jellies {
     });
   }
 
-  plant(event: SproutEvent, bornBlock: number): void {
+  plant(event: SproutEvent, bornBlock: number, bornAt = 0): void {
     const slot = this.next;
     const j = this.pool[slot];
     this.next = (this.next + 1) % this.cap;
@@ -196,6 +199,7 @@ export class Jellies {
     const seat = seatOffset(event.coinId);
     j.meta = event;
     j.bornBlock = bornBlock;
+    j.bornAt = bornAt;
     // jellyfish drift on a tighter, slower circuit than the fish
     j.radius = seat.radius * 0.8;
     j.angle = seat.angle;
@@ -251,11 +255,15 @@ export class Jellies {
       j.tentacleUniforms.uTime.value = t;
       const angle = j.angle + t * j.speed;
       const { lift } = jellyPulse(t * PULSE_FREQ + j.phase);
+      const entryAge = t - j.bornAt;
       j.group.position.set(
         Math.cos(angle) * j.radius,
-        bandDepth(blocksSeen - j.bornBlock) + lift * 0.55,
+        bandDepth(blocksSeen - j.bornBlock) + lift * 0.55 + entryDrop(entryAge),
         Math.sin(angle) * j.radius
       );
+      // the bell pulse lives in the GPU shader (squeeze/rim), untouched here;
+      // the entry envelope only scales the whole group, so the two compose
+      j.group.scale.setScalar(entryScale(entryAge));
       // same-Y lookAt is a pure yaw, so the dome stays upright while the art
       // panel turns to face the camera — the trick `Paintings.update` uses
       j.group.lookAt(camera.position.x, j.group.position.y, camera.position.z);
