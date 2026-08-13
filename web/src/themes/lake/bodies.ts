@@ -130,8 +130,8 @@ export interface SwimOpts {
 }
 
 /**
- * Spine undulation in the vertex shader — the weed-sway onBeforeCompile
- * pattern. Displacement is lateral (z), ramping from zero at the nose to full
+ * Spine undulation in the vertex shader — the same onBeforeCompile
+ * displacement pattern `water.ts` uses for the surface wave. Displacement is lateral (z), ramping from zero at the nose to full
  * at the tail. Instanced bodies read a per-instance constant phase from an
  * `aSwimPhase` InstancedBufferAttribute (seeded per fish by the caller, e.g.
  * `shoal.ts`'s `plant()`) and divide the beat frequency by the instance

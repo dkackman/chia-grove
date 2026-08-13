@@ -4,7 +4,6 @@ import type { GroveFeed } from "../../net/feed.js";
 import { createFrameLimiter } from "../shared/frame-limiter.js";
 import { createOrbitControl } from "../shared/orbit.js";
 import { createPostFx } from "../shared/postfx.js";
-import { createBed } from "./bed.js";
 import { LAKE_FOV, ORBIT_RATE, frameTarget } from "./camera.js";
 import { MAX_BANDS, easeBlocks } from "./layout.js";
 import { LAKE } from "./palette.js";
@@ -23,7 +22,6 @@ export function startLake(canvas: HTMLCanvasElement, feed: GroveFeed) {
   const camera = new THREE.PerspectiveCamera(LAKE_FOV, innerWidth / innerHeight, 0.1, 400);
 
   const water = createLakeWater(scene);
-  const bed = createBed(scene);
 
   const postfx = createPostFx(renderer, scene, camera, {
     toneMapping: THREE.ACESFilmicToneMapping,
@@ -111,7 +109,6 @@ export function startLake(canvas: HTMLCanvasElement, feed: GroveFeed) {
     camera.lookAt(0, camCenterY, 0);
 
     water.update(t);
-    bed.update(t);
     blocksSmooth = easeBlocks(blocksSmooth, blocksSeen, dt);
     extraUpdate(dt, t, blocksSmooth);
     postfx.render();

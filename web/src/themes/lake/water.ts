@@ -46,9 +46,9 @@ export interface LakeWater {
  * the CPU regardless of how finely the plane is subdivided.
  */
 export function createLakeWater(scene: THREE.Scene): LakeWater {
-  // Fog density is tuned so the bed (~60 units down) stays dimly legible at
-  // the default clarity of 0.5, rather than resolving to a black wall a few
-  // bands down. Clearer water (higher clarity) still thins the fog further.
+  // Fog is what the column dissolves INTO now that there is no bed to land on:
+  // tuned so the deepest bands go soft rather than resolving to a black wall a
+  // few bands down. Clearer water (higher clarity) still thins the fog further.
   const fog = new THREE.FogExp2(LAKE.deep, 0.0095);
   scene.fog = fog;
 
@@ -100,7 +100,7 @@ export function createLakeWater(scene: THREE.Scene): LakeWater {
   sun.position.set(18, 60, 10);
   scene.add(sun);
   // Brighter fill than a night theme needs — this is midday light scattering
-  // through open water, and it's what makes the bed and weeds legible at all.
+  // through open water, and it is what keeps the deep bands legible at all.
   scene.add(new THREE.HemisphereLight(0x9fd8f0, 0x14202a, 1.1));
 
   // God rays: thin, near-invisible additive cones hanging from the surface,
@@ -110,8 +110,15 @@ export function createLakeWater(scene: THREE.Scene): LakeWater {
   // them from being eaten by their own depth fog. Fatter and taller than they
   // were at the old fixed orbit: at 100+ units out a 1.8-radius cone
   // disappears into a hairline.
-  const shaftGeo = new THREE.ConeGeometry(3, 110, 6, 1, true);
-  shaftGeo.translate(0, -55, 0);
+  //
+  // The cone points DOWN — wide mouth at the surface, apex in the deep. Built
+  // the other way up it ends in an open rim, and with the lake bed gone there
+  // is nothing to hide that rim behind: it reads as a hard flat cut hanging in
+  // mid-water. Tapering to a point instead lets each shaft thin away into the
+  // dark on the same schedule as everything else in the column.
+  const shaftGeo = new THREE.ConeGeometry(3, 90, 6, 1, true);
+  shaftGeo.rotateZ(Math.PI);
+  shaftGeo.translate(0, -45, 0);
   const shafts: THREE.Mesh[] = [];
   for (let i = 0; i < SHAFT_COUNT; i++) {
     const angle = (i / SHAFT_COUNT) * Math.PI * 2;
@@ -149,8 +156,8 @@ export function createLakeWater(scene: THREE.Scene): LakeWater {
       clarity = clarityFromNetspace(bytes);
       material.emissiveIntensity = 0.9 + clarity * 0.8;
       // clear water → thin fog you can see across; murky → close horizon.
-      // Tuned so the bed (~60 units below the surface) stays dimly visible
-      // even at the murkiest end, rather than resolving to a black wall.
+      // Tuned so the deepest visible bands stay dimly readable even at the
+      // murkiest end, rather than resolving to a black wall.
       fog.density = 0.014 - clarity * 0.009;
       sun.intensity = 0.6 + clarity * 0.9;
     },

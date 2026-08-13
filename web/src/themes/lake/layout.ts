@@ -23,7 +23,7 @@ export const TOP_BAND_Y = -12;
 export const PENDING_Y_MIN = -9;
 export const PENDING_Y_MAX = -2;
 
-export const BED_Y = TOP_BAND_Y - MAX_BANDS * BAND_STEP;
+export const COLUMN_BOTTOM_Y = TOP_BAND_Y - MAX_BANDS * BAND_STEP;
 
 export const BAND_RADIUS_MIN = 6;
 export const BAND_RADIUS_MAX = 26;
@@ -38,7 +38,9 @@ export const RIM_RADIUS = 28;
 
 /**
  * Y of a band `age` blocks old, clamped at both ends. Objects older than
- * MAX_BANDS keep rendering at the bed until their pool slot is recycled.
+ * MAX_BANDS keep rendering at the clamp depth until their pool slot is
+ * recycled — `depthFade` in `entry.ts` shrinks them away before they get there,
+ * so the clamp never reads as a floor.
  */
 export function bandDepth(age: number): number {
   const clamped = Math.max(0, Math.min(MAX_BANDS, age));

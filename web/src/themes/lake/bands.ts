@@ -2,6 +2,7 @@ import * as THREE from "three";
 import type { BlockEvent } from "@grove/shared";
 import { MAX_BANDS, RIM_RADIUS, bandDepth } from "./layout.js";
 import { LAKE } from "./palette.js";
+import { FADE_END_BANDS } from "./entry.js";
 
 /**
  * Warmth window in log10(mojos): 1e7 (0.00001 XCH) is cold, 1e9 (0.001 XCH)
@@ -24,7 +25,9 @@ const RING_TUBE = 0.07;
  */
 const RING_LEVEL = 0.55;
 /** How far down the column a ring has faded to nothing. */
-const FADE_BANDS = MAX_BANDS;
+// Rings dim out on the same schedule creatures shrink out, so a band never
+// outlives its contents as an empty hoop hanging in the dark.
+const FADE_BANDS = FADE_END_BANDS;
 /** Labels only on the newest few bands; the deep column stays quiet. */
 const LABELLED_BANDS = 5;
 const LABEL_RADIUS = RIM_RADIUS + 2.5;

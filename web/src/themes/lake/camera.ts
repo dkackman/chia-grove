@@ -1,10 +1,11 @@
 import { fitDistance } from "../shared/fit.js";
-import { MAX_BANDS, RIM_RADIUS, PENDING_Y_MAX, bandDepth } from "./layout.js";
+import { RIM_RADIUS, PENDING_Y_MAX, bandDepth } from "./layout.js";
+import { FADE_END_BANDS } from "./entry.js";
 
 /**
  * Narrower than the 84° the lake shipped with. The wide FOV existed so a camera
- * parked at the column midpoint caught both the surface and the bed at once;
- * with eighteen thicker bands and adaptive framing it no longer has to, and 84°
+ * parked at the column midpoint caught both the surface and the column floor
+ * at once; with eighteen thicker bands and adaptive framing it no longer has to, and 84°
  * was costing heavy edge distortion on every creature.
  */
 export const LAKE_FOV = 55;
@@ -43,8 +44,12 @@ export function frameTarget(
   vFovDeg: number,
   aspect: number
 ): { distance: number; centerY: number } {
+  // Frame the depth things are still VISIBLE at, not the depth they stop
+  // sinking at. `depthFade` shrinks creatures away by FADE_END_BANDS, so the
+  // bands below that hold nothing worth keeping in shot — framing them anyway
+  // just pushes the camera back and makes everything smaller for no gain.
   const filled = Number.isFinite(bandCount)
-    ? Math.max(0, Math.min(MAX_BANDS, Math.floor(bandCount)))
+    ? Math.max(0, Math.min(FADE_END_BANDS, Math.floor(bandCount)))
     : 0;
   const top = PENDING_Y_MAX;
   const bottom = bandDepth(filled);
@@ -55,7 +60,10 @@ export function frameTarget(
   // camera orbits the axis one radius further back. Without the added radius
   // the nearest ring arc ends up just a few units from the lens and the scene
   // reads as standing inside a barrel of hoops.
-  const fit = fitDistance(contentW, contentH, vFovDeg, aspect) + RIM_RADIUS;
+  // margin 1.0 rather than fitDistance's default 1.06: the column's bottom
+  // dissolves into fog rather than ending on an edge, so there is nothing down
+  // there that needs breathing room around it.
+  const fit = fitDistance(contentW, contentH, vFovDeg, aspect, 1.0) + RIM_RADIUS;
   const distance = Math.min(MAX_FRAME_DISTANCE, Math.max(MIN_DISTANCE, fit));
   return { distance, centerY: (top + bottom) / 2 };
 }

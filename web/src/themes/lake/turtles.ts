@@ -3,7 +3,7 @@ import type { SproutEvent } from "@grove/shared";
 import { bandDepth, seatOffset } from "./layout.js";
 import { turtleStroke } from "./motion.js";
 import { LAKE } from "./palette.js";
-import { entryScale, entryDrop } from "./entry.js";
+import { entryScale, entryDrop, depthFade } from "./entry.js";
 
 const TURTLE_CAP = 30;
 
@@ -140,16 +140,16 @@ export class Turtles {
       const stroke = turtleStroke(t * 1.6 + turtle.bob);
       turtle.angle += turtle.speed * stroke.surge * dt;
       const entryAge = t - turtle.bornAt;
+      const bandAge = blocksSeen - turtle.bornBlock;
       turtle.group.position.set(
         Math.cos(turtle.angle) * turtle.radius,
-        bandDepth(blocksSeen - turtle.bornBlock) +
-          Math.sin(t * 0.35 + turtle.bob) * 0.4 +
-          entryDrop(entryAge),
+        bandDepth(bandAge) + Math.sin(t * 0.35 + turtle.bob) * 0.4 + entryDrop(entryAge),
         Math.sin(turtle.angle) * turtle.radius
       );
       // the flipper stroke is untouched by this — only the group's overall
-      // size grows in, so a resolving turtle still paddles at full cadence
-      turtle.group.scale.setScalar(entryScale(entryAge));
+      // size grows in and out, so a turtle paddles at full cadence for its
+      // whole life, including while it shrinks away into the deep
+      turtle.group.scale.setScalar(entryScale(entryAge) * depthFade(bandAge));
       // the head points +Z, so yaw by -angle lines it up with the tangent
       turtle.group.rotation.y = -turtle.angle;
       turtle.group.rotation.x = -stroke.pitch; // nose-up during the glide

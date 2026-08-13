@@ -1,10 +1,10 @@
 import * as THREE from "three";
 import type { SproutEvent } from "@grove/shared";
-import { BAND_RADIUS_MAX, BED_Y, TOP_BAND_Y, bandDepth, seatOffset } from "./layout.js";
+import { BAND_RADIUS_MAX, COLUMN_BOTTOM_Y, TOP_BAND_Y, bandDepth, seatOffset } from "./layout.js";
 import type { Seat } from "./layout.js";
 import { fishGeometry, applySwimShader } from "./bodies.js";
 import { wanderedRadius, wanderedAngle, bankRoll } from "./motion.js";
-import { entryScale, entryDrop } from "./entry.js";
+import { entryScale, entryDrop, depthFade } from "./entry.js";
 
 const WHITE = new THREE.Color(0xffffff);
 const HIGHLIGHT_BOOST = 2.2;
@@ -86,8 +86,8 @@ export class Shoal {
     // sphere that makes every later pick miss. Derived from the column so a
     // reshaped column cannot silently break picking.
     this.mesh.boundingSphere = new THREE.Sphere(
-      new THREE.Vector3(0, (TOP_BAND_Y + BED_Y) / 2, 0),
-      (TOP_BAND_Y - BED_Y) / 2 + BAND_RADIUS_MAX + 8
+      new THREE.Vector3(0, (TOP_BAND_Y + COLUMN_BOTTOM_Y) / 2, 0),
+      (TOP_BAND_Y - COLUMN_BOTTOM_Y) / 2 + BAND_RADIUS_MAX + 8
     );
     this.mesh.count = 0;
     scene.add(this.mesh);
@@ -141,8 +141,9 @@ export class Shoal {
       const angle = wanderedAngle(seat, t);
       const radius = wanderedRadius(seat, t);
       const entryAge = t - slot.bornAt;
+      const bandAge = blocksSeen - slot.bornBlock;
       const y =
-        bandDepth(blocksSeen - slot.bornBlock) +
+        bandDepth(bandAge) +
         Math.sin(t * 0.8 + seat.bob) * BOB_AMPLITUDE +
         entryDrop(entryAge);
       // Heading: the fish points +X; the circuit tangent at `angle` is
@@ -154,7 +155,7 @@ export class Shoal {
       this.matrix.compose(
         this.position.set(Math.cos(angle) * radius, y, Math.sin(angle) * radius),
         this.quaternion,
-        this.scale.setScalar(slot.size * entryScale(entryAge))
+        this.scale.setScalar(slot.size * entryScale(entryAge) * depthFade(bandAge))
       );
       this.mesh.setMatrixAt(i, this.matrix);
     }

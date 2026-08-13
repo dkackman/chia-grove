@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { mulberry32 } from "../shared/util.js";
-import { BAND_RADIUS_MAX, BED_Y, TOP_BAND_Y } from "./layout.js";
+import { BAND_RADIUS_MAX, COLUMN_BOTTOM_Y, TOP_BAND_Y } from "./layout.js";
 import { LAKE } from "./palette.js";
 import { SURFACE_Y } from "./water.js";
 import { pikeGeometry, applySwimShader } from "./bodies.js";
@@ -17,7 +17,7 @@ interface Beacon {
 }
 
 /**
- * Ambient effects: bubble columns rising off the bed (fixed-density scenery —
+ * Ambient effects: bubble columns rising out of the dark below (fixed-density scenery —
  * the mempool now renders in `pending.ts`'s churn layer), mint beacons, and
  * the reorg predator. The per-block surface ripple lives in `water.ts`, which
  * owns the surface shader.
@@ -42,7 +42,7 @@ export class Vfx {
       const ventAngle = (vent / 9) * Math.PI * 2;
       const ventRadius = 5 + (vent % 4) * 6;
       positions[i * 3] = Math.cos(ventAngle) * ventRadius + (rand() - 0.5) * 2.2;
-      positions[i * 3 + 1] = BED_Y + rand() * (SURFACE_Y - BED_Y);
+      positions[i * 3 + 1] = COLUMN_BOTTOM_Y + rand() * (SURFACE_Y - COLUMN_BOTTOM_Y);
       positions[i * 3 + 2] = Math.sin(ventAngle) * ventRadius + (rand() - 0.5) * 2.2;
       this.speeds[i] = 1.4 + rand() * 1.8;
     }
@@ -62,7 +62,7 @@ export class Vfx {
     scene.add(this.bubbles);
     // Bubbles are scenery now, not data — the mempool moved to the churn layer
     // under the surface, where pending work belongs. A steady low density keeps
-    // the bed from reading as dead water.
+    // the deep water from reading as dead.
     this.litCount = Math.round(BUBBLE_CAP * 0.22);
 
     // the predator: a pike silhouette that sweeps the column on a reorg
@@ -117,7 +117,7 @@ export class Vfx {
     // vary the bearing by slot index rather than Math.random so the scene stays
     // reproducible across a snapshot replay
     const angle = (this.nextBeacon / BEACON_CAP) * Math.PI * 2;
-    b.mesh.position.set(Math.cos(angle) * radius, BED_Y, Math.sin(angle) * radius);
+    b.mesh.position.set(Math.cos(angle) * radius, COLUMN_BOTTOM_Y, Math.sin(angle) * radius);
     b.mesh.visible = true;
     b.active = true;
     b.bornAt = t;
@@ -148,11 +148,11 @@ export class Vfx {
   }
 
   update(dt: number, t: number): void {
-    // bubbles rise and wrap back to the bed
+    // bubbles rise and wrap back down into the dark
     const attr = this.bubbles.geometry.getAttribute("position") as THREE.BufferAttribute;
     for (let i = 0; i < this.litCount; i++) {
       let y = attr.getY(i) + this.speeds[i] * dt;
-      if (y > SURFACE_Y) y = BED_Y;
+      if (y > SURFACE_Y) y = COLUMN_BOTTOM_Y;
       attr.setY(i, y);
     }
     attr.needsUpdate = true;

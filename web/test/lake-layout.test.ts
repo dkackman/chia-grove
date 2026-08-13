@@ -3,7 +3,7 @@ import {
   MAX_BANDS,
   BAND_STEP,
   TOP_BAND_Y,
-  BED_Y,
+  COLUMN_BOTTOM_Y,
   BAND_RADIUS_MIN,
   BAND_RADIUS_MAX,
   RIM_RADIUS,
@@ -32,8 +32,8 @@ test("bands sink monotonically as they age", () => {
 });
 
 test("sinking clamps at the bed so old bands pile up instead of falling forever", () => {
-  expect(bandDepth(MAX_BANDS)).toBeCloseTo(BED_Y, 5);
-  expect(bandDepth(MAX_BANDS + 500)).toBeCloseTo(BED_Y, 5);
+  expect(bandDepth(MAX_BANDS)).toBeCloseTo(COLUMN_BOTTOM_Y, 5);
+  expect(bandDepth(MAX_BANDS + 500)).toBeCloseTo(COLUMN_BOTTOM_Y, 5);
 });
 
 test("a negative age (clock skew, replay) never floats above the top band", () => {
@@ -43,8 +43,8 @@ test("a negative age (clock skew, replay) never floats above the top band", () =
 test("the whole column fits in a viewable depth", () => {
   // 18 bands at 2.6 units is a 46.8-unit descent — fewer, thicker, countable
   // bands rather than 40 the eye cannot separate.
-  expect(TOP_BAND_Y - BED_Y).toBeCloseTo(MAX_BANDS * BAND_STEP, 5);
-  expect(TOP_BAND_Y - BED_Y).toBeLessThanOrEqual(70);
+  expect(TOP_BAND_Y - COLUMN_BOTTOM_Y).toBeCloseTo(MAX_BANDS * BAND_STEP, 5);
+  expect(TOP_BAND_Y - COLUMN_BOTTOM_Y).toBeLessThanOrEqual(70);
 });
 
 test("bands are thick enough to read as separate strata", () => {

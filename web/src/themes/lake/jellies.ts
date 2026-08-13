@@ -7,7 +7,7 @@ import { sensitivePlaceholderTexture } from "../shared/textures.js";
 import { bandDepth, seatOffset } from "./layout.js";
 import { jellyPulse, PULSE_SKEW } from "./motion.js";
 import { LAKE } from "./palette.js";
-import { entryScale, entryDrop } from "./entry.js";
+import { entryScale, entryDrop, depthFade } from "./entry.js";
 
 const JELLY_CAP = 40;
 const PLACEHOLDER = 0x9fb6c9;
@@ -256,14 +256,15 @@ export class Jellies {
       const angle = j.angle + t * j.speed;
       const { lift } = jellyPulse(t * PULSE_FREQ + j.phase);
       const entryAge = t - j.bornAt;
+      const bandAge = blocksSeen - j.bornBlock;
       j.group.position.set(
         Math.cos(angle) * j.radius,
-        bandDepth(blocksSeen - j.bornBlock) + lift * 0.55 + entryDrop(entryAge),
+        bandDepth(bandAge) + lift * 0.55 + entryDrop(entryAge),
         Math.sin(angle) * j.radius
       );
       // the bell pulse lives in the GPU shader (squeeze/rim), untouched here;
-      // the entry envelope only scales the whole group, so the two compose
-      j.group.scale.setScalar(entryScale(entryAge));
+      // the entry and depth envelopes only scale the whole group, so all three compose
+      j.group.scale.setScalar(entryScale(entryAge) * depthFade(bandAge));
       // same-Y lookAt is a pure yaw, so the dome stays upright while the art
       // panel turns to face the camera — the trick `Paintings.update` uses
       j.group.lookAt(camera.position.x, j.group.position.y, camera.position.z);
