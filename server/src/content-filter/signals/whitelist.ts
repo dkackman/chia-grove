@@ -10,14 +10,15 @@ export interface WhitelistEntry {
 }
 
 /**
- * Curated allow-list of known-safe collections/creators. A match never
- * overrides a negative cheap-signal result (lexicon, denylist,
- * sensitive_content, MintGarden moderation) — see mapMintgardenSignals. Its
- * only effect is to skip the Google Vision SafeSearch check for an NFT whose
- * cheap verdict is already "ok", saving Vision calls on large, well-known,
- * unambiguously safe mints.
+ * Bundled fallback allow-list of known-safe collections/creators, used until
+ * WhitelistRegistry's gist fetch completes and whenever it fails (see
+ * whitelist-registry.ts). A match never overrides a negative cheap-signal
+ * result (lexicon, denylist, sensitive_content, MintGarden moderation) — see
+ * mapMintgardenSignals. Its only effect is to skip the Google Vision
+ * SafeSearch check for an NFT whose cheap verdict is already "ok", saving
+ * Vision calls on large, well-known, unambiguously safe mints.
  */
-export const WHITELIST: WhitelistEntry[] = [
+export const DEFAULT_WHITELIST: WhitelistEntry[] = [
   { collectionId: "col1s8fwfqdl3x77h7rn40m0mzhkgp7kajdwu56me36glv0ez8w79heqst90mh" },
   { collectionId: "col1apvkk4tz48l9qfj5znygzrugfhzjmfu8lykalvzeqn6au38g7mcs4gwxx6" },
   { collectionId: "col1ufu33cchmfgge9hm9ehupy3thux66ehaum9gglqewldzkus4s3mq9yc289" },
@@ -41,7 +42,7 @@ export function buildWhitelistSet(entries: WhitelistEntry[]): Set<string> {
   return set;
 }
 
-export const WHITELIST_SET: Set<string> = buildWhitelistSet(WHITELIST);
+export const WHITELIST_SET: Set<string> = buildWhitelistSet(DEFAULT_WHITELIST);
 
 /** True when the NFT's creator DID or its collection id is on the allow-list.
  *  Either alone suffices; a missing field simply can't match. */
