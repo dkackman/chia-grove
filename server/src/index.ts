@@ -10,6 +10,7 @@ import { buildServer } from "./web/server.js";
 import { MediaIndex } from "./web/media-index.js";
 import { ContentFilter } from "./content-filter/index.js";
 import { ContentStore } from "./content-filter/store.js";
+import { WhitelistRegistry } from "./content-filter/signals/whitelist-registry.js";
 import { readVersion } from "./version.js";
 import { log } from "./logger.js";
 
@@ -54,9 +55,12 @@ try {
     "content-filter store failed to open (degrading to in-memory-only)"
   );
 }
+const whitelistRegistry = new WhitelistRegistry({ gistUrl: process.env.WHITELIST_GIST_URL });
+await whitelistRegistry.start();
 const contentFilter = new ContentFilter(media, {
   store: contentStore,
   googleApiKey: process.env.GOOGLE_VISION_API_KEY,
+  whitelist: whitelistRegistry.get(),
   onFlag: (e) => hub.publish([e]),
   safesearchSweepIntervalMs: envInt("SAFESEARCH_SWEEP_INTERVAL_MS", 600_000),
   // Runs standalone without a Vision key, or in shadow mode alongside Vision

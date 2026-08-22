@@ -1,16 +1,16 @@
 import { expect, test } from "vitest";
 import {
-  WHITELIST,
+  DEFAULT_WHITELIST,
   WHITELIST_SET,
   buildWhitelistSet,
   isWhitelisted,
   type WhitelistEntry,
 } from "../src/content-filter/signals/whitelist.js";
 
-test("WHITELIST is well-formed and its entries are indexed", () => {
-  expect(Array.isArray(WHITELIST)).toBe(true);
+test("DEFAULT_WHITELIST is well-formed and its entries are indexed", () => {
+  expect(Array.isArray(DEFAULT_WHITELIST)).toBe(true);
   // every entry must carry at least one identifier, and each identifier lands in the set
-  for (const entry of WHITELIST) {
+  for (const entry of DEFAULT_WHITELIST) {
     expect(entry.creatorDid ?? entry.collectionId).toBeDefined();
     if (entry.creatorDid) expect(WHITELIST_SET.has(entry.creatorDid)).toBe(true);
     if (entry.collectionId) expect(WHITELIST_SET.has(entry.collectionId)).toBe(true);
