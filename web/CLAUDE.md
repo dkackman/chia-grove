@@ -8,7 +8,7 @@ Open `http://localhost:5173/?demo=1` for synthetic events without a running serv
 
 The frontend supports multiple visualizations ("themes") behind the `Visualization` interface (`src/themes/types.ts`). The registry in `src/themes/index.ts` resolves the active theme from `?theme=` query param or `localStorage["grove.theme"]` (default: `grove`). Switching from the legend persists the choice and reloads; the WebSocket snapshot replay repopulates the new scene. Themes own their entire Three.js scene.
 
-Five themes ship: `grove`, `farm`, `gallery`, `mine`, `board`. Shared helpers (instancing, textures, CAT colors, amount scales, PRNG) live in `src/themes/shared/`.
+Six themes ship: `grove`, `farm`, `gallery`, `mine`, `board`, `timelord`. Shared helpers (instancing, textures, CAT colors, amount scales, PRNG) live in `src/themes/shared/`.
 
 ### `InstancedKind` (`src/themes/shared/instanced.ts`)
 
@@ -65,6 +65,17 @@ Minecraft-inspired voxel island growing on a phyllotaxis spiral. XCH spends pave
 ### board (`src/themes/board/`)
 
 "The Big Board" — a Solari split-flap departure board rendering the chain as a live spend ledger. Each spend flips in as a new row (per-character riffle via `FlapGrid`, an instanced cell grid with a per-instance glyph attribute); a header strip shows block/mempool/netspace/clock, the wheel scrolls back through history (newest-first, 500-deep, with a LIVE/HISTORY header marker), and reorg riffles rows back to the fork height. Pure formatting (`rows.ts`, `glyphs.ts`, `palette.ts`) is unit-tested.
+
+### timelord (`src/themes/timelord/`)
+
+The chain as verifiable time: a rising helix of blocks threaded on a braid of three light strands (Chia's challenge, reward and infused-challenge VDF chains). Each block is a crystal (size = spend count, teal→amber = fees) infused as its thread segment grows from the previous one; its spends erupt out of it into inclined Keplerian orbits — XCH coins (silver→green→gold by amount), CAT gems (`catColor`), DID halos. NFTs are holo-foil cards floating outside the helix, tethered to their crystal (gold foil = mint, deduped by launcher, art via `resolveMedia`). The mempool is a vortex funnelling into the next empty slot; a clock dial at the focus height has one tick per slot and a sweep hand for time since the last block (52 s mean); star density tracks netspace. History fades into the abyss below the focus — the wheel / vertical drag / arrow keys travel back through time (the HUD shows LIVE/HISTORY; Esc, double-click or the HUD button return live), clicking a crystal jumps to it.
+
+- `layout.ts` — pure helix/orbit math (`blockPosition`, `orbitFor`, `orbitPoint`, `reachAt`/`scaleAt`, amount/fee scales). `orbitPoint`/`reachAt`/`scaleAt` mirror the orbit vertex shader exactly — keep them in sync.
+- `orbiters.ts` — `Orbiters<T>`: instanced bodies whose whole motion lives in the vertex shader (the CPU writes attributes only on birth/death, one contiguous upload per frame). `raycast` is overridden to run the CPU mirror, so picking hits what is drawn. Used for coins, gems, halos and the block crystals (radius-0 orbit).
+- `shading.ts` — `SceneUniforms` shared by reference across every material (focus height, head light, pulse) plus the GLSL history fade and hand-rolled lighting (no PMREM).
+- `thread.ts` — one braided segment geometry, instanced per block and rotated into place; slots are `seq % MAX_BLOCKS`.
+- `particles.ts` (crystal `Glows`, mempool `Vortex`), `cards.ts`, `fx.ts` (shockwaves/flares; block fanfare is throttled so catch-up bursts don't white out), `stage.ts` (nebula, stars, spindle, dial), `controls.ts` (pure `TimeTravel` + pointer/wheel input), `hud.ts`.
+- Blocks are addressed by a local, monotonically increasing `seq` (not height); a re-sent height (reconnect snapshot) is skipped along with its spends, and a reorg rewinds `seq` to the first removed block so the replacement chain grows from the fork.
 
 ## Network
 

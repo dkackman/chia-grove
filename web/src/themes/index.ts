@@ -4,8 +4,9 @@ import { farm } from "./farm/index.js";
 import { gallery } from "./gallery/index.js";
 import { mine } from "./mine/index.js";
 import { board } from "./board/index.js";
+import { timelord } from "./timelord/index.js";
 
-export const THEMES: readonly Visualization[] = [grove, farm, gallery, mine, board];
+export const THEMES: readonly Visualization[] = [grove, farm, gallery, mine, board, timelord];
 export const THEME_STORAGE_KEY = "grove.theme";
 
 /** Pure (no DOM access) so it's unit-testable: URL param wins, then stored, then grove. */

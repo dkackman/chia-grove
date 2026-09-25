@@ -5,11 +5,9 @@ import type { XZ } from "../shared/util.js";
 import { createFrameLimiter } from "../shared/frame-limiter.js";
 import { createOrbitControl } from "../shared/orbit.js";
 import { createPostFx } from "../shared/postfx.js";
-import { chunkPosition, spiralRadius } from "./layout.js";
+import { chunkPosition, spiralRadius, MAX_BLOCK_SLOTS } from "./layout.js";
 import { createMineSky } from "./sky.js";
 import { createWater } from "./water.js";
-
-const MAX_BLOCK_SLOTS = 200;
 
 export function startMine(canvas: HTMLCanvasElement, feed: GroveFeed) {
   const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;

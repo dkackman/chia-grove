@@ -9,6 +9,8 @@ import {
   cellLocal,
   cellKey,
   spiralRadius,
+  FLOOR_SIDE,
+  MAX_BLOCK_SLOTS,
 } from "../src/themes/mine/layout.js";
 
 test("spiralRadius grows with block count and reaches the outer chunk edge", () => {
@@ -72,4 +74,24 @@ test("cellLocal spaces cubes by one unit and lifts by layer", () => {
   const b = cellLocal({ col: 1, row: 0 }, 1);
   expect(Math.abs(b.x - a.x)).toBeCloseTo(1);
   expect(a.y).toBeCloseTo(1);
+});
+
+test("neighboring chunks never share a terrace elevation", () => {
+  // Two chunks' land touches when their footprints overlap — i.e. when their
+  // centers are closer than one full footprint width. Every such pair must step
+  // against the other, or the boundary between those blocks renders flat.
+  const pts = Array.from({ length: MAX_BLOCK_SLOTS }, (_, i) => chunkPosition(i));
+  const flatPairs: Array<[number, number]> = [];
+  let touching = 0;
+  for (let i = 0; i < pts.length; i++) {
+    for (let j = i + 1; j < pts.length; j++) {
+      const d = Math.hypot(pts[i].x - pts[j].x, pts[i].z - pts[j].z);
+      if (d >= FLOOR_SIDE) continue;
+      touching++;
+      if (chunkElevation(pts[i]) === chunkElevation(pts[j])) flatPairs.push([i, j]);
+    }
+  }
+  // guard against a vacuous pass: the spiral really does pack chunks together
+  expect(touching).toBeGreaterThan(MAX_BLOCK_SLOTS);
+  expect(flatPairs).toEqual([]);
 });
