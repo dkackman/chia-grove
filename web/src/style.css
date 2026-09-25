@@ -601,6 +601,12 @@ body {
   color: #b9ffd9;
 }
 
+/* the display:flex above would otherwise override the hidden attribute, leaving
+   an empty pill on every non-board scene (board un-hides it in board.ts) */
+#board-nav[hidden] {
+  display: none;
+}
+
 #board-nav-find {
   display: flex;
   gap: 6px;
@@ -630,4 +636,111 @@ body {
 #board-nav-controls {
   display: flex;
   gap: 8px;
+}
+
+/* timelord — legend swatches */
+.sw-thread {
+  width: 13px;
+  height: 5px;
+  border-radius: 3px;
+  background: linear-gradient(to right, #38ff85, #40ccff, #b86bff);
+  box-shadow: 0 0 6px rgba(64, 204, 255, 0.7);
+}
+.sw-crystal {
+  border-radius: 2px;
+  transform: rotate(45deg) scale(0.85);
+  background: linear-gradient(135deg, #3ff2c8, #ffb347);
+  box-shadow: 0 0 6px rgba(63, 242, 200, 0.7);
+}
+.sw-coin {
+  background: radial-gradient(circle at 35% 35%, #fff2c0, #3ac765 55%, #c79a2a);
+}
+.sw-gem {
+  border-radius: 1px;
+  transform: rotate(45deg) scale(0.75);
+  background: #e86fc4;
+  box-shadow: 0 0 5px rgba(232, 111, 196, 0.8);
+}
+.sw-halo {
+  background: transparent;
+  border: 2px solid #b97aff;
+  box-shadow: 0 0 5px rgba(185, 122, 255, 0.8);
+}
+.sw-holo {
+  width: 9px;
+  height: 12px;
+  border-radius: 2px;
+  background: #1b2230;
+  border: 2px solid transparent;
+  border-image: linear-gradient(135deg, #ff6ad5, #6af0ff, #fff36a) 1;
+}
+.sw-vortex {
+  background: radial-gradient(circle, #fff1c8 10%, #5c8cff 60%, transparent 70%);
+}
+.sw-dial {
+  background: transparent;
+  border: 2px dotted #4fd8ff;
+}
+.sw-stars {
+  width: 6px;
+  height: 6px;
+  margin: 0 2px;
+  background: #dfe8ff;
+  box-shadow:
+    0 0 5px rgba(223, 232, 255, 0.9),
+    6px -4px 0 -2px #dfe8ff;
+}
+
+/* timelord — time-travel readout */
+#timelord-hud {
+  position: fixed;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  font:
+    12px/1.4 ui-monospace,
+    monospace;
+  letter-spacing: 0.08em;
+  color: #b9ffd9;
+  text-shadow: 0 1px 4px rgba(2, 4, 12, 0.95);
+  pointer-events: none;
+  white-space: nowrap;
+}
+#timelord-hud > span:first-child {
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: rgba(4, 10, 20, 0.6);
+  border: 1px solid rgba(64, 204, 255, 0.25);
+  backdrop-filter: blur(6px);
+}
+#timelord-hud.history > span:first-child {
+  color: #ffd9a8;
+  border-color: rgba(255, 179, 71, 0.4);
+}
+#timelord-hud button {
+  pointer-events: auto;
+  background: rgba(4, 10, 20, 0.7);
+  border: 1px solid rgba(64, 204, 255, 0.4);
+  border-radius: 999px;
+  color: #eafff2;
+  font: inherit;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+#timelord-hud .hint {
+  font-size: 11px;
+  opacity: 0.55;
+}
+@media (max-width: 640px) {
+  #timelord-hud {
+    top: auto;
+    bottom: 12px;
+  }
+  #timelord-hud .hint {
+    display: none;
+  }
 }

@@ -44,3 +44,9 @@ test("board theme is registered and resolvable", () => {
   expect(resolveTheme("", "board").id).toBe("board");
   expect(THEMES.find((t) => t.id === "board")!.label).toBe("The Big Board");
 });
+
+test("timelord theme is registered and resolvable", () => {
+  expect(THEMES.map((t) => t.id)).toContain("timelord");
+  expect(resolveTheme("?theme=timelord", null).id).toBe("timelord");
+  expect(resolveTheme("", "timelord").id).toBe("timelord");
+});

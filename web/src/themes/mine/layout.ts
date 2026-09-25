@@ -1,6 +1,12 @@
 import { mulberry32, type XZ } from "../shared/util.js";
 
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
+
+/** How many block slots the spiral cycles through before reusing chunk centers. */
+export const MAX_BLOCK_SLOTS = 200;
+
+export const FLOOR_SIDE = 7; // odd → a true center cell at (0,0)
+export const FLOOR_TILES = FLOOR_SIDE * FLOOR_SIDE; // 49
 const SPREAD = 3.0; // chunks overlap slightly into one contiguous landmass
 
 /** Block index → chunk center on a phyllotaxis spiral. */
@@ -21,21 +27,55 @@ export function spiralRadius(blockCount: number): number {
   return outerCenter + FLOOR_SIDE / 2; // +3.5: tiles reach ±3.5 from chunk center
 }
 
-export const MAX_ELEVATION = 1;
+export const MAX_ELEVATION = 3;
 
-/**
- * Per-block terrace height (0..MAX_ELEVATION), hashed from the chunk's center so
- * adjacent blocks step against each other. The step — an exposed dirt side and
- * its shadow — is what delineates where one block ends and the next begins.
- * Deliberately *not* spatially smooth: a smooth field leaves most block
- * boundaries flat and indistinguishable.
- */
-export function chunkElevation(pos: XZ): number {
-  // quantize the center, then hash to a stable per-chunk height
+/** Quantized chunk-center key, so a center round-trips to the same table entry. */
+function centerKey(pos: XZ): number {
   const xi = Math.round(pos.x * 16);
   const zi = Math.round(pos.z * 16);
-  const seed = ((xi * 73856093) ^ (zi * 19349663)) >>> 0;
-  return Math.floor(mulberry32(seed)() * (MAX_ELEVATION + 1));
+  return ((xi * 73856093) ^ (zi * 19349663)) >>> 0;
+}
+
+/**
+ * Terrace level per block slot, precomputed so that *every* pair of blocks whose
+ * land touches steps against the other. The step — an exposed dirt cliff and its
+ * shadow — is the only thing delineating where one block ends and the next
+ * begins, and a plain per-chunk hash leaves a share of boundaries flat
+ * (1-in-2 with two levels, 1-in-4 with four): those blocks merge into one
+ * indistinguishable slab.
+ *
+ * Two chunks touch when their 7×7 footprints overlap, i.e. when their centers
+ * are closer than one full footprint width. Greedy graph coloring in spiral
+ * order over that neighbor graph — ~200 nodes of degree ≤ 6, run once at module
+ * load — resolves it exactly at four levels. If a slot ever did exhaust the
+ * levels it falls back to 0 rather than throwing; the test pins that it doesn't.
+ */
+const ELEVATIONS: ReadonlyMap<number, number> = (() => {
+  const centers = Array.from({ length: MAX_BLOCK_SLOTS }, (_, i) => chunkPosition(i));
+  const levels = new Array<number>(centers.length).fill(0);
+  for (let i = 0; i < centers.length; i++) {
+    const taken = new Set<number>();
+    for (let j = 0; j < i; j++) {
+      const d = Math.hypot(centers[i].x - centers[j].x, centers[i].z - centers[j].z);
+      if (d < FLOOR_SIDE) taken.add(levels[j]);
+    }
+    let level = 0;
+    while (level <= MAX_ELEVATION && taken.has(level)) level++;
+    levels[i] = level > MAX_ELEVATION ? 0 : level;
+  }
+  return new Map(centers.map((c, i) => [centerKey(c), levels[i]]));
+})();
+
+/**
+ * Per-block terrace height (0..MAX_ELEVATION), looked up from the precomputed
+ * coloring above. Positions off the spiral (none in practice) hash to a stable
+ * level so the function stays total.
+ */
+export function chunkElevation(pos: XZ): number {
+  const key = centerKey(pos);
+  const assigned = ELEVATIONS.get(key);
+  if (assigned !== undefined) return assigned;
+  return Math.floor(mulberry32(key)() * (MAX_ELEVATION + 1));
 }
 
 export interface Cell {
@@ -43,8 +83,6 @@ export interface Cell {
   row: number;
 }
 
-const FLOOR_SIDE = 7; // odd → a true center cell at (0,0)
-export const FLOOR_TILES = FLOOR_SIDE * FLOOR_SIDE; // 49
 const SPACING = 1; // unit cubes
 const CUBE = 1;
 
