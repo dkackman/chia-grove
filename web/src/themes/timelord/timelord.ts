@@ -17,6 +17,7 @@ import {
   crystalScale,
   feeHeat,
   helixAngle,
+  includedMotes,
   mempoolParticles,
   orbitFor,
   starFraction,
@@ -28,7 +29,7 @@ import { Thread, INFUSE_SECONDS } from "./thread.js";
 import { Glows, Vortex } from "./particles.js";
 import { Cards } from "./cards.js";
 import { Fx } from "./fx.js";
-import { createStage, TX_BLOCK_SECONDS } from "./stage.js";
+import { createStage, dialSweep } from "./stage.js";
 import { TimeTravel, createCameraControl } from "./controls.js";
 import { Hud } from "./hud.js";
 import { crystalGeometry, coinGeometry, gemGeometry, haloGeometry } from "./geometry.js";
@@ -49,6 +50,12 @@ interface BlockRec {
 
 /** A replayed block older than this is history: no fanfare, the funnel snaps. */
 const FRESH_SECONDS = 240;
+/** Only a block this recent plays the mempool migration (keeps reconnect replays brisk). */
+const MIGRATE_FRESH_SECONDS = 90;
+/** How long a live block is held back so the migration leads its infusion. */
+const MIGRATE_HOLD_SECONDS = 1.8;
+/** Included motes reach the block's slot just as its coins erupt (see onSprout's `born`). */
+const MIGRATE_SECONDS = MIGRATE_HOLD_SECONDS + INFUSE_SECONDS;
 const VORTEX_CAP = 1400;
 
 const TEAL = new THREE.Color(0x3ff2c8);
@@ -288,7 +295,45 @@ export function startTimelord(canvas: HTMLCanvasElement, feed: GroveFeed): Visua
     cards.markSensitive(launcherId);
   }
 
+  /**
+   * A live block that took mempool items is held briefly while those motes
+   * whirl down into its slot; it (and every event behind it, to keep order)
+   * lands once they arrive.
+   */
+  function startsMigration(event: BlockEvent): boolean {
+    if (reducedMotion || !(event.mempoolIncluded && event.mempoolIncluded > 0)) return false;
+    const head = blocks.get(headSeq);
+    if (!head || event.height <= head.height) return false;
+    if (Date.now() / 1000 - event.timestamp > MIGRATE_FRESH_SECONDS) return false;
+    const n = includedMotes(event.mempoolIncluded, event.mempoolRemaining ?? 0, vortex.count);
+    if (n <= 0) return false;
+    vortex.migrate(n, blockPosition(headSeq + 1), t, MIGRATE_SECONDS);
+    return true;
+  }
+
+  const held: GroveEvent[] = [];
+  let holdUntil = 0;
+  let migrated: GroveEvent | null = null;
+
+  function release(): void {
+    while (held.length > 0 && t >= holdUntil) {
+      const event = held[0];
+      if (event.type === "block" && event !== migrated && startsMigration(event)) {
+        migrated = event;
+        holdUntil = t + MIGRATE_HOLD_SECONDS;
+        return;
+      }
+      held.shift();
+      handle(event);
+    }
+  }
+
   feed.onEvent((event: GroveEvent) => {
+    held.push(event);
+    release();
+  });
+
+  function handle(event: GroveEvent): void {
     switch (event.type) {
       case "block":
         onBlock(event);
@@ -307,7 +352,7 @@ export function startTimelord(canvas: HTMLCanvasElement, feed: GroveFeed): Visua
         onContentFlag(event.launcherId);
         break;
     }
-  });
+  }
   feed.onStatus((status) => stage.setSignalLost(status === "stale"));
 
   // ---- camera + frame loop -------------------------------------------------
@@ -357,7 +402,7 @@ export function startTimelord(canvas: HTMLCanvasElement, feed: GroveFeed): Visua
     shared.uPulse.value = Math.max(0, shared.uPulse.value - dt * 0.9);
 
     renderer.getDrawingBufferSize(size);
-    const sweep = Math.min(1, (performance.now() - lastBlockWall) / 1000 / TX_BLOCK_SECONDS);
+    const sweep = dialSweep((performance.now() - lastBlockWall) / 1000);
     stage.update(t, dt, camera, focusY, helixAngle(Math.max(headSeq, 0)), sweep, size.y);
     thread.update(t);
     crystals.update(t, orbitTime);
@@ -365,6 +410,7 @@ export function startTimelord(canvas: HTMLCanvasElement, feed: GroveFeed): Visua
     gems.update(t, orbitTime);
     halos.update(t, orbitTime);
     glows.update(t, size.y);
+    release();
     vortex.update(t, dt, size.y);
     cards.update(t, camera, focusY);
     fx.update(t);

@@ -7,7 +7,8 @@ export type MediaKind = "image" | "video" | "audio";
 // reloads when its baked-in value differs. See docs/superpowers/specs.
 // v4: added ContentFlagEvent to GroveEvent union; SproutEvent gains signals[].
 // v5: removed signals[] from SproutEvent and ContentFlagEvent (never consumed by clients).
-export const PROTOCOL_VERSION = 5;
+// v6: BlockEvent gains optional mempoolIncluded/mempoolRemaining.
+export const PROTOCOL_VERSION = 6;
 
 const VIDEO_EXT = new Set([".mp4", ".webm", ".ogv", ".mov"]);
 const AUDIO_EXT = new Set([".mp3", ".wav", ".ogg", ".oga", ".flac", ".aac"]);
@@ -27,6 +28,10 @@ export interface BlockEvent {
   timestamp: number; // unix seconds
   spendCount: number; // all coin spends in the block, including singleton launchers
   fees: string; // mojos
+  // Live blocks only: mempool items that left the mempool with this block
+  // (estimated from tx-id snapshots) and how many are still waiting.
+  mempoolIncluded?: number;
+  mempoolRemaining?: number;
 }
 
 export interface SproutEvent {

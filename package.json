@@ -23,13 +23,13 @@
     "@emnapi/core": "^1.11.3",
     "@emnapi/runtime": "^1.11.3",
     "@eslint/js": "^10.0.1",
-    "@playwright/test": "^1.62.1",
-    "eslint": "^10.8.1",
+    "@playwright/test": "^1.63.0",
+    "eslint": "^10.11.0",
     "eslint-config-prettier": "^10.1.8",
-    "prettier": "^3.9.6",
+    "prettier": "^3.9.9",
     "typescript": "^6.0.0",
-    "typescript-eslint": "^8.67.0",
-    "vitest": "^4.0.0"
+    "typescript-eslint": "^8.70.1",
+    "vitest": "^5.0.2"
   },
   "engines": {
     "node": ">=24"

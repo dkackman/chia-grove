@@ -4,6 +4,7 @@ import { blockEvent, classifyBlock } from "./classify/classify.js";
 import { CatRegistry } from "./classify/cats.js";
 import { CoinsetPoller } from "./ingest/coinset-poller.js";
 import { coinsetView } from "./ingest/coinset-view.js";
+import { MempoolTracker, coinsetMempoolTxIds } from "./ingest/mempool-tracker.js";
 import { Hub } from "./web/hub.js";
 import { RingBuffer } from "./web/ring-buffer.js";
 import { buildServer } from "./web/server.js";
@@ -40,6 +41,9 @@ const POLL_INTERVAL_MS = envInt("POLL_INTERVAL_MS", 10_000);
 // buffer) already has some history — NFT mints are sparse (~1 per 18 blocks),
 // so a deep backfill is what keeps the gallery from starting empty
 const BACKFILL_BLOCKS = envInt("BACKFILL_BLOCKS", 150);
+// Only blocks this recent get a mempool-inclusion estimate; backfilled history
+// predates our mempool snapshots and would otherwise soak up their counts.
+const LIVE_BLOCK_SECONDS = 120;
 
 // the ring buffer is sized to absorb airdrop blocks (400+ sprouts each) while
 // still covering the full backfill window; older events fall off the back
@@ -85,6 +89,10 @@ cats.onLoad(() => {
 await cats.start();
 
 const rpcView = coinsetView(RpcClient.mainnet());
+const mempool = new MempoolTracker({
+  fetchTxIds: coinsetMempoolTxIds(),
+  intervalMs: POLL_INTERVAL_MS,
+});
 
 const poller = new CoinsetPoller(
   rpcView,
@@ -109,6 +117,14 @@ const poller = new CoinsetPoller(
         );
         events = [blockEvent(block)];
       }
+      if (Date.now() / 1000 - block.timestamp < LIVE_BLOCK_SECONDS) {
+        const inclusion = await mempool.onBlock(); // never throws
+        const head = events[0];
+        if (inclusion && head?.type === "block") {
+          head.mempoolIncluded = inclusion.included;
+          head.mempoolRemaining = inclusion.remaining;
+        }
+      }
       hub.publish(events);
       const sprouts = events.filter((e): e is SproutEvent => e.type === "sprout");
       log.info(
@@ -118,6 +134,7 @@ const poller = new CoinsetPoller(
           nfts: sprouts.filter((e) => e.kind === "nft").length,
           cats: sprouts.filter((e) => e.kind === "cat").length,
           dids: sprouts.filter((e) => e.kind === "did").length,
+          mempoolIncluded: events[0]?.type === "block" ? events[0].mempoolIncluded : undefined,
         },
         "block"
       );
@@ -145,6 +162,7 @@ const poller = new CoinsetPoller(
 const app = await buildServer(hub, media, log, { rpc: rpcView, cats, contentFilter });
 await app.listen({ port: PORT, host: "0.0.0.0" });
 poller.start();
+mempool.start();
 log.info(
   {
     port: PORT,
@@ -158,6 +176,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
   process.once(signal, async () => {
     log.info({ signal }, "shutdown signal received");
     poller.stop();
+    mempool.stop();
     cats.stop();
     await app.close();
     contentStore?.close();

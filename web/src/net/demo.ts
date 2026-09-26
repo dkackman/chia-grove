@@ -90,7 +90,11 @@ function sprout(height: number, dispatch?: (event: GroveEvent) => void): SproutE
   return event;
 }
 
-function blockWithSprouts(height: number, dispatch?: (event: GroveEvent) => void): GroveEvent[] {
+function blockWithSprouts(
+  height: number,
+  dispatch?: (event: GroveEvent) => void,
+  mempool?: { included: number; remaining: number }
+): GroveEvent[] {
   const count = 2 + Math.floor(Math.random() * 14);
   return [
     {
@@ -100,6 +104,8 @@ function blockWithSprouts(height: number, dispatch?: (event: GroveEvent) => void
       timestamp: Math.floor(Date.now() / 1000),
       spendCount: count,
       fees: String(Math.floor(Math.random() * 1e9)),
+      mempoolIncluded: mempool?.included,
+      mempoolRemaining: mempool?.remaining,
     },
     ...Array.from({ length: count }, () => sprout(height, dispatch)),
   ];
@@ -115,7 +121,11 @@ export function startDemo(dispatch: (event: GroveEvent) => void): void {
   backlog.forEach((event, i) => setTimeout(() => dispatch(event), i * 12));
 
   setInterval(() => {
-    for (const event of blockWithSprouts(height++, dispatch)) dispatch(event);
+    // a live block takes a random share of the mempool (the backlog above doesn't)
+    const included = Math.floor(mempool * (0.2 + Math.random() * 0.6));
+    mempool -= included;
+    const inclusion = { included, remaining: Math.floor(mempool) };
+    for (const event of blockWithSprouts(height++, dispatch, inclusion)) dispatch(event);
   }, 8000);
 
   setInterval(() => {

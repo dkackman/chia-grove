@@ -10,6 +10,7 @@ import {
   crystalScale,
   feeHeat,
   helixAngle,
+  includedMotes,
   mempoolParticles,
   orbitFor,
   orbitPoint,
@@ -127,5 +128,23 @@ describe("scales", () => {
   test("star fraction tracks netspace with a floor", () => {
     expect(starFraction("0")).toBe(0.35);
     expect(starFraction(String(2 ** 60 * 80))).toBe(1);
+  });
+});
+
+describe("includedMotes", () => {
+  test("nothing included, or nothing swirling, pulls no motes", () => {
+    expect(includedMotes(0, 50, 200)).toBe(0);
+    expect(includedMotes(10, 50, 0)).toBe(0);
+  });
+  test("pulls the included share of the swirl", () => {
+    expect(includedMotes(50, 50, 200)).toBe(100);
+    expect(includedMotes(100, 0, 200)).toBe(200);
+  });
+  test("a light block still takes a few motes, but never more than it included", () => {
+    expect(includedMotes(3, 997, 200)).toBe(3);
+    expect(includedMotes(20, 980, 200)).toBe(8);
+  });
+  test("never more than are swirling", () => {
+    expect(includedMotes(5, 0, 2)).toBe(2);
   });
 });
