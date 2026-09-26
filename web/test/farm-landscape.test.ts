@@ -6,7 +6,8 @@ import {
   nearLane,
   toPx,
 } from "../src/themes/farm/landscape.js";
-import { FIELD, TURF_RADIUS, rowZ } from "../src/themes/farm/layout.js";
+import { TURF_RADIUS, rowZ } from "../src/themes/farm/layout.js";
+import { STRIP_LENGTH, STRIP_WIDTH } from "../src/themes/farm/soil.js";
 
 // The overlay rides the turf's RingGeometry UVs, which span the disc's bounding
 // square: u = (x / 140 + 1) / 2 and v = (−z / 140 + 1) / 2. CanvasTexture flips
@@ -35,8 +36,8 @@ test("toPx is linear and increasing", () => {
 // hard edge is, for practical purposes, fully faded (~99.7%) — see landscapeTexture's
 // own comment on the same arithmetic for the erase-vs-survive tradeoff at the lane.
 test("the cleared field box covers the soil strips' true extent plus the blurred cut's feather reach", () => {
-  const stripHalfX = FIELD.rowLength / 2 + 0.7; // strips are rowLength + 1.4 wide
-  const stripHalfZ = Math.abs(rowZ(0)) + (FIELD.rowSpacing * 0.78) / 2;
+  const stripHalfX = STRIP_LENGTH / 2;
+  const stripHalfZ = Math.abs(rowZ(0)) + STRIP_WIDTH / 2;
   const pxPerWorldUnit = CANVAS_SIZE / (TURF_RADIUS * 2);
   const cutBlurPx = 5;
   const sigmaWorld = cutBlurPx / 2 / pxPerWorldUnit;
@@ -52,7 +53,7 @@ test("the cleared field box covers the soil strips' true extent plus the blurred
 // the new one ([-9, -22.4]) between the two solid things on either side of it.
 test("the lane's band at the barn doors sits between the barn wall and the soil strip", () => {
   const barnFrontWall = -23.675;
-  const stripOuterEdge = -(Math.abs(rowZ(0)) + (FIELD.rowSpacing * 0.78) / 2); // ~ -20.31
+  const stripOuterEdge = -(Math.abs(rowZ(0)) + STRIP_WIDTH / 2); // ~ -20.37
   const [, z] = [-9, -22.4] as const; // LANE's first control point
   const laneHalfWidth = 1.2; // the dust band is drawn 2.4 world units wide
   const nearEdge = z + laneHalfWidth; // toward the field

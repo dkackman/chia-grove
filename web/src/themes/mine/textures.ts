@@ -142,3 +142,64 @@ export function emissiveCellTexture(size = 16): THREE.CanvasTexture {
   }
   return nearest(canvas);
 }
+
+/**
+ * The square Minecraft sun: a hot 8×8 core inside two stepped halo rings, on a
+ * transparent field. Drawn additively, so the alpha steps read as a pixel glow.
+ */
+export function sunTexture(size = 16): THREE.CanvasTexture {
+  const { ctx, canvas } = px(size);
+  const ring = (inset: number, fill: string): void => {
+    ctx.fillStyle = fill;
+    ctx.fillRect(inset, inset, size - inset * 2, size - inset * 2);
+  };
+  ring(0, "rgba(255,210,110,0.1)");
+  ring(2, "rgba(255,224,130,0.28)");
+  ring(4, "rgb(255,246,196)");
+  ring(5, "rgb(255,255,232)");
+  return nearest(canvas);
+}
+
+/** Moon phases in the atlas (full → waning → new → waxing), one per day cycle. */
+export const MOON_PHASES = 8;
+
+/**
+ * A 4×2 atlas of 16×16 square moons, one per phase. Each face is a pale grey
+ * square with a few darker crater pixels; the unlit part of the phase is drawn
+ * as a faint shadow so the square outline still reads against the night sky.
+ */
+export function moonAtlasTexture(): THREE.CanvasTexture {
+  const S = 16;
+  const { ctx, canvas } = px(S * 4);
+  canvas.height = S * 2;
+  const craters = [
+    [5, 5],
+    [6, 5],
+    [9, 7],
+    [10, 10],
+    [6, 10],
+    [7, 11],
+    [11, 5],
+  ];
+  const lo = 4; // face spans [lo, S-lo)
+  const w = S - lo * 2;
+  for (let p = 0; p < MOON_PHASES; p++) {
+    const ox = (p % 4) * S;
+    const oy = Math.floor(p / 4) * S;
+    // how many columns (of w) are in shadow, and from which side
+    const k = p <= 4 ? p : MOON_PHASES - p; // 0 full .. 4 new
+    const dark = Math.round((k / 4) * w);
+    const fromLeft = p <= 4; // waning shadow creeps in from the left
+    for (let y = lo; y < S - lo; y++) {
+      for (let x = lo; x < S - lo; x++) {
+        const col = x - lo;
+        const shadowed = fromLeft ? col < dark : col >= w - dark;
+        const crater = craters.some(([cx, cy]) => cx === x && cy === y);
+        const v = crater ? 170 : 222 + ((x * 7 + y * 3) % 3) * 8;
+        ctx.fillStyle = shadowed ? `rgba(120,130,160,0.14)` : rgb(v - 6, v, v + 10);
+        ctx.fillRect(ox + x, oy + y, 1, 1);
+      }
+    }
+  }
+  return nearest(canvas);
+}

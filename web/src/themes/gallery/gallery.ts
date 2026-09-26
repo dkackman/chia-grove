@@ -198,6 +198,7 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
     if (!f) return;
     focused = framePiece(f.center, f.height, FOV);
     focusedObject = object;
+    pieces.setFocused(object);
     const meta = pieces.metaFor(object);
     if (meta) placard.show(meta, pieces.eventCountFor(object));
     // a video piece gets a manual ▶ overlay (never autoplayed); images do not
@@ -212,6 +213,7 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
   function unfocus(): void {
     focused = null;
     focusedObject = null;
+    pieces.setFocused(null);
     placard.hide();
     playButton.hide(); // pauses + resets the video to its poster still
   }
@@ -325,6 +327,10 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
     const litTarget = focused ? lightTarget * 0.4 : lightTarget;
     spot.intensity += (litTarget - spot.intensity) * Math.min(dt * 2, 1) + breath * dt * 2;
     fill.intensity += (0.4 + litTarget * 0.2 - fill.intensity) * Math.min(dt * 2, 1);
+    // the wall, floor and picture-light pools are shader-lit from the same levels;
+    // the focused piece's lamp holds the undimmed netspace level
+    wall.setLight(fill.intensity * 0.05 + spot.intensity * 0.035, spot.intensity);
+    pieces.setLightLevel(spot.intensity, lightTarget + breath * 0.3);
 
     let ease: number;
     if (focused) {

@@ -1,14 +1,16 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import { FIELD, rowZ } from "./layout.js";
+import { FIELD, rowDirection, rowZ } from "./layout.js";
 import { FARM } from "./palette.js";
 import { blobShadow } from "./scenery.js";
 import { furrowTexture, glowTexture } from "../shared/textures.js";
+import { STRIP_LENGTH, STRIP_WIDTH, soilMaterial, soilUniforms } from "./soil.js";
+import { PASS_SECONDS } from "./tractor.js";
 
 export interface Field {
-  /** Reveal the soil strip for a row the first time the tractor plows it. */
-  plow(row: number): void;
-  /** Advance ambient detail (chimney smoke). */
+  /** The tractor starts plowing `row` at time `t`: the soil is turned behind it. */
+  plow(row: number, t: number): void;
+  /** Advance ambient detail (chimney smoke, soil reveal and drying). */
   update(t: number): void;
 }
 
@@ -325,7 +327,7 @@ function addFence(scene: THREE.Scene): void {
   );
 }
 
-export function createField(scene: THREE.Scene, reducedMotion = false): Field {
+export function createField(scene: THREE.Scene, reducedMotion = false, anisotropy = 1): Field {
   // faint furrow lines give the field direction even before it's plowed; sits
   // just above the turf and below the soil strips, which cover it once plowed
   const furrows = new THREE.Mesh(
@@ -341,11 +343,12 @@ export function createField(scene: THREE.Scene, reducedMotion = false): Field {
   furrows.position.set(0, 0.012, 0);
   scene.add(furrows);
 
-  const stripMesh = new THREE.InstancedMesh(
-    new THREE.PlaneGeometry(FIELD.rowLength + 1.4, FIELD.rowSpacing * 0.78),
-    new THREE.MeshStandardMaterial({ color: FARM.soil, roughness: 1 }),
-    FIELD.rows
-  );
+  const stripGeometry = new THREE.PlaneGeometry(STRIP_LENGTH, STRIP_WIDTH);
+  // per row: (plow start time, direction, already plowed before this pass)
+  const plowState = new Float32Array(FIELD.rows * 3);
+  const plowAttr = new THREE.InstancedBufferAttribute(plowState, 3);
+  stripGeometry.setAttribute("aPlow", plowAttr);
+  const stripMesh = new THREE.InstancedMesh(stripGeometry, soilMaterial(anisotropy), FIELD.rows);
   const hiddenMatrix = new THREE.Matrix4().makeScale(0, 0, 0);
   const plowedMatrices = Array.from({ length: FIELD.rows }, (_, row) => {
     const m = new THREE.Matrix4().makeRotationX(-Math.PI / 2);
@@ -353,7 +356,13 @@ export function createField(scene: THREE.Scene, reducedMotion = false): Field {
     return m;
   });
   for (let i = 0; i < FIELD.rows; i++) stripMesh.setMatrixAt(i, hiddenMatrix);
+  // InstancedMesh caches a bounding sphere of the instances visible on its
+  // first frame; pin one around the whole field so rows plowed later are
+  // never culled when the camera is close to them
+  stripMesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), STRIP_LENGTH);
   scene.add(stripMesh);
+  const plowed = new Array<boolean>(FIELD.rows).fill(false);
+  let activeRow = -1;
 
   // barn beyond the far edge of the field, with the silo on its right
   const barnX = -10;
@@ -372,11 +381,25 @@ export function createField(scene: THREE.Scene, reducedMotion = false): Field {
   const updateSmoke = createSmoke(scene, barnX - 2, 6, barnZ + 0.7, reducedMotion);
 
   return {
-    plow(row) {
-      stripMesh.setMatrixAt(row, plowedMatrices[row]);
-      stripMesh.instanceMatrix.needsUpdate = true;
+    plow(row, t) {
+      // the tractor jumps to the new row, so the row it was on is finished
+      // (matches Tractor.hasPassed, which releases that row's crops at once)
+      if (activeRow >= 0 && activeRow !== row) {
+        plowState[activeRow * 3] = Math.min(plowState[activeRow * 3], t - PASS_SECONDS);
+      }
+      activeRow = row;
+      plowState[row * 3] = t;
+      plowState[row * 3 + 1] = rowDirection(row);
+      plowState[row * 3 + 2] = plowed[row] ? 1 : 0;
+      plowAttr.needsUpdate = true;
+      if (!plowed[row]) {
+        plowed[row] = true;
+        stripMesh.setMatrixAt(row, plowedMatrices[row]);
+        stripMesh.instanceMatrix.needsUpdate = true;
+      }
     },
     update(t) {
+      soilUniforms.uSoilTime.value = t;
       updateSmoke(t);
       // a lazy, wind-driven swing rather than a constant spin
       if (!reducedMotion) {

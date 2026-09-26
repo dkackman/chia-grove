@@ -13,25 +13,41 @@ const HOVER_COLOR = ROW_COLOR.clone().multiplyScalar(HIGHLIGHT);
 // tinted by instanceColor. The squash lives in instanceMatrix.scale.y, so the
 // shader stays trivial. ShaderMaterial gets three's instancing attribute prefix
 // (instanceMatrix, instanceColor) for free when the mesh is an InstancedMesh.
+//
+// Lighting (display-referred, applied in the fragment shader): an overhead
+// light falls off down the board and toward the side edges (uLightCenter /
+// uLightHalf describe the lit window; half = 0 disables it). The flap card takes
+// the full falloff; the ink only a fraction of it, so text stays legible top to
+// bottom. A leaf mid-flip (instance scale.y < 1) tilts away from the light and
+// darkens, with its lower edge catching a brief specular glint.
 const VERT = /* glsl */ `
   attribute float aGlyph;
   varying vec2 vUv;
   varying float vGlyph;
   varying vec3 vTint;
+  varying vec2 vWorld;
+  varying float vSquash;
   void main() {
     vUv = uv;
     vGlyph = aGlyph;
     vTint = instanceColor;
-    gl_Position = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(position, 1.0);
+    vSquash = length(instanceMatrix[1].xyz);
+    vec4 w = modelMatrix * instanceMatrix * vec4(position, 1.0);
+    vWorld = w.xy;
+    gl_Position = projectionMatrix * viewMatrix * w;
   }
 `;
 const FRAG = /* glsl */ `
   uniform sampler2D uAtlas;
   uniform float uCols;
   uniform vec3 uInk;
+  uniform vec2 uLightCenter;
+  uniform vec2 uLightHalf;
   varying vec2 vUv;
   varying float vGlyph;
   varying vec3 vTint;
+  varying vec2 vWorld;
+  varying float vSquash;
   void main() {
     float col = mod(vGlyph, uCols);
     float row = floor(vGlyph / uCols);
@@ -44,7 +60,22 @@ const FRAG = /* glsl */ `
     float luma = dot(tex.rgb, vec3(0.299, 0.587, 0.114));
     float mask = smoothstep(0.46, 0.74, luma);
     vec3 ink = uInk * vTint; // vTint stays white except a hovered row (brightens)
-    gl_FragColor = vec4(mix(tex.rgb, ink, mask), 1.0);
+
+    float light = 1.0;
+    if (uLightHalf.x > 0.0) {
+      vec2 n = clamp((vWorld - uLightCenter) / uLightHalf, -1.0, 1.0);
+      light = mix(0.72, 1.14, n.y * 0.5 + 0.5); // overhead: top brighter
+      light *= 1.0 - 0.22 * pow(abs(n.x), 4.0); // falls off toward the sides
+    }
+    // a folding leaf turns away from the light (squash 1 = flat, ~0 = edge-on)
+    float fold = smoothstep(0.0, 1.0, vSquash);
+    float tilt = mix(0.5, 1.0, fold);
+    vec3 card = tex.rgb * light * tilt;
+    vec3 lit = ink * mix(1.0, light, 0.3) * mix(0.8, 1.0, fold);
+    vec3 shade = mix(card, lit, mask);
+    // specular glint along the leaf's bottom edge while it's mid-flip
+    shade += vec3(0.16, 0.15, 0.13) * (1.0 - fold) * smoothstep(0.75, 1.0, 1.0 - vUv.y) * light;
+    gl_FragColor = vec4(shade, 1.0);
   }
 `;
 
@@ -79,7 +110,13 @@ export class FlapGrid {
     atlas: THREE.CanvasTexture,
     rows: number,
     cols: number,
-    opts: { cell?: number; originX?: number; originY?: number } = {}
+    opts: {
+      cell?: number;
+      originX?: number;
+      originY?: number;
+      /** lit window (shared by reference so several grids light as one board) */
+      light?: { center: THREE.Vector2; half: THREE.Vector2 };
+    } = {}
   ) {
     this.rows = rows;
     this.cols = cols;
@@ -94,7 +131,13 @@ export class FlapGrid {
     geo.setAttribute("aGlyph", this.aGlyph);
 
     const mat = new THREE.ShaderMaterial({
-      uniforms: { uAtlas: { value: atlas }, uCols: { value: ATLAS_COLS }, uInk: { value: INK } },
+      uniforms: {
+        uAtlas: { value: atlas },
+        uCols: { value: ATLAS_COLS },
+        uInk: { value: INK },
+        uLightCenter: { value: opts.light?.center ?? new THREE.Vector2() },
+        uLightHalf: { value: opts.light?.half ?? new THREE.Vector2() },
+      },
       vertexShader: VERT,
       fragmentShader: FRAG,
     });

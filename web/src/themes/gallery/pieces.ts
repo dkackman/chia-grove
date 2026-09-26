@@ -1,29 +1,101 @@
 import * as THREE from "three";
 import type { SproutEvent } from "@grove/shared";
-import { GALLERY } from "./palette.js";
+import { mulberry32 } from "../shared/util.js";
+import { GALLERY, FRAME_FINISHES } from "./palette.js";
 import { WALL, hangSlot, frameSize } from "./layout.js";
+import { PictureLights } from "./lights.js";
 
 interface Piece {
   group: THREE.Group;
   image: THREE.Mesh;
   frame: THREE.Mesh;
+  mat: THREE.Mesh;
   event: SproutEvent; // latest event seen for this NFT
   eventCount: number; // how many events this NFT has had while on the wall
   bornAt: number; // set on first update() frame, drives the arrival bloom
   heat: number; // activity energy: spikes on a repeat event, cools over time
 }
 
-const FRAME_DEPTH = 0.12;
-const BORDER = 0.18;
+// the art is inset inside a passe-partout and a bevelled moulding; scaling it
+// down keeps each framed piece's outer size close to the layout's frameSize so
+// the salon grid still breathes
+const ART_SCALE = 0.8;
+const MOULD_DEPTH = 0.05; // extrusion depth before the bevel
+const BEVEL = 0.045; // bevel size (and thickness) of the moulding's edges
+const ART_Z = 0.02; // art sits recessed behind the moulding's front face
+
+// shared passe-partout materials (never disposed with a piece)
+let ivoryMat: THREE.MeshStandardMaterial | null = null;
+let charcoalMat: THREE.MeshStandardMaterial | null = null;
+function matMaterial(pale: boolean): THREE.MeshStandardMaterial {
+  if (pale) {
+    // the lamp overhead lights the mat: emissive tracks the lamp level
+    ivoryMat ??= new THREE.MeshStandardMaterial({
+      color: GALLERY.matIvory,
+      roughness: 1,
+      emissive: GALLERY.matIvory,
+      emissiveIntensity: 0.3,
+    });
+    return ivoryMat;
+  }
+  charcoalMat ??= new THREE.MeshStandardMaterial({ color: GALLERY.matCharcoal, roughness: 0.9 });
+  return charcoalMat;
+}
+
+function rect(hx: number, hy: number, hole = false): THREE.Path {
+  const path = hole ? new THREE.Path() : new THREE.Shape();
+  path.moveTo(-hx, -hy);
+  if (hole) {
+    path.lineTo(-hx, hy);
+    path.lineTo(hx, hy);
+    path.lineTo(hx, -hy);
+  } else {
+    path.lineTo(hx, -hy);
+    path.lineTo(hx, hy);
+    path.lineTo(-hx, hy);
+  }
+  path.closePath();
+  return path;
+}
+
+/** Per-piece frame style: moulding finish and width, mat colour and width. */
+export function frameStyle(index: number): {
+  finish: (typeof FRAME_FINISHES)[number];
+  mould: number;
+  mat: number;
+  paleMat: boolean;
+} {
+  const rng = mulberry32((index * 2246822519 + 13) >>> 0);
+  const total = FRAME_FINISHES.reduce((n, f) => n + f.weight, 0);
+  let pick = rng() * total;
+  let finish: (typeof FRAME_FINISHES)[number] = FRAME_FINISHES[0];
+  for (const f of FRAME_FINISHES) {
+    pick -= f.weight;
+    if (pick < 0) {
+      finish = f;
+      break;
+    }
+  }
+  const paleMat = rng() < 0.75;
+  return {
+    finish,
+    mould: 0.1 + rng() * 0.07,
+    mat: paleMat ? 0.13 + rng() * 0.1 : 0.04 + rng() * 0.03,
+    paleMat,
+  };
+}
 
 // activity "heat": each repeat event adds energy (stacking, capped) that decays
 // over a few seconds, driving a frame glow + scale pop so busy NFTs stand out
 const HEAT_PER_EVENT = 0.6;
 const HEAT_MAX = 1.5;
 const HEAT_COOL = 0.5; // per second
-const HEAT_GLOW = 0.7; // emissive intensity per unit of heat
+const HEAT_GLOW = 0.3; // emissive intensity per unit of heat
 const HEAT_POP = 0.1; // extra scale per unit of heat
-const HOVER_GLOW = 0.22; // steady emissive on the hovered frame
+// steady emissive on the hovered frame — kept low: a flat emissive washes out
+// the moulding's bevel, and the lamp overhead already brightens on hover
+const HOVER_GLOW = 0.08;
+const HOVER_LAMP = 0.33; // extra lamp glow on the hovered piece
 
 /**
  * Pool of framed art pieces hung along the wall; slots wrap at `cap`. Each NFT
@@ -39,6 +111,8 @@ export class Pieces {
   private pendingSensitive = new Map<string, THREE.Texture>();
   private next = 0; // total pieces ever added (also the hangSlot index)
   private hovered: number | null = null;
+  private focused: number | null = null;
+  private lights: PictureLights;
   // Lazily-held video elements for thumbnail-poster pieces. When a video NFT
   // is displayed as a static thumbnail, the <video> lives here (preload=none)
   // until the user clicks play, at which point swapToVideo() replaces the
@@ -50,6 +124,7 @@ export class Pieces {
     private cap = 56
   ) {
     this.slots = new Array(cap).fill(null);
+    this.lights = new PictureLights(scene, cap);
   }
 
   add(event: SproutEvent, texture: THREE.Texture, video?: HTMLVideoElement): void {
@@ -79,34 +154,65 @@ export class Pieces {
     const mw = media?.videoWidth || media?.width;
     const mh = media?.videoHeight || media?.height;
     const aspect = mw && mh ? mw / mh : 1;
-    const { w, h } = frameSize(index, aspect);
+    const size = frameSize(index, aspect);
+    const w = size.w * ART_SCALE;
+    const h = size.h * ART_SCALE;
     const pos = hangSlot(index);
+    const style = frameStyle(index);
+    const ax = w / 2 + style.mat; // inner edge of the moulding
+    const ay = h / 2 + style.mat;
+    const ox = ax + style.mould; // outer edge
+    const oy = ay + style.mould;
 
     const group = new THREE.Group();
     group.position.set(pos.x, pos.y, pos.z);
 
+    // bevelled moulding: a rectangular ring extruded with rounded bevels on
+    // both edges, so the picture-light catches a highlight along the top rail.
+    // The bevel grows the ring outward on both contours; inset them to match.
+    const shape = rect(ox - BEVEL, oy - BEVEL) as THREE.Shape;
+    shape.holes.push(rect(ax + BEVEL, ay + BEVEL, true));
+    const frameGeo = new THREE.ExtrudeGeometry(shape, {
+      depth: MOULD_DEPTH,
+      bevelEnabled: true,
+      bevelThickness: BEVEL,
+      bevelSize: BEVEL,
+      bevelSegments: 2,
+      curveSegments: 1,
+    });
     // per-piece frame material so hover and activity heat can glow one frame
     // at a time (emissive starts dark, lit up in update())
     const frame = new THREE.Mesh(
-      new THREE.BoxGeometry(w + BORDER * 2, h + BORDER * 2, FRAME_DEPTH),
+      frameGeo,
       new THREE.MeshStandardMaterial({
-        color: GALLERY.frame,
+        color: style.finish.color,
+        roughness: style.finish.roughness,
+        metalness: style.finish.metalness,
         emissive: GALLERY.spot,
         emissiveIntensity: 0,
-        roughness: 0.6,
       })
     );
+    frame.position.z = -MOULD_DEPTH / 2;
+
+    // passe-partout: a flat ring between the moulding and the art
+    const matShape = rect(ax + 0.01, ay + 0.01) as THREE.Shape;
+    matShape.holes.push(rect(w / 2, h / 2, true));
+    const mat = new THREE.Mesh(new THREE.ShapeGeometry(matShape), matMaterial(style.paleMat));
+    mat.position.z = ART_Z - 0.004;
+
     const image = new THREE.Mesh(
       new THREE.PlaneGeometry(w, h),
       new THREE.MeshBasicMaterial({ map: texture, toneMapped: false })
     );
-    image.position.z = FRAME_DEPTH / 2 + 0.001;
-    group.add(frame, image);
+    image.position.z = ART_Z;
+    group.add(frame, mat, image);
     this.scene.add(group);
+    this.lights.place(slotId, pos.x, pos.y, ox, oy);
 
-    const piece: Piece = { group, image, frame, event, eventCount: 1, bornAt: -1, heat: 0 };
+    const piece: Piece = { group, image, frame, mat, event, eventCount: 1, bornAt: -1, heat: 0 };
     this.slots[slotId] = piece;
     this.byObject.set(frame, slotId);
+    this.byObject.set(mat, slotId);
     this.byObject.set(image, slotId);
     if (event.launcherId) this.byLauncher.set(event.launcherId, slotId);
     if (video) this.videoBySlot.set(slotId, video);
@@ -168,13 +274,16 @@ export class Pieces {
     const old = this.slots[slotId];
     if (!old) return;
     this.byObject.delete(old.frame);
+    this.byObject.delete(old.mat);
     this.byObject.delete(old.image);
+    this.lights.clear(slotId);
     if (old.event.launcherId && this.byLauncher.get(old.event.launcherId) === slotId) {
       this.byLauncher.delete(old.event.launcherId);
     }
     this.scene.remove(old.group);
     old.frame.geometry.dispose();
     (old.frame.material as THREE.Material).dispose();
+    old.mat.geometry.dispose(); // its material is shared
     old.image.geometry.dispose();
     const mat = old.image.material as THREE.MeshBasicMaterial;
     this.releaseVideo(slotId, mat);
@@ -183,6 +292,7 @@ export class Pieces {
     // drop a stale hover pointer so the next piece to occupy this slot isn't
     // mistakenly shown as hovered
     if (this.hovered === slotId) this.hovered = null;
+    if (this.focused === slotId) this.focused = null;
     this.slots[slotId] = null;
   }
 
@@ -278,8 +388,10 @@ export class Pieces {
     if (slotId === undefined) return null;
     const piece = this.slots[slotId];
     if (!piece) return null;
-    const geo = piece.image.geometry as THREE.PlaneGeometry;
-    const height = geo.parameters.height;
+    // frame the whole piece — moulding included — not just the art
+    const geo = piece.frame.geometry;
+    if (!geo.boundingBox) geo.computeBoundingBox();
+    const height = geo.boundingBox!.max.y - geo.boundingBox!.min.y;
     return { center: piece.group.position.clone(), height };
   }
 
@@ -313,6 +425,17 @@ export class Pieces {
     this.hovered = object ? (this.byObject.get(object) ?? null) : null;
   }
 
+  /** The piece the camera is framing: its picture-light stays up while the room dims. */
+  setFocused(object: THREE.Object3D | null): void {
+    this.focused = object ? (this.byObject.get(object) ?? null) : null;
+  }
+
+  /** Room-level picture-light brightness (live level, and the undimmed rest level). */
+  setLightLevel(intensity: number, rest: number): void {
+    this.lights.setLevel(intensity, rest);
+    matMaterial(true).emissiveIntensity = 0.1 + intensity * 0.3;
+  }
+
   /** Per-frame: arrival bloom, decaying activity heat, and hover glow. */
   update(t: number, dt: number): void {
     for (let i = 0; i < this.cap; i++) {
@@ -326,10 +449,14 @@ export class Pieces {
       const bloom = age < 1 ? (1 - age) * 0.12 : 0;
       piece.group.scale.setScalar(1 + bloom + piece.heat * HEAT_POP);
 
+      const hover = this.hovered === i ? HOVER_GLOW : 0;
       const mat = piece.frame.material as THREE.MeshStandardMaterial;
-      mat.emissiveIntensity = Math.min(
-        1.3,
-        (this.hovered === i ? HOVER_GLOW : 0) + piece.heat * HEAT_GLOW
+      mat.emissiveIntensity = Math.min(0.55, hover + piece.heat * HEAT_GLOW);
+      // the lamp over a busy or hovered piece brightens with it
+      this.lights.setGlow(
+        i,
+        piece.heat * 0.5 + (this.hovered === i ? HOVER_LAMP : 0),
+        this.focused === i
       );
     }
   }

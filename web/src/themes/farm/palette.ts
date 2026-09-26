@@ -1,15 +1,26 @@
 /** Daylight farm palette — soft blue sky, fresh turf, warm plowed soil. */
 export const FARM = {
-  sky: 0xbfe3ff,
-  haze: 0xc9dcec,
+  /** Sky dome top; fades down to `haze` at the horizon. */
+  skyZenith: 0x4a8fdc,
+  /** Horizon and fog colour — the dome's horizon matches it so hills melt into sky. */
+  haze: 0xd3e2ec,
+  /** Warm band low in the sky on the sun's side. */
+  skyWarmHaze: 0xf6e3c2,
+  /** Key light: the low afternoon sun. */
+  sunLight: 0xffe4b8,
+  /** Fill light: bright sky bouncing back from behind the camera. */
+  skyFill: 0xe6efff,
   turf: 0x79a861,
   soil: 0x6f4a26,
+  soilDark: 0x3c2716,
+  soilLight: 0x94693d,
+  straw: 0xcdb679,
   wheatEmissive: 0x3a2c0a,
   sunflowerPetal: 0xffc93c,
   scarecrow: 0xa88a5c,
   chicken: 0xfff4e0,
   crow: 0x23232c,
-  sun: 0xfff3c4,
+  sun: 0xffeab8,
   barn: 0xa63d2f,
   barnRoof: 0x5e2a20,
   tractor: 0xc94f35,

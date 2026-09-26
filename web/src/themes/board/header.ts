@@ -64,9 +64,16 @@ export class Header {
   private clockText = "00:00:00";
   private mode: HeaderMode = "live";
 
-  constructor(scene: THREE.Scene, atlas: THREE.CanvasTexture, opts: { originY?: number } = {}) {
+  constructor(
+    scene: THREE.Scene,
+    atlas: THREE.CanvasTexture,
+    opts: { originY?: number; light?: { center: THREE.Vector2; half: THREE.Vector2 } } = {}
+  ) {
     // 3 rows sitting above the ledger; the ledger sets its own originY below this.
-    this.grid = new FlapGrid(scene, atlas, 3, BOARD_COLS, { originY: opts.originY ?? 7 });
+    this.grid = new FlapGrid(scene, atlas, 3, BOARD_COLS, {
+      originY: opts.originY ?? 7,
+      light: opts.light,
+    });
     this.grid.setRow(0, padR("THE BIG BOARD", BOARD_COLS), true);
   }
 

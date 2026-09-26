@@ -8,6 +8,7 @@ import { createPostFx } from "../shared/postfx.js";
 import { chunkPosition, spiralRadius, MAX_BLOCK_SLOTS } from "./layout.js";
 import { createMineSky } from "./sky.js";
 import { createWater } from "./water.js";
+import { createClouds } from "./clouds.js";
 
 export function startMine(canvas: HTMLCanvasElement, feed: GroveFeed) {
   const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -23,6 +24,7 @@ export function startMine(canvas: HTMLCanvasElement, feed: GroveFeed) {
   scene.add(new THREE.HemisphereLight(0xcfe6ff, 0x3a3326, 0.4));
   const sky = createMineSky(scene, reducedMotion);
   const water = createWater(scene);
+  const clouds = createClouds(scene, scene.fog as THREE.FogExp2, reducedMotion);
 
   const postfx = createPostFx(renderer, scene, camera, {
     toneMapping: THREE.ACESFilmicToneMapping,
@@ -104,7 +106,8 @@ export function startMine(canvas: HTMLCanvasElement, feed: GroveFeed) {
     );
     camera.lookAt(0, 3, 0);
 
-    sky.update(dt, t);
+    sky.update(dt, t, camera);
+    clouds.update(t, camera, sky.cloudColor);
     water.update(t);
     extraUpdate(dt, t);
     postfx.render();
@@ -119,7 +122,7 @@ export function startMine(canvas: HTMLCanvasElement, feed: GroveFeed) {
   });
 
   return Object.assign(
-    { renderer, camera, scene, sky },
+    { renderer, camera, scene, sky, water },
     {
       setSproutHandler: (fn: typeof onSprout) => (onSprout = fn),
       setAmbientHandler: (fn: typeof onAmbientExtra) => (onAmbientExtra = fn),

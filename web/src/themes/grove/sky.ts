@@ -1,7 +1,102 @@
 import * as THREE from "three";
 import { COLORS } from "./palette.js";
-import { auroraTexture, glowTexture } from "../shared/textures.js";
+import { glowTexture } from "../shared/textures.js";
+import { NOISE_GLSL } from "./glsl.js";
 import { safeBigInt } from "../shared/util.js";
+
+/** Low over the horizon, left of the opening view direction. */
+const MOON_POSITION = new THREE.Vector3(-156, 19, 6);
+/** Billboard quad edge (world units); the disc is MOON_DISC of the half-size. */
+const MOON_QUAD = 44;
+const MOON_DISC = 0.19;
+
+const AURORA_RADIUS = 172;
+const AURORA_ARC = Math.PI * 0.95;
+const AURORA_BASE = -4;
+const AURORA_HEIGHT = 70;
+/** Resting aurora strength between blocks (a block flares it to 1). */
+const AURORA_REST = 0.4;
+
+const MOON_VERT = /* glsl */ `
+uniform float uSize;
+varying vec2 vUv;
+void main() {
+  vUv = uv * 2.0 - 1.0;
+  vec4 mv = modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+  mv.xy += position.xy * uSize;
+  gl_Position = projectionMatrix * mv;
+}
+`;
+
+const MOON_FRAG = /* glsl */ `
+uniform vec3 uColor;
+uniform vec3 uHalo;
+uniform float uBright;
+varying vec2 vUv;
+${NOISE_GLSL}
+void main() {
+  const float R = ${MOON_DISC.toFixed(3)};
+  float r = length(vUv);
+  float aa = fwidth(r);
+  float disc = 1.0 - smoothstep(R - aa, R + aa, r);
+  vec2 q = vUv / R;
+  float mu = sqrt(max(0.0, 1.0 - dot(q, q)));
+  float limb = 0.6 + 0.4 * mu;
+  float maria = gFbm(q * 1.7 + vec2(3.7, 1.2));
+  float surface = mix(1.0, 0.58, smoothstep(0.42, 0.7, maria));
+  vec3 face = uColor * limb * surface * 0.95;
+  float out_ = max(r - R, 0.0);
+  float halo = (exp(-out_ * 7.0) * 0.28 + exp(-out_ * 30.0) * 0.45) * (1.0 - smoothstep(0.6, 1.0, r));
+  vec3 rgb = (face * disc + uHalo * halo * (1.0 - disc)) * uBright;
+  gl_FragColor = vec4(rgb, disc);
+}
+`;
+
+const AURORA_VERT = /* glsl */ `
+uniform float uTime;
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  vec3 p = position;
+  // slow folds: push the ribbon in and out along its length
+  float fold = sin(uv.x * 11.0 + uTime * 0.12) * 0.05 + sin(uv.x * 27.0 - uTime * 0.2) * 0.02;
+  p.xz *= 1.0 + fold;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+}
+`;
+
+const AURORA_FRAG = /* glsl */ `
+uniform float uTime;
+uniform float uEnergy;
+uniform vec3 uLow;
+uniform vec3 uMid;
+uniform vec3 uHigh;
+varying vec2 vUv;
+${NOISE_GLSL}
+void main() {
+  float x = vUv.x;
+  float y = vUv.y;
+  // wavy, drifting lower hem
+  float hem = 0.2 + 0.06 * sin(x * 9.0 + uTime * 0.09) + 0.035 * sin(x * 23.0 - uTime * 0.16)
+    + 0.03 * (gNoise(vec2(x * 14.0, uTime * 0.05)) - 0.5);
+  float h = y - hem;
+  float lower = smoothstep(-0.025, 0.03, h);
+  // bright hem line, long soft fade upward
+  float body = exp(-max(h, 0.0) * 3.2) + exp(-max(h, 0.0) * 22.0) * 0.8;
+  // vertical ray streaks that shimmer and drift sideways
+  float rays = gNoise(vec2(x * 140.0 + uTime * 0.35, uTime * 0.25))
+    * (0.45 + 0.55 * gNoise(vec2(x * 45.0 - uTime * 0.2, 3.0)));
+  rays = 0.3 + 0.9 * rays * rays;
+  // big patches of brighter curtain wander along the arc
+  float patches = smoothstep(0.2, 0.8, gFbm(vec2(x * 5.0 - uTime * 0.03, 1.7)));
+  float ends = smoothstep(0.0, 0.2, x) * smoothstep(1.0, 0.8, x);
+  float top = 1.0 - smoothstep(0.45, 0.95, y);
+  float intensity = lower * body * rays * (0.25 + 0.75 * patches) * ends * top;
+  vec3 col = mix(uLow, uMid, smoothstep(0.02, 0.2, h));
+  col = mix(col, uHigh, smoothstep(0.18, 0.5, h));
+  gl_FragColor = vec4(col * intensity * uEnergy * 0.55, 1.0);
+}
+`;
 
 export interface Sky {
   update(dt: number, t: number): void;
@@ -63,38 +158,77 @@ export function createSky(scene: THREE.Scene, reducedMotion = false): Sky {
     starShader = shader as unknown as typeof starShader;
   };
   const stars = new THREE.Points(starGeometry, starMaterial);
+  stars.renderOrder = -3;
   scene.add(stars);
 
-  // moon
-  const moonMaterial = new THREE.SpriteMaterial({
-    map: glowMap,
-    color: COLORS.moon,
-    transparent: true,
-    depthWrite: false,
-    fog: false,
-  });
-  const moon = new THREE.Sprite(moonMaterial);
-  moon.position.set(-60, 58, -95);
-  moon.scale.setScalar(26);
+  // moon: a billboarded disc with soft maria, limb darkening and a halo, sat
+  // low over the horizon where the tilted orbit camera actually sees it (the
+  // old high glow sprite was always above the frame). Brightness tracks
+  // netspace via `moonLevel`. Premultiplied blending lets the disc occlude the
+  // stars behind it while the halo stays additive.
+  const moonUniforms = {
+    uSize: { value: MOON_QUAD },
+    uColor: { value: new THREE.Color(COLORS.moon) },
+    uHalo: { value: new THREE.Color(0x7fa6d8) },
+    uBright: { value: 0.9 },
+  };
+  const moon = new THREE.Mesh(
+    new THREE.PlaneGeometry(1, 1),
+    new THREE.ShaderMaterial({
+      uniforms: moonUniforms,
+      vertexShader: MOON_VERT,
+      fragmentShader: MOON_FRAG,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.CustomBlending,
+      blendSrc: THREE.OneFactor,
+      blendDst: THREE.OneMinusSrcAlphaFactor,
+    })
+  );
+  moon.position.copy(MOON_POSITION);
+  moon.frustumCulled = false; // billboarded in the vertex shader
+  moon.renderOrder = -1; // after the stars, so the disc hides the ones behind it
   scene.add(moon);
 
   const moonLight = new THREE.DirectionalLight(0xbfd8ff, 0.55);
-  moonLight.position.copy(moon.position);
+  moonLight.position.set(-60, 58, -95); // high key light for the flora, independent of the visible disc
   scene.add(moonLight);
 
-  // aurora band on the horizon
+  // aurora: a curved curtain ribbon far behind the meadow. The shader draws
+  // vertical ray streaks with a wavy, drifting lower hem and soft falloff on
+  // every edge — no geometry edge is ever visible. It glows faintly at rest
+  // and flares on each block.
+  const auroraUniforms = {
+    uTime: { value: 0 },
+    uEnergy: { value: 0 },
+    uLow: { value: new THREE.Color(COLORS.aurora) },
+    uMid: { value: new THREE.Color(0x3fc6d8) },
+    uHigh: { value: new THREE.Color(0x7a4dd8) },
+  };
   const aurora = new THREE.Mesh(
-    new THREE.PlaneGeometry(420, 90),
-    new THREE.MeshBasicMaterial({
-      map: auroraTexture(),
+    new THREE.CylinderGeometry(
+      AURORA_RADIUS,
+      AURORA_RADIUS,
+      AURORA_HEIGHT,
+      96,
+      1,
+      true,
+      Math.PI - AURORA_ARC / 2,
+      AURORA_ARC
+    ),
+    new THREE.ShaderMaterial({
+      uniforms: auroraUniforms,
+      vertexShader: AURORA_VERT,
+      fragmentShader: AURORA_FRAG,
       transparent: true,
-      opacity: 0,
-      blending: THREE.AdditiveBlending,
       depthWrite: false,
-      fog: false,
+      blending: THREE.AdditiveBlending,
+      side: THREE.DoubleSide,
     })
   );
-  aurora.position.set(0, 42, -160);
+  aurora.position.y = AURORA_BASE + AURORA_HEIGHT / 2;
+  aurora.frustumCulled = false;
+  aurora.renderOrder = -2;
   scene.add(aurora);
 
   // occasional shooting star: a tapering streak (head bright, tail fading via
@@ -190,17 +324,20 @@ export function createSky(scene: THREE.Scene, reducedMotion = false): Sky {
 
   let auroraEnergy = 0;
   let moonTarget = 0.9;
+  let moonLevel = 0.9;
   let signalLost = false;
 
   return {
     update(dt, t) {
       auroraEnergy = Math.max(0, auroraEnergy - dt / 4);
-      aurora.material.opacity = auroraEnergy * 0.35;
-      aurora.position.x = Math.sin(t * 0.05) * 30;
+      auroraUniforms.uEnergy.value =
+        (AURORA_REST + (1 - AURORA_REST) * auroraEnergy) * (signalLost ? 0.4 : 1);
+      auroraUniforms.uTime.value = reducedMotion ? t * 0.1 : t;
 
       const target = signalLost ? moonTarget * 0.35 : moonTarget;
-      moonMaterial.opacity += (target - moonMaterial.opacity) * Math.min(dt, 1);
-      moonLight.intensity = 0.15 + moonMaterial.opacity * 0.5;
+      moonLevel += (target - moonLevel) * Math.min(dt, 1);
+      moonUniforms.uBright.value = moonLevel;
+      moonLight.intensity = 0.15 + moonLevel * 0.5;
 
       stars.rotation.y = t * 0.004;
       if (starShader) starShader.uniforms.uTime.value = reducedMotion ? 0 : t;
