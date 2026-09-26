@@ -124,18 +124,26 @@ export class Glows {
   }
 }
 
+/** After arriving, migrated motes flare and spray outward for this long. */
+const MIGRATE_BURST_SECONDS = 0.5;
+
 const VORTEX_VERTEX = /* glsl */ `
 attribute vec4 aSeed; // radius, angle, speed, offset
 uniform float uTime;
 uniform vec3 uCenter;
 uniform float uActive;
 uniform float uSwell;
+uniform vec2 uMigRange; // [from, to) mote indices being drawn into the next block
+uniform vec2 uMigTime;  // start, travel duration
+uniform vec3 uMigTarget; // the new block's slot on the thread
 varying float vAlpha;
 varying vec3 vWorld;
 varying float vHeat;
 ${POINT_SIZE_GLSL}
 void main() {
-  if (float(gl_VertexID) >= uActive) {
+  float id = float(gl_VertexID);
+  bool migrating = id >= uMigRange.x && id < uMigRange.y;
+  if (!migrating && id >= uActive) {
     gl_Position = vec4(2.0, 2.0, 2.0, 1.0);
     gl_PointSize = 0.0;
     vAlpha = 0.0;
@@ -153,6 +161,26 @@ void main() {
   gl_Position = projectionMatrix * mv;
   vAlpha = smoothstep(0.0, 0.15, s) * (1.0 - smoothstep(0.93, 1.0, s));
   vHeat = s;
+
+  if (migrating) {
+    // included transactions peel off the swirl, staggered, and whirl down
+    // into the block's slot, all arriving as its coins erupt; then they flare
+    // and spray outward with that burst
+    float k = clamp((uTime - uMigTime.x - aSeed.w * 0.6) / (uMigTime.y - 0.6), 0.0, 1.0);
+    float burst = clamp((uTime - uMigTime.x - uMigTime.y) / ${MIGRATE_BURST_SECONDS.toFixed(2)}, 0.0, 1.0);
+    float e = k * k;
+    vec3 off = world - uMigTarget;
+    float spin = e * 5.0 * aSeed.z;
+    off.xz = mat2(cos(spin), sin(spin), -sin(spin), cos(spin)) * off.xz;
+    vec3 spray = normalize(vec3(cos(aSeed.y), aSeed.z - 1.05, sin(aSeed.y))) * aSeed.x * 0.35;
+    world = uMigTarget + off * (1.0 - e) + spray * (1.0 - (1.0 - burst) * (1.0 - burst));
+    mv = viewMatrix * vec4(world, 1.0);
+    float size = mix(0.16 + 0.1 * s, 0.34, smoothstep(0.0, 0.3, k)) * (1.0 + 0.8 * sin(burst * 3.14159));
+    gl_PointSize = pointSize(size, mv);
+    gl_Position = projectionMatrix * mv;
+    vAlpha = max(vAlpha, smoothstep(0.0, 0.2, k)) * 1.6 * (1.0 - burst) * (1.0 - burst);
+    vHeat = mix(s, 1.0, smoothstep(0.0, 0.4, k));
+  }
   vWorld = world;
 }
 `;
@@ -176,6 +204,7 @@ void main() {
  * The mempool: a whirlpool of unconfirmed motes spiralling down into the empty
  * slot above the head, where the next block will be infused. Its population
  * tracks mempool size; each new block, the funnel glides up to the next slot.
+ * migrate() draws the motes a block included down into its slot first.
  */
 export class Vortex {
   private readonly material: THREE.ShaderMaterial;
@@ -184,6 +213,8 @@ export class Vortex {
   private activeTarget = 40;
   private active = 0;
   private swell = 0;
+  private migEnd = -1;
+  private migFrom = 0;
 
   constructor(
     scene: THREE.Scene,
@@ -211,6 +242,9 @@ export class Vortex {
         uCenter: { value: this.center },
         uActive: { value: 0 },
         uSwell: { value: 0 },
+        uMigRange: { value: new THREE.Vector2(0, 0) },
+        uMigTime: { value: new THREE.Vector2(0, 1) },
+        uMigTarget: { value: new THREE.Vector3() },
         uViewportH: { value: innerHeight },
       },
       blending: THREE.AdditiveBlending,
@@ -226,6 +260,36 @@ export class Vortex {
     this.activeTarget = Math.min(this.cap, n);
   }
 
+  /** Motes currently swirling. */
+  get count(): number {
+    return Math.floor(this.active);
+  }
+
+  /**
+   * Pull the top `n` swirling motes down to `target` over `duration` seconds,
+   * burst them outward, then drop them from the swirl.
+   */
+  migrate(n: number, target: Vec3, t: number, duration: number): void {
+    this.finishMigration();
+    const to = Math.floor(this.active);
+    const from = Math.max(0, to - Math.round(n));
+    if (from >= to) return;
+    this.migFrom = from;
+    this.migEnd = t + duration + MIGRATE_BURST_SECONDS;
+    const u = this.material.uniforms;
+    (u.uMigTarget.value as THREE.Vector3).set(target.x, target.y, target.z);
+    (u.uMigRange.value as THREE.Vector2).set(from, to);
+    (u.uMigTime.value as THREE.Vector2).set(t, duration);
+    this.active = from;
+    this.activeTarget = Math.max(0, this.activeTarget - (to - from));
+  }
+
+  private finishMigration(): void {
+    if (this.migEnd < 0) return;
+    this.migEnd = -1;
+    (this.material.uniforms.uMigRange.value as THREE.Vector2).set(0, 0);
+  }
+
   /** Move the funnel to the next empty slot; `snap` skips the glide (snapshot replay). */
   moveTo(p: Vec3, snap: boolean): void {
     this.target.set(p.x, p.y, p.z);
@@ -236,7 +300,10 @@ export class Vortex {
   update(t: number, dt: number, viewportH: number): void {
     this.center.lerp(this.target, Math.min(1, dt * 1.6));
     this.active += (this.activeTarget - this.active) * Math.min(1, dt * 0.8);
+    // keep the swirl from regrowing into motes that are still mid-flight
+    if (this.migEnd >= 0) this.active = Math.min(this.active, this.migFrom);
     this.swell = Math.max(0, this.swell - dt * 0.7);
+    if (this.migEnd >= 0 && t >= this.migEnd) this.finishMigration();
     const u = this.material.uniforms;
     u.uTime.value = t;
     u.uActive.value = this.active;

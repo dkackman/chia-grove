@@ -145,6 +145,18 @@ export function mempoolParticles(size: number, cap: number): number {
   return Math.min(cap, Math.round(40 + 26 * Math.sqrt(size)));
 }
 
+/**
+ * How many swirling motes a block's mempool inclusion pulls into its slot: the
+ * included share of the mempool, applied to the swirl (which is sqrt-scaled,
+ * so raw counts would be meaningless), with a small floor so a light block
+ * still visibly takes something.
+ */
+export function includedMotes(included: number, remaining: number, swirling: number): number {
+  if (!(included > 0) || !(swirling > 0)) return 0;
+  const share = included / (included + Math.max(0, remaining));
+  return Math.min(swirling, Math.max(Math.min(included, 8), Math.round(share * swirling)));
+}
+
 /** Star visibility fraction from netspace (bytes): 40 EiB and above shows the full sky. */
 export function starFraction(netspace: string): number {
   const bytes = Number(netspace);

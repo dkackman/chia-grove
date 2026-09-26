@@ -5,7 +5,7 @@ import { FADE_GLSL, type SceneUniforms } from "./shading.js";
 /** Mean spacing of Chia transaction blocks — the dial's sweep hand runs on it. */
 const TX_BLOCK_SECONDS = 52;
 /** Dial slots the sweep hand crosses per mean block interval, while still near the start. */
-const SWEEP_SLOTS_PER_BLOCK = 3;
+const SWEEP_SLOTS_PER_BLOCK = 6;
 /** The hand eases toward this many slots (¾ of the ring) and never gets there, so it can't lap. */
 const SWEEP_MAX_SLOTS = BLOCKS_PER_TURN * 0.75;
 
