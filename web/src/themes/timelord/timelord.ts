@@ -28,7 +28,7 @@ import { Thread, INFUSE_SECONDS } from "./thread.js";
 import { Glows, Vortex } from "./particles.js";
 import { Cards } from "./cards.js";
 import { Fx } from "./fx.js";
-import { createStage, TX_BLOCK_SECONDS } from "./stage.js";
+import { createStage, dialSweep } from "./stage.js";
 import { TimeTravel, createCameraControl } from "./controls.js";
 import { Hud } from "./hud.js";
 import { crystalGeometry, coinGeometry, gemGeometry, haloGeometry } from "./geometry.js";
@@ -357,7 +357,7 @@ export function startTimelord(canvas: HTMLCanvasElement, feed: GroveFeed): Visua
     shared.uPulse.value = Math.max(0, shared.uPulse.value - dt * 0.9);
 
     renderer.getDrawingBufferSize(size);
-    const sweep = Math.min(1, (performance.now() - lastBlockWall) / 1000 / TX_BLOCK_SECONDS);
+    const sweep = dialSweep((performance.now() - lastBlockWall) / 1000);
     stage.update(t, dt, camera, focusY, helixAngle(Math.max(headSeq, 0)), sweep, size.y);
     thread.update(t);
     crystals.update(t, orbitTime);

@@ -3,7 +3,22 @@ import { BLOCKS_PER_TURN, HELIX_RADIUS } from "./layout.js";
 import { FADE_GLSL, type SceneUniforms } from "./shading.js";
 
 /** Mean spacing of Chia transaction blocks — the dial's sweep hand runs on it. */
-export const TX_BLOCK_SECONDS = 52;
+const TX_BLOCK_SECONDS = 52;
+/** Dial slots the sweep hand crosses per mean block interval, while still near the start. */
+const SWEEP_SLOTS_PER_BLOCK = 3;
+/** The hand eases toward this many slots (¾ of the ring) and never gets there, so it can't lap. */
+const SWEEP_MAX_SLOTS = BLOCKS_PER_TURN * 0.75;
+
+/**
+ * How far the dial's sweep hand has travelled, in slots, `elapsed` seconds
+ * after the last block. It moves at SWEEP_SLOTS_PER_BLOCK early on, then slows
+ * exponentially toward SWEEP_MAX_SLOTS, so even a long gap between blocks stays
+ * short of a full turn.
+ */
+export function dialSweep(elapsed: number): number {
+  const rate = SWEEP_SLOTS_PER_BLOCK / TX_BLOCK_SECONDS;
+  return SWEEP_MAX_SLOTS * (1 - Math.exp((-rate * Math.max(0, elapsed)) / SWEEP_MAX_SLOTS));
+}
 
 const NEBULA_VERTEX = /* glsl */ `
 varying vec3 vDir;
@@ -156,8 +171,9 @@ export interface Stage {
 /**
  * Everything that isn't data: the nebula, a starfield whose density tracks
  * netspace, the luminous spindle the helix winds around, and a timelord's dial
- * at the focus height — one tick per block slot, with a sweep hand that fills
- * toward the next slot as time passes since the last block.
+ * at the focus height — one tick per block slot, with a sweep hand that
+ * advances around the ring from the head slot as time passes since the last
+ * block (see dialSweep).
  */
 export function createStage(
   scene: THREE.Scene,
