@@ -24,7 +24,7 @@ The `shared` package has no build step; both `server` and `web` import its `.ts`
 
 ## Key Constraints
 
-- **Node ≥ 24** required (uses `--experimental-vm-modules` path in vitest, native `fetch`, etc.).
+- **Node ≥ 24** required (`engines` in `package.json`; the server relies on native `fetch` and the built-in `node:sqlite`).
 - All packages are `"type": "module"`. Use `.js` extensions on local imports (even for `.ts` source files), e.g. `import { foo } from "./bar.js"`.
 - Do not add a build/compile step to `server` or `shared` — they run source TypeScript via `tsx`.
 - The `web` package builds with Vite; don't add a separate `tsc` build there.
@@ -38,7 +38,7 @@ The `shared` package has no build step; both `server` and `web` import its `.ts`
 
 ## Shared Event Types
 
-All WebSocket messages conform to `WireMessage` in `shared/src/index.ts`. The union is `GroveEvent | Snapshot`. Do not add fields to existing event types without updating both the server emitter and the web consumer.
+All WebSocket messages conform to `WireMessage` in `shared/src/index.ts`. The union is `Hello | Snapshot | Batch`; `Snapshot` and `Batch` carry `GroveEvent[]`. Do not add fields to existing event types without updating both the server emitter and the web consumer.
 
 ## Scene Performance
 
@@ -52,7 +52,7 @@ Key `InstancedKind` behaviours to be aware of when modifying themes:
 - `clearWhere(predicate)` zeroes matching instances via scale-0 matrix without a full buffer clear — use it for reorg culling.
 - `boundsRadius` / `boundsCenterY` constructor params fix the bounding sphere so raycasting works before the spiral is populated.
 
-Each theme sets its own cap constants. Grove: grass 800, mushroom 140, bloom 40, wisp 80. Farm: wheat 800, gourd 300, sunflower 40, scarecrow 80. Mine: grass/dirt 6 000 each (persistent terrain), CAT blocks 192 per-block budget, paintings 40, villagers 80.
+Each theme sets its own cap constants: `CAPS` in `grove/flora.ts`, `farm/crops.ts` and `mine/cats.ts`; `GRASS_CAP`/`DIRT_CAP` (persistent terrain) in `mine/island.ts`; `SPECIAL_BUDGET` (per-block CAT budget) in `mine/cats.ts`; `PAINTING_CAP`/`VILLAGER_CAP` in `mine/structures.ts`.
 
 ## Testing Without a Server
 

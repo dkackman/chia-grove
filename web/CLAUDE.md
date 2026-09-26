@@ -15,7 +15,7 @@ Six themes ship: `grove`, `farm`, `gallery`, `mine`, `board`, `timelord`. Shared
 Shared `THREE.InstancedMesh` wrapper used by all themes:
 
 - Constructor accepts `THREE.Material | THREE.Material[]` (array enables per-face BoxGeometry materials).
-- `mesh.count` starts at 0 and grows as `plant()` is called — large caps (e.g. 6 000 for terrain) are cheap until filled.
+- `mesh.count` starts at 0 and grows as `plant()` is called — large caps (e.g. 10 000 for mine terrain) are cheap until filled.
 - `Pose` has an optional `y?: number` for vertical offset (used by mine for terrain elevation).
 - `clearWhere(predicate)` zeroes matching slots by scale-0 matrix — used for reorg culling without a full clear.
 - `boundsRadius` / `boundsCenterY` constructor params pin the bounding sphere so raycasting works before the spiral fills out.
@@ -27,7 +27,7 @@ Shared `THREE.InstancedMesh` wrapper used by all themes:
 Bioluminescent night meadow.
 
 - `grove.ts` owns the Three.js renderer, camera orbit, and event dispatch. Exposes setter hooks (`setSproutHandler`, `setAmbientHandler`, etc.) wired by `start()` to `FloraSystem` and `Fireflies`.
-- `FloraSystem` (`flora.ts`) uses `THREE.InstancedMesh`. Each kind (grass, mushroom, bloom, wisp) has 3 geometry variants and a fixed slot cap: grass 800, mushroom 140, bloom 40, wisp 80. Slots wrap (oldest overwritten).
+- `FloraSystem` (`flora.ts`) uses `THREE.InstancedMesh`. Each kind (grass, mushroom, bloom, wisp) has 3 geometry variants and a fixed slot cap: grass 1600, mushroom 300, bloom 80, wisp 160. Slots wrap (oldest overwritten).
 - `layout.ts` places blocks on a phyllotaxis (sunflower-seed) spiral. Within each block's cluster, `sproutOffset` uses `mulberry32` seeded from the coin id for deterministic, stable scatter.
 - `palette.ts` provides scene colors; CAT asset colors are hashed into one of 12 bioluminescent hues by `themes/shared/cat-color.ts`.
 - `sky.ts` scales moonlight with netspace and pulses on new blocks. The moon is a vertex-billboarded shader disc (maria, limb darkening, halo; premultiplied blending so it hides the stars behind it) sat low on the horizon — the orbit camera only sees ~7° above horizontal. The aurora is a shader on an open cylinder arc (ray streaks, wavy hem, soft falloff on every edge), faint at rest and flaring on each block.
@@ -59,7 +59,7 @@ Interior art gallery showing NFT mints as framed canvases on illuminated walls. 
 
 Minecraft-inspired voxel island growing on a phyllotaxis spiral. XCH spends pave grass/dirt land; CATs become color-and-material voxel blocks (family + dye hashed from assetId); NFTs become framed paintings (clickable → MintGarden); DIDs become villager figures. Rim torches track mempool; 150 s day-night cycle scales with netspace; mints fire beacon beams; reorg triggers a creeper burst. Terrain is persistent (keyed by block-slot index); only activity-layer specials churn.
 
-- `island.ts` — `Island` class: persistent grass/dirt instanced terrain (6-material per-face grass blocks, 6 000-slot caps, build-to-stable via `Map<number, ChunkGround>`).
+- `island.ts` — `Island` class: persistent grass/dirt instanced terrain (6-material per-face grass blocks, 10 000-slot caps, build-to-stable via `Map<number, ChunkGround>`).
 - `cats.ts` — `CatBlocks`: 3 `InstancedKind` families (opaque wool, transparent glass, emissive glowstone); slot caps opaque 2000 / transparent 600 / emissive 400; 600-per-block budget caps airdrop bursts. Uses `resolveCatBlock()` from `material.ts` for family + dye assignment.
 - `material.ts` — `resolveCatBlock()`: maps a CAT `assetId` hash to a `CatFamily`, material name, and dye color. Separated from `cats.ts` so material logic is independently testable.
 - `water.ts` — flat translucent ocean (`WATER_LEVEL` aligns the terrain) with a pixel-quantized animated ripple pattern and shallows/foam in the fragment shader. The shallows come from a 512² R8 shore mask (4 texels/block, Chebyshev distance to the nearest ground column) that `Island` paints via `markLand` as columns are placed and rebuilds on reorg; uploads are throttled to 4/s.
