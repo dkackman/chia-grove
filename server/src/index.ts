@@ -43,7 +43,8 @@ const BACKFILL_BLOCKS = envInt("BACKFILL_BLOCKS", 150);
 
 // the ring buffer is sized to absorb airdrop blocks (400+ sprouts each) while
 // still covering the full backfill window; older events fall off the back
-const hub = new Hub(new RingBuffer<GroveEvent>(10000), readVersion().appVersion);
+const buffer = new RingBuffer<GroveEvent>(10000);
+const hub = new Hub(buffer, readVersion().appVersion);
 const media = new MediaIndex(10000); // >= ring buffer so replayable art stays resolvable
 const CONTENT_DB_PATH = process.env.CONTENT_DB_PATH ?? "./data/content-filter.sqlite";
 let contentStore: ContentStore | undefined;
@@ -74,6 +75,13 @@ const contentFilter = new ContentFilter(media, {
   localNsfwEnforceClean: process.env.LOCAL_NSFW_ENFORCE_CLEAN === "true",
 }); // MintGarden lookups cached per nftId; SafeSearch async when API key set
 const cats = new CatRegistry();
+// a load that lands after blocks were already classified (initial failure, a
+// newly listed CAT) patches the names into the snapshot buffer, so new clients
+// see them instead of a bare "CAT" until those events age out
+cats.onLoad(() => {
+  const patched = cats.fillNames(buffer);
+  if (patched > 0) log.info({ patched }, "cat names backfilled into buffered events");
+});
 await cats.start();
 
 const rpcView = coinsetView(RpcClient.mainnet());

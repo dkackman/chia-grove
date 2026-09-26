@@ -1,4 +1,5 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
+import type { GroveEvent } from "@grove/shared";
 import { CatRegistry } from "../src/classify/cats.js";
 
 interface FakeAsset {
@@ -72,4 +73,87 @@ test("a hung request is aborted by the fetch timeout", async () => {
 
   const registry = new CatRegistry({ fetchImpl, timeoutMs: 10 });
   await expect(registry.refresh()).rejects.toThrow("aborted");
+});
+
+test("a failed initial load retries on a short backoff, then settles into hourly refreshes", async () => {
+  vi.useFakeTimers();
+  try {
+    let fail = 2;
+    let calls = 0;
+    const fetchImpl = (async (url: URL | RequestInfo) => {
+      calls++;
+      if (fail > 0) {
+        fail--;
+        return new Response("rate limited", { status: 429 });
+      }
+      const page = Number(new URL(String(url)).searchParams.get("page"));
+      return new Response(JSON.stringify({ assets: page === 1 ? [asset(1)] : [] }), {
+        status: 200,
+      });
+    }) as typeof fetch;
+    const registry = new CatRegistry({
+      fetchImpl,
+      retryBaseMs: 1000,
+      retryMaxMs: 60_000,
+      refreshMs: 3_600_000,
+    });
+    let loads = 0;
+    registry.onLoad(() => loads++);
+
+    await registry.start(); // attempt 1 fails
+    expect(registry.lookup(asset(1).id)).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(1000); // retry after 1 s — fails again
+    expect(loads).toBe(0);
+    await vi.advanceTimersByTimeAsync(1999); // backoff doubled to 2 s: not yet
+    expect(loads).toBe(0);
+    await vi.advanceTimersByTimeAsync(1); // succeeds
+    expect(loads).toBe(1);
+    expect(registry.lookup(asset(1).id)?.ticker).toBe("A1");
+
+    const before = calls;
+    await vi.advanceTimersByTimeAsync(60_000); // healthy: no retry storm
+    expect(calls).toBe(before);
+    await vi.advanceTimersByTimeAsync(3_600_000); // hourly refresh
+    expect(calls).toBeGreaterThan(before);
+    registry.stop();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+test("a failed refresh keeps the previously loaded names", async () => {
+  let ok = true;
+  const fetchImpl = (async (url: URL | RequestInfo) => {
+    if (!ok) return new Response("down", { status: 503 });
+    const page = Number(new URL(String(url)).searchParams.get("page"));
+    return new Response(JSON.stringify({ assets: page === 1 ? [asset(1)] : [] }), { status: 200 });
+  }) as typeof fetch;
+  const registry = new CatRegistry({ fetchImpl });
+  await registry.refresh();
+  ok = false;
+  await expect(registry.refresh()).rejects.toThrow();
+  expect(registry.lookup(asset(1).id)?.name).toBe("Asset 1");
+});
+
+test("fillNames patches nameless CAT spends and leaves everything else alone", async () => {
+  const { fetchImpl } = pagedFetch([[asset(1)], []]);
+  const registry = new CatRegistry({ fetchImpl });
+  await registry.refresh();
+  const cat = (assetId: string, extra = {}): GroveEvent => ({
+    type: "sprout",
+    kind: "cat",
+    height: 1,
+    coinId: "c".repeat(64),
+    amount: "1000",
+    assetId,
+    ...extra,
+  });
+  const nameless = cat(asset(1).id);
+  const unknown = cat(asset(9).id);
+  const named = cat(asset(1).id, { catName: "Kept", catTicker: "KEEP" });
+  const xch: GroveEvent = { type: "sprout", kind: "xch", height: 1, coinId: "d", amount: "1" };
+  expect(registry.fillNames([nameless, unknown, named, xch])).toBe(1);
+  expect(nameless).toMatchObject({ catName: "Asset 1", catTicker: "A1" });
+  expect(unknown).not.toHaveProperty("catName");
+  expect(named).toMatchObject({ catName: "Kept", catTicker: "KEEP" });
 });
