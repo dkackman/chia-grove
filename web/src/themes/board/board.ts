@@ -23,6 +23,7 @@ import { fitDistance } from "./fit.js";
 import { BlockDetail, type DetailStatus } from "./detail.js";
 import { readBlockParam, writeBlockParam } from "./url-state.js";
 import { BoardNav } from "./block-nav.js";
+import { Cabinet, cabinetLayout } from "./cabinet.js";
 
 const LEDGER_ROWS = 20;
 const HISTORY = 500; // spends kept in memory for scrolling back through
@@ -51,24 +52,42 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
   scene.background = new THREE.Color(BOARD.backdrop);
 
   // Layout: a 3-row header (originY HEADER_ORIGIN_Y) above the ledger (originY
-  // LEDGER_ORIGIN_Y). Frame the camera on the true content center so the header
-  // is never clipped, and fit the whole board to the viewport on any aspect.
+  // LEDGER_ORIGIN_Y), with a painted caption rail in the gap between them, all
+  // inside the cabinet. Frame the camera on the cabinet itself so its bezel is
+  // never clipped, and fit the whole board to the viewport on any aspect.
   const cell = 0.6;
   const HEADER_ORIGIN_Y = 7;
-  const LEDGER_ORIGIN_Y = 5;
+  const LEDGER_ORIGIN_Y = 4.72;
   const VFOV = 40;
-  const contentTop = HEADER_ORIGIN_Y + cell; // top edge of the header row
-  const contentBottom = LEDGER_ORIGIN_Y - (LEDGER_ROWS - 1) * cell - cell; // bottom of the last ledger row
-  const centerY = (contentTop + contentBottom) / 2;
-  const contentH = contentTop - contentBottom;
-  const contentW = BOARD_COLS * cell + cell * 2;
+  const layout = cabinetLayout({
+    cols: BOARD_COLS,
+    cell,
+    face: 0.92,
+    headerOriginY: HEADER_ORIGIN_Y,
+    headerRows: 3,
+    ledgerOriginY: LEDGER_ORIGIN_Y,
+    ledgerRows: LEDGER_ROWS,
+  });
+  const centerY = layout.centerY;
+  const contentW = layout.outerW + 0.2;
+  const contentH = layout.outerH + 0.2;
 
-  const housing = new THREE.Mesh(
-    new THREE.PlaneGeometry(contentW + 0.8, contentH + 0.8),
-    new THREE.MeshBasicMaterial({ color: BOARD.housing })
-  );
-  housing.position.set(0, centerY, -0.05);
-  scene.add(housing);
+  const cabinet = new Cabinet(scene, layout, {
+    cell,
+    cols: BOARD_COLS,
+    // painted captions over the ledger's fields (see rowText's column layout)
+    items: [
+      { text: "BLOCK", col: 0 },
+      { text: "TYPE", col: 9 },
+      { text: "ASSET", col: 13 },
+      { text: "AMOUNT", col: 26, span: 11, align: "right" },
+      { text: "STATUS", col: 38 },
+    ],
+  });
+  const light = {
+    center: new THREE.Vector2(layout.centerX, layout.centerY),
+    half: new THREE.Vector2(layout.winHalfW, layout.winHalfH),
+  };
 
   const camera = new THREE.PerspectiveCamera(VFOV, innerWidth / innerHeight, 0.1, 1000);
   let baseZ = fitDistance(contentW, contentH, VFOV, innerWidth / innerHeight);
@@ -79,8 +98,9 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
   const ledger = new FlapGrid(scene, atlas, LEDGER_ROWS, BOARD_COLS, {
     cell,
     originY: LEDGER_ORIGIN_Y,
+    light,
   });
-  const header = new Header(scene, atlas, { originY: HEADER_ORIGIN_Y });
+  const header = new Header(scene, atlas, { originY: HEADER_ORIGIN_Y, light });
 
   const navRoot = document.getElementById("board-nav") as HTMLDivElement;
   navRoot.hidden = false;
@@ -140,6 +160,7 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
       lastRenderedOffset = -1;
       header.setDetail(state.height, state.status, state.spendCount, state.fees);
       nav.setMode("detail");
+      cabinet.setLamp("detail");
       detailDirty = true;
     }
   );
@@ -163,6 +184,7 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
       header.setBlock(lastLiveBlock.height, lastLiveBlock.spendCount, lastLiveBlock.fees);
     }
     header.setLive(true);
+    cabinet.setLamp("live");
     nav.setMode("live");
     if (pushUrl) writeBlockParam(null);
   }
@@ -238,6 +260,7 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
         renderLedger(scrolled || reducedMotion || flooding);
         lastRenderedOffset = scrollOffset;
         header.setLive(scrollOffset === 0);
+        cabinet.setLamp(scrollOffset === 0 ? "live" : "history");
       }
     } else if (detailDirty) {
       // block navigation and the live↔detail switch always riffle, like any
@@ -267,6 +290,7 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
     camera.position.x += (sway - camera.position.x) * Math.min(dt, 1);
     camera.position.z += (baseZ - camera.position.z) * Math.min(dt * 2, 1);
     camera.lookAt(0, centerY, 0);
+    cabinet.update(t, camera.position.x, reducedMotion);
 
     for (const fn of frameCallbacks) fn();
     renderer.render(scene, camera);

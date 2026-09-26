@@ -9,5 +9,7 @@ export const COLORS = {
   wisp: 0x9b5cff,
   firefly: 0xeaffbf,
   ripple: 0x3ddc84,
+  mycelium: 0x2fd29a,
+  aurora: 0x3ddc84,
   moon: 0xcfe0ff,
 } as const;

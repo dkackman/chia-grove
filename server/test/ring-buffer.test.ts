@@ -40,3 +40,14 @@ test("snapshot of a partially filled buffer omits empty slots", () => {
   buffer.push(2);
   expect(buffer.snapshot()).toEqual([1, 2]);
 });
+
+test("iterating yields items oldest-first, matching snapshot, before and after wrap", () => {
+  const buf = new RingBuffer<number>(3);
+  buf.push(1);
+  buf.push(2);
+  expect([...buf]).toEqual(buf.snapshot());
+  buf.push(3);
+  buf.push(4);
+  expect([...buf]).toEqual([2, 3, 4]);
+  expect([...buf]).toEqual(buf.snapshot());
+});

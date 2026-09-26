@@ -58,6 +58,8 @@ export const MINE = {
   fogNight: 0x13203f,
   sun: 0xfff4c2,
   moon: 0xdfe6f2,
+  dawn: 0xf08a4b, // sunrise/sunset horizon glow
+  cloudNight: 0x2a3350,
   beacon: 0xbafff0,
   torch: 0xffb347,
 } as const;

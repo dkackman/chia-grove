@@ -4,7 +4,7 @@ import { FARM } from "./palette.js";
 
 export const PASS_SECONDS = 10;
 /** Start/end just outside the field so crops at the row ends get a pass too. */
-const EDGE_X = FIELD.rowLength / 2 + 2;
+export const EDGE_X = FIELD.rowLength / 2 + 2;
 const DUST_LIFE = 1.6;
 const DUST_INTERVAL = 0.12;
 

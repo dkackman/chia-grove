@@ -17,6 +17,7 @@ import { createTerrain } from "./terrain.js";
 import { Chickens } from "./chickens.js";
 import { Crows } from "./crows.js";
 import { Turbines } from "./turbines.js";
+import { applyCloudShadows } from "./clouds.js";
 
 export const farm: Visualization = {
   id: "farm",
@@ -40,23 +41,25 @@ export const farm: Visualization = {
     renderer.setSize(innerWidth, innerHeight);
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(FARM.sky);
-    scene.fog = new THREE.FogExp2(FARM.haze, 0.005);
+    // the sky dome (sky.ts) covers the background; this is only a fallback
+    scene.background = new THREE.Color(FARM.haze);
+    scene.fog = new THREE.FogExp2(FARM.haze, 0.0038);
 
     const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 500);
-    scene.add(new THREE.HemisphereLight(0xcfe8ff, 0x3f5a33, 0.72));
+    scene.add(new THREE.HemisphereLight(0xcfe4ff, 0x4a6238, 0.8));
 
     // no tone-map curve, so the bright daylight palette is preserved; a high
     // threshold means only the sun and the brightest highlights bloom softly
     const postfx = createPostFx(renderer, scene, camera, {
-      bloomStrength: 0.04,
+      bloomStrength: 0.12,
       bloomRadius: 0.35,
       bloomThreshold: 0.85,
     });
 
-    const sky = createFarmSky(scene);
-    createTerrain(scene, renderer.capabilities.getMaxAnisotropy());
-    const field = createField(scene, reducedMotion);
+    const sky = createFarmSky(scene, reducedMotion);
+    const anisotropy = renderer.capabilities.getMaxAnisotropy();
+    createTerrain(scene, anisotropy);
+    const field = createField(scene, reducedMotion, anisotropy);
     createScenery(scene);
     createProps(scene);
     const glow = glowTexture();
@@ -83,6 +86,9 @@ export const farm: Visualization = {
       motion: reducedMotion ? 0.12 : 1,
     });
 
+    // every lit material, built above, takes the drifting cloud shadows
+    applyCloudShadows(scene);
+
     let blockIndex = 0;
     let currentRow = 0;
     let plantIndex = 0;
@@ -96,7 +102,7 @@ export const farm: Visualization = {
           blockIndex += 1;
           plantIndex = 0;
           tractor.startRow(currentRow, clockT);
-          field.plow(currentRow);
+          field.plow(currentRow, clockT);
           chickens.chase(0, rowZ(currentRow), clockT);
           turbines.gust(clockT);
           break;
@@ -149,7 +155,7 @@ export const farm: Visualization = {
         11 + Math.sin(t * 0.05) * 0.6,
         ltZ + dx * sinA + dz * cosA
       );
-      camera.lookAt(0, 1, -6);
+      camera.lookAt(0, 2.4, -6);
 
       sky.update(dt, t);
       field.update(t);

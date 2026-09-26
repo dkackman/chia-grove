@@ -3,6 +3,7 @@ import type { SproutEvent } from "@grove/shared";
 import type { XZ } from "../shared/util.js";
 import { InstancedKind, type Pose } from "../shared/instanced.js";
 import { floorCell, cellLocal, chunkElevation, type Cell } from "./layout.js";
+import type { Water } from "./water.js";
 import { grassTopTexture, dirtTexture, grassSideTexture } from "./textures.js";
 
 // Big enough that ground for the whole island footprint persists without
@@ -65,7 +66,10 @@ export class Island {
   private current: ChunkGround = { cursor: 0, occupied: new Map() };
   private chunk: XZ = { x: 0, z: 0 };
 
-  constructor(scene: THREE.Scene) {
+  constructor(
+    scene: THREE.Scene,
+    private readonly shore?: Pick<Water, "markLand" | "resetLand">
+  ) {
     // grass carries the 6-material array (green top, dirt sides/bottom); dirt is
     // uniform brown. Both render their baked textures untinted — instances keep
     // the default white instanceColor.
@@ -116,6 +120,7 @@ export class Island {
     const top = FLAT_POSE();
     top.y = e; // no color → white → the baked textures show their own hues
     kind.plant(event, wx, wz, t, top);
+    this.shore?.markLand(wx, wz);
     // one dirt pillar fills the cliff down to the waterline when the chunk is raised
     if (e > 0) {
       const pillar = FLAT_POSE();
@@ -138,6 +143,11 @@ export class Island {
       for (const [cellKey, height] of state.occupied) {
         if (height >= forkHeight) state.occupied.delete(cellKey);
       }
+    }
+    // repaint the shallows around the surviving columns
+    if (this.shore) {
+      this.shore.resetLand();
+      for (const s of this.grass.slots) if (s.meta) this.shore.markLand(s.x, s.z);
     }
   }
 

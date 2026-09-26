@@ -89,7 +89,7 @@ const PARCELS: ReadonlyArray<readonly [number, number, number, number]> = [
  * may be painted under them; erasing this rectangle guarantees that
  * structurally rather than relying on every shape above it being hand-tuned to
  * stay clear. Covers x ∈ [−24, 24], z ∈ [−21.5, 21.5] — the soil strips
- * (|x| ≤ 22.7, |z| ≤ 20.31) sit ≥ 3.4σ inside this box given the cut's 5px
+ * (|x| ≤ 22.7, |z| ≤ 20.37) sit ≥ 3.3σ inside this box given the cut's 5px
  * blur (σ ≈ 0.34 world units — see landscapeTexture), so they are erased
  * essentially completely (>99.9%), while the dirt lane's control points near
  * the barn (z ≈ −22.4, outside this box) survive with <0.5% erased. Shrunk
@@ -108,7 +108,7 @@ export const FIELD_CLEAR = { halfX: 24, halfZ: 21.5 } as const;
  * (z = −21.5) — a 2.175-unit gap — so the z values near the barn are tightly
  * constrained and should not be nudged casually: the first point puts the
  * lane's 2.4-unit dust band (±1.2 around the centreline) at z ∈ [−23.6, −21.2],
- * clearing the soil strips (z ≥ −20.31) by ~0.9 and just touching the barn wall
+ * clearing the soil strips (z ≥ −20.37) by ~0.8 and just touching the barn wall
  * (its far edge sits 0.075 short of it) — which is exactly where a lane at the
  * barn doors belongs. Its near edge (−21.2) sits ~0.3 inside the field-clear
  * cut, so that sliver of the band fades (the cut is ~81% erased right at
@@ -244,7 +244,7 @@ export function landscapeTexture(): THREE.CanvasTexture {
   // crisp rectangle, without reaching far enough to eat the lane's corridor at
   // the barn doors the way the previous 8px (σ ≈ 0.55) did. A blurred hard
   // edge's erase fraction at distance d inside the cut follows the Gaussian
-  // CDF, Φ(d / σ): the soil strips sit ≥ 3.4σ inside FIELD_CLEAR and so are
+  // CDF, Φ(d / σ): the soil strips sit ≥ 3.3σ inside FIELD_CLEAR and so are
   // erased ~99.97%, while the lane's centreline near the barn (z ≈ −22.4, one
   // of the few points that must survive despite being close by farm scale)
   // sits far enough outside the box that it is < 0.5% erased. The lane

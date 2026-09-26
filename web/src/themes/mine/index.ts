@@ -21,7 +21,7 @@ export const mine: Visualization = {
   ],
   start(canvas, feed) {
     const runtime = startMine(canvas, feed);
-    const island = new Island(runtime.scene);
+    const island = new Island(runtime.scene, runtime.water);
     const cats = new CatBlocks(runtime.scene);
     const villagers = new Villagers(runtime.scene);
     const paintings = new Paintings(runtime.scene);

@@ -16,6 +16,12 @@ export class RingBuffer<T> {
     if (this.size < this.capacity) this.size++;
   }
 
+  /** Visit every held item, oldest first, without copying. */
+  *[Symbol.iterator](): IterableIterator<T> {
+    const start = this.size < this.capacity ? 0 : this.head;
+    for (let i = 0; i < this.size; i++) yield this.items[(start + i) % this.capacity];
+  }
+
   snapshot(): T[] {
     // oldest item sits at 0 while filling, then at head (the next-write slot)
     // once the buffer has wrapped; walk size items forward from there

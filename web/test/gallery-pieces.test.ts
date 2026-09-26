@@ -54,8 +54,9 @@ test("newestX advances to new columns as pieces fill", () => {
   expect(pieces.newestX()).toBeGreaterThan(first);
 });
 
+// the bevelled moulding (an extruded ring) — the mesh that carries the hover/heat glow
 const frameOf = (pieces: Pieces) =>
-  pieces.pickables().find((o) => (o as THREE.Mesh).geometry instanceof THREE.BoxGeometry) as
+  pieces.pickables().find((o) => (o as THREE.Mesh).geometry instanceof THREE.ExtrudeGeometry) as
     THREE.Mesh | undefined;
 
 test("retiring a video piece pauses and releases its <video> element", () => {
