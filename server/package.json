@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch --env-file-if-exists=.env src/index.ts",
-    "start": "tsx --env-file-if-exists=.env src/index.ts"
+    "build": "node build.mjs",
+    "start": "node --env-file-if-exists=.env dist/index.js"
   },
   "dependencies": {
     "@axiomhq/pino": "^2.0.0",
@@ -16,10 +17,10 @@
     "fastify": "^5.0.0",
     "onnxruntime-node": "^1.20.1",
     "pino": "^10.3.1",
-    "sharp": "^0.35.3",
-    "tsx": "^4.19.0"
+    "sharp": "^0.35.3"
   },
   "devDependencies": {
-    "@types/node": "^24.0.0"
+    "@types/node": "^24.0.0",
+    "tsx": "^4.19.0"
   }
 }

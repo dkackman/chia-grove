@@ -17,7 +17,7 @@ npm run lint        # ESLint 10 flat config
 npm workspaces monorepo. Three packages:
 
 - `shared/` — event type definitions only, imported as `@grove/shared`
-- `server/` — Node/Fastify backend (TypeScript via `tsx`, no compile step)
+- `server/` — Node/Fastify backend (TypeScript; `tsx` in dev, esbuild-transpiled `dist/` in production)
 - `web/` — Vite + Three.js frontend
 
 The `shared` package has no build step; both `server` and `web` import its `.ts` source directly via path aliases.
@@ -26,7 +26,7 @@ The `shared` package has no build step; both `server` and `web` import its `.ts`
 
 - **Node ≥ 24** required (uses `--experimental-vm-modules` path in vitest, native `fetch`, etc.).
 - All packages are `"type": "module"`. Use `.js` extensions on local imports (even for `.ts` source files), e.g. `import { foo } from "./bar.js"`.
-- Do not add a build/compile step to `server` or `shared` — they run source TypeScript via `tsx`.
+- `shared` has no build step; both server and web import its `.ts` source directly. `server` is transpiled per-file by `server/build.mjs` for production only (saves the tsx loader's memory on the 1 GB droplet); development still runs source via `tsx`. Do not bundle the server — the `import.meta.url` path lookups depend on `dist/` mirroring `src/`.
 - The `web` package builds with Vite; don't add a separate `tsc` build there.
 - Tests live in `server/test/` and `web/test/`, picked up by the root `vitest.config.ts`.
 

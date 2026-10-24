@@ -20,13 +20,13 @@ npm test             # vitest across server/test/ and web/test/
 npm run typecheck    # tsc across all three workspaces
 npm run lint         # ESLint 10 (flat config, eslint.config.js)
 npm run format       # Prettier 3 write
-npm run build        # production Vite bundle → web/dist/
-npm run start        # production server (serves web/dist/ + WebSocket)
+npm run build        # server → server/dist/ (esbuild), web → web/dist/ (Vite)
+npm run start        # production server from server/dist/ (serves web/dist/ + WebSocket)
 ```
 
 Run a single test file: `npx vitest run server/test/classify.test.ts`
 
-Requires Node ≥ 24. Server runs via `tsx` (no build step needed for development).
+Requires Node ≥ 24. In development the server runs source TypeScript via `tsx` (`npm run dev:server`). Production transpiles `server/src` to `server/dist` with esbuild (`server/build.mjs`, run by `npm run build`) and starts plain `node`; `@grove/shared` is loaded from source via Node's native type stripping.
 
 ## Data Flow
 
