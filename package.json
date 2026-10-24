@@ -16,7 +16,7 @@
     "format:check": "prettier --check .",
     "dev:server": "npm run dev -w server",
     "dev:web": "npm run dev -w web",
-    "build": "npm run build -w web",
+    "build": "npm run build -w server && npm run build -w web",
     "start": "npm run start -w server"
   },
   "devDependencies": {
@@ -24,6 +24,7 @@
     "@emnapi/runtime": "^1.11.3",
     "@eslint/js": "^10.0.1",
     "@playwright/test": "^1.63.0",
+    "esbuild": "^0.28.2",
     "eslint": "^10.11.0",
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.9.9",
@@ -35,7 +36,7 @@
     "node": ">=24"
   },
   "allowScripts": {
-    "esbuild@0.28.1": true,
+    "esbuild@0.28.2": true,
     "fsevents@2.3.3": true,
     "onnxruntime-node@1.27.0": true,
     "sharp@0.34.5": true,

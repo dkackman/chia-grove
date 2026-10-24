@@ -1,4 +1,16 @@
 chia-grove.com {
+    # Compress responses; the main JS bundle is ~820 KB uncompressed.
+    # Stock Caddy ships only zstd and gzip encoders (brotli needs an xcaddy
+    # plugin and is not worth the custom build; zstd/gzip get ~75% here).
+    encode zstd gzip
+
+    # Vite emits content-hashed filenames under /assets/, so they can be
+    # cached forever. The ">" defers the set until after the upstream
+    # response so it replaces, rather than joins, the app's max-age=0.
+    # index.html keeps the upstream no-cache policy.
+    @hashed path /assets/*
+    header @hashed >Cache-Control "public, max-age=31536000, immutable"
+
     reverse_proxy localhost:8080
     header {
         Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://xchtip.app https://esm.sh; style-src 'self' 'unsafe-inline'; connect-src 'self' https://gateway.umami.is https://xchtip.app https://esm.sh https://api.coinset.org https://relay.walletconnect.org wss://relay.walletconnect.org https://verify.walletconnect.org https://pulse.walletconnect.org https://explorer-api.walletconnect.com; frame-src https://verify.walletconnect.org; img-src 'self' data: https://icons.dexie.space https://xchtip.app; media-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
