@@ -160,11 +160,23 @@ function addTrees(scene: THREE.Scene): void {
   );
 }
 
+const SHADOW_COLOR = new THREE.Color(0x202a18);
+
+/** Every blob shadow in a scene, merged into one mesh (one draw call). */
+const shadowBatches = new WeakMap<
+  THREE.Scene,
+  { mesh: THREE.Mesh; parts: THREE.BufferGeometry[] }
+>();
+
 /** A soft dark patch on the ground that seats a prop (a cheap fake shadow). `y`
  *  defaults to the flat zone's height (0.03 above y = 0); callers whose prop
  *  sits on rolling ground must pass `groundHeight(x, z) + 0.03` instead, or the
  *  shadow hangs in the air (or sinks into the turf) while the prop it belongs
- *  to stands on the actual ground beneath it. */
+ *  to stands on the actual ground beneath it.
+ *
+ *  All of a scene's shadows share one merged mesh, each quad carrying its own
+ *  opacity in an RGBA vertex colour; the scene is built once, so re-merging on
+ *  each call is a one-off cost. */
 export function blobShadow(
   scene: THREE.Scene,
   map: THREE.Texture,
@@ -175,19 +187,34 @@ export function blobShadow(
   opacity: number,
   y = 0.03
 ): void {
-  const mesh = new THREE.Mesh(
-    new THREE.PlaneGeometry(w, d),
-    new THREE.MeshBasicMaterial({
-      map,
-      color: 0x202a18,
-      transparent: true,
-      opacity,
-      depthWrite: false,
-    })
-  );
-  mesh.rotation.x = -Math.PI / 2;
-  mesh.position.set(x, y, z);
-  scene.add(mesh);
+  const quad = new THREE.PlaneGeometry(w, d);
+  quad.rotateX(-Math.PI / 2);
+  quad.translate(x, y, z);
+  const n = quad.getAttribute("position").count;
+  const rgba = new Float32Array(n * 4);
+  for (let i = 0; i < n; i++) {
+    rgba.set([SHADOW_COLOR.r, SHADOW_COLOR.g, SHADOW_COLOR.b, opacity], i * 4);
+  }
+  quad.setAttribute("color", new THREE.BufferAttribute(rgba, 4));
+
+  let batch = shadowBatches.get(scene);
+  if (!batch) {
+    const mesh = new THREE.Mesh(
+      new THREE.BufferGeometry(),
+      new THREE.MeshBasicMaterial({
+        map,
+        vertexColors: true, // 4-component: per-shadow opacity in alpha
+        transparent: true,
+        depthWrite: false,
+      })
+    );
+    scene.add(mesh);
+    batch = { mesh, parts: [] };
+    shadowBatches.set(scene, batch);
+  }
+  batch.parts.push(quad);
+  batch.mesh.geometry.dispose();
+  batch.mesh.geometry = mergeGeometries(batch.parts);
 }
 
 /** Fixed seed — the hedgerows must be identical on every reload and every replay. */
