@@ -54,11 +54,11 @@ export class InstancedKind {
   readonly slots: Slot[];
   private next = 0;
   // Dirty-tracking so a settled, non-swaying mesh (terrain, CAT cubes) stops
-  // re-uploading its instance matrices every frame. `matrixDirty` covers
-  // structural changes (plant/clear); `settleAt` is the time the last grow
-  // animation finishes; `lastGust` catches the gust→rest transition.
-  private matrixDirty = true;
-  private settleAt = 0;
+  // re-uploading its instance matrices every frame. `growing` holds the slots
+  // whose grow animation hasn't been written at full size yet (a non-swaying
+  // mesh only recomposes those); `lastGust` catches the gust→rest transition,
+  // which needs one full pass to restore every slot's height.
+  private readonly growing = new Set<number>();
   private lastGust = 1;
   private readonly matrix = new THREE.Matrix4();
   private readonly position = new THREE.Vector3();
@@ -105,8 +105,7 @@ export class InstancedKind {
     const i = this.next;
     this.next = (this.next + 1) % this.slots.length;
     if (i + 1 > this.mesh.count) this.mesh.count = i + 1;
-    this.matrixDirty = true;
-    this.settleAt = Math.max(this.settleAt, t + GROW_SECONDS);
+    this.growing.add(i);
     const slot = this.slots[i];
     slot.meta = meta;
     slot.bornAt = t;
@@ -158,54 +157,74 @@ export class InstancedKind {
     // slot so a mass clear (reorg) doesn't leave it drawing dead tail slots
     // forever.
     this.mesh.count = Math.min(this.mesh.count, highestActive + 1);
-    this.matrixDirty = true;
     this.mesh.instanceMatrix.needsUpdate = true;
   }
 
   private readonly highlightColor = new THREE.Color();
 
   update(t: number, gustDip: number): void {
-    // Skip the recompute + GPU upload when nothing can have moved: a
-    // non-swaying mesh whose grow animations have all settled, with no gust
-    // dipping it and no structural change since the last write. Swaying meshes
-    // (grass) animate continuously and always fall through.
-    const swaying = this.swayAmp !== 0;
-    const growing = t < this.settleAt;
-    const gusting = gustDip !== 1 || this.lastGust !== 1;
-    if (!swaying && !growing && !gusting && !this.matrixDirty) return;
-    for (let i = 0; i < this.slots.length; i++) {
-      const slot = this.slots[i];
-      if (!slot.meta) continue;
-      const progress = Math.min((t - slot.bornAt) / GROW_SECONDS, 1);
-      const eased = easeOutCubic(progress);
-      const width = Math.min(1, eased * 1.3) * slot.width;
-      // wind: lean from the base. A wave travels diagonally across the
-      // meadow (~21-unit wavelength, so several crests are visible at
-      // once); the small swayPhase term keeps the front ragged without
-      // destroying coherence. A second incommensurate harmonic breaks the
-      // pendulum regularity, and a faster per-plant flutter (frequency
-      // varied by swayPhase) desyncs neighbors. The 0.35 bias keeps plants
-      // leaning slightly downwind rather than swinging symmetrically about
-      // vertical. Gusts (gustDip < 1) deepen the lean and dip the height.
-      const wavePhase = t * 1.2 + (slot.x + slot.z * 0.6) * 0.3 + slot.swayPhase * 0.15;
-      const breeze =
-        Math.sin(wavePhase) +
-        0.35 * Math.sin(wavePhase * 1.7 + 1.3) +
-        0.22 * Math.sin(t * (2.3 + slot.swayPhase * 0.12) + slot.swayPhase * 7);
-      const lean = this.swayAmp * (1 + (1 - gustDip) * 6) * (0.35 + breeze * 0.55);
-      this.swayQuat.setFromEuler(this.euler.set(lean * 0.4, 0, lean));
-      this.worldQuat.multiplyQuaternions(this.swayQuat, slot.rotation);
-      this.matrix.compose(
-        this.position.set(slot.x, slot.y, slot.z),
-        this.worldQuat,
-        this.scale.set(width, eased * slot.height * gustDip, width)
-      );
-      this.mesh.setMatrixAt(i, this.matrix);
-      this.mesh.instanceMatrix.addUpdateRange(i * 16, 16);
-    }
-    this.mesh.instanceMatrix.needsUpdate = true;
-    this.matrixDirty = false;
+    // Skip the recompute + GPU upload when nothing can have moved. Swaying
+    // meshes (grass) animate continuously and recompose every live slot, as
+    // does any mesh while a gust dips it (or on the frame it lifts). Otherwise
+    // only slots still growing are recomposed. Either way the touched slots go
+    // up as one contiguous range rather than one range object per slot.
+    const full = this.swayAmp !== 0 || gustDip !== 1 || this.lastGust !== 1;
     this.lastGust = gustDip;
+    if (!full && this.growing.size === 0) return;
+    let lo = Infinity;
+    let hi = -1;
+    if (full) {
+      for (let i = 0; i < this.mesh.count; i++) {
+        if (!this.slots[i].meta) continue;
+        this.compose(i, t, gustDip);
+        if (i < lo) lo = i;
+        hi = i;
+      }
+    } else {
+      for (const i of this.growing) {
+        if (!this.slots[i].meta) continue;
+        this.compose(i, t, gustDip);
+        if (i < lo) lo = i;
+        if (i > hi) hi = i;
+      }
+    }
+    for (const i of this.growing) {
+      const slot = this.slots[i];
+      if (!slot.meta || t - slot.bornAt >= GROW_SECONDS) this.growing.delete(i);
+    }
+    if (hi < 0) return;
+    this.mesh.instanceMatrix.addUpdateRange(lo * 16, (hi - lo + 1) * 16);
+    this.mesh.instanceMatrix.needsUpdate = true;
+  }
+
+  /** Recompose one slot's matrix at time `t` (grow + sway + gust). */
+  private compose(i: number, t: number, gustDip: number): void {
+    const slot = this.slots[i];
+    const progress = Math.min((t - slot.bornAt) / GROW_SECONDS, 1);
+    const eased = easeOutCubic(progress);
+    const width = Math.min(1, eased * 1.3) * slot.width;
+    // wind: lean from the base. A wave travels diagonally across the
+    // meadow (~21-unit wavelength, so several crests are visible at
+    // once); the small swayPhase term keeps the front ragged without
+    // destroying coherence. A second incommensurate harmonic breaks the
+    // pendulum regularity, and a faster per-plant flutter (frequency
+    // varied by swayPhase) desyncs neighbors. The 0.35 bias keeps plants
+    // leaning slightly downwind rather than swinging symmetrically about
+    // vertical. Gusts (gustDip < 1) deepen the lean and dip the height.
+    const wavePhase = t * 1.2 + (slot.x + slot.z * 0.6) * 0.3 + slot.swayPhase * 0.15;
+    const breeze =
+      Math.sin(wavePhase) +
+      0.35 * Math.sin(wavePhase * 1.7 + 1.3) +
+      0.22 * Math.sin(t * (2.3 + slot.swayPhase * 0.12) + slot.swayPhase * 7);
+    const lean = this.swayAmp * (1 + (1 - gustDip) * 6) * (0.35 + breeze * 0.55);
+    this.swayQuat.setFromEuler(this.euler.set(lean * 0.4, 0, lean));
+    this.worldQuat.multiplyQuaternions(this.swayQuat, slot.rotation);
+    this.matrix.compose(
+      this.position.set(slot.x, slot.y, slot.z),
+      this.worldQuat,
+      this.scale.set(width, eased * slot.height * gustDip, width)
+    );
+    this.mesh.setMatrixAt(i, this.matrix);
   }
 
   metaAt(index: number): SproutEvent | null {
