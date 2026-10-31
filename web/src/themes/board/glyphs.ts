@@ -8,6 +8,9 @@ const PUNCT = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"; // all 32 printable ASCII sy
 const SPECIAL = "▸★▮·×"; // markers: block-start ▸, mint ★, missing-glyph ▮, mid-dot ·, times ×
 export const GLYPHS = " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789" + PUNCT + SPECIAL;
 export const ATLAS_COLS = 9; // 9×9 = 81 cells ≥ GLYPHS.length (74)
+/** Where the two leaves meet, as a fraction of the cell from its top — a touch
+ *  above center. The atlas draws its seam here; the flip shader hinges on it. */
+export const FLAP_FOLD = 0.48;
 
 const INDEX = new Map<string, number>();
 for (let i = 0; i < GLYPHS.length; i++) INDEX.set(GLYPHS[i], i);
@@ -85,7 +88,7 @@ function drawFlap(
   const m = Math.max(1, Math.round(S * 0.03)); // gap to the recessed slot
   const r = Math.round(S * 0.1); // rounded card corners
   const w = S - 2 * m;
-  const fold = 0.48; // vertical fold position — a touch above the tile center
+  const fold = FLAP_FOLD;
 
   // near-black slot the card sits in (shows at the rounded corners + gaps)
   ctx.fillStyle = "#050506";
