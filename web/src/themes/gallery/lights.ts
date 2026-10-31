@@ -10,6 +10,25 @@ const WALL_GAP = 0.3;
 const LAMP_RISE = 0.3;
 const LAMP_REACH = 0.62;
 
+/** Seconds a newly placed lamp takes to come up to full brightness. */
+export const LAMP_RAMP_S = 0.6;
+
+/**
+ * Switch-on curve for a lamp `age` seconds after it was placed: an eased rise
+ * over LAMP_RAMP_S with a couple of filament stutters early on (reduced
+ * motion: a plain fade). Pure, 0 → 1.
+ */
+export function lampRamp(age: number, reducedMotion = false): number {
+  if (age <= 0) return 0;
+  if (age >= LAMP_RAMP_S) return 1;
+  const k = age / LAMP_RAMP_S;
+  const eased = k * k * (3 - 2 * k);
+  if (reducedMotion) return eased;
+  // deterministic stutter: dips while the filament catches, gone by ~70%
+  const flicker = k < 0.7 && Math.sin(age * 83) > 0.4 ? 0.45 : 1;
+  return eased * flicker;
+}
+
 /**
  * Picture lights: for every hung piece, a brass lamp arching over the frame
  * and the pool of warm light it throws onto the wall — the classic scalloped
@@ -28,6 +47,10 @@ export class PictureLights {
   // per slot: frame half-width, half-height, extra glow (heat/hover/focus), focus flag
   private shape: Float32Array;
   private shapeAttr: THREE.InstancedBufferAttribute;
+  // per slot: switch-on level (lampRamp of its age) and seconds since placed
+  private on: Float32Array;
+  private onAttr: THREE.InstancedBufferAttribute;
+  private age: Float32Array;
   private uniforms = {
     ...wallUniforms,
     uLightColor: { value: new THREE.Color(GALLERY.spot) },
@@ -39,14 +62,21 @@ export class PictureLights {
   private readonly p = new THREE.Vector3();
   private readonly q = new THREE.Quaternion();
   private readonly s = new THREE.Vector3();
+  private readonly black = new THREE.Color(0, 0, 0);
+  private readonly tint = new THREE.Color();
 
   constructor(scene: THREE.Scene, cap: number) {
     this.shape = new Float32Array(cap * 4);
     this.shapeAttr = new THREE.InstancedBufferAttribute(this.shape, 4);
     this.shapeAttr.setUsage(THREE.DynamicDrawUsage);
+    this.on = new Float32Array(cap);
+    this.onAttr = new THREE.InstancedBufferAttribute(this.on, 1);
+    this.onAttr.setUsage(THREE.DynamicDrawUsage);
+    this.age = new Float32Array(cap).fill(Infinity); // Infinity = settled (or empty)
 
     const washGeo = new THREE.PlaneGeometry(1, 1);
     washGeo.setAttribute("aShape", this.shapeAttr);
+    washGeo.setAttribute("aOn", this.onAttr);
     const washMat = new THREE.ShaderMaterial({
       uniforms: this.uniforms,
       transparent: true,
@@ -57,6 +87,8 @@ export class PictureLights {
       blendDst: THREE.OneMinusSrcAlphaFactor,
       vertexShader: /* glsl */ `
         attribute vec4 aShape;
+        attribute float aOn;
+        varying float vOn;
         varying vec2 vLocal;
         varying vec2 vWall;
         varying vec2 vQuad;
@@ -71,6 +103,7 @@ export class PictureLights {
           vLocal = local;
           vWall = wp.xy;
           vShape = aShape;
+          vOn = aOn;
           gl_Position = projectionMatrix * viewMatrix * wp;
         }`,
       fragmentShader: /* glsl */ `
@@ -82,6 +115,7 @@ export class PictureLights {
         varying vec2 vWall;
         varying vec2 vQuad;
         varying vec4 vShape;
+        varying float vOn;
         ${PLASTER_GLSL}
         void main() {
           float hx = vShape.x;
@@ -111,7 +145,7 @@ export class PictureLights {
 
           float level = mix( uIntensity, uRest, vShape.w ) * ( 1.0 + vShape.z );
           vec3 light = uAlbedo * plaster( vWall ) * uLightColor * vec3( 1.0, 0.84, 0.64 ) * pool * level * 3.6;
-          light *= 1.0 - shadow;
+          light *= ( 1.0 - shadow ) * vOn;
           gl_FragColor = vec4( light, shadow * 0.7 );
           #include <tonemapping_fragment>
           #include <colorspace_fragment>
@@ -144,6 +178,9 @@ export class PictureLights {
     const lipGeo = new THREE.BoxGeometry(0.96, 0.012, 0.05);
     lipGeo.translate(0, -0.055, 0);
     this.lip = this.instanced(lipGeo, this.lipMaterial, cap);
+    // per-instance tint carries the switch-on level, so a lamp's lip warms up
+    // with its pool instead of popping on
+    for (let i = 0; i < cap; i++) this.lip.setColorAt(i, this.black);
 
     scene.add(this.wash, this.hood, this.arm, this.lip);
   }
@@ -169,6 +206,8 @@ export class PictureLights {
     this.shape[o + 2] = 0;
     this.shape[o + 3] = 0;
     this.shapeAttr.needsUpdate = true;
+    this.age[slot] = 0; // ramps up in update()
+    this.setOn(slot, 0);
 
     this.q.identity();
     this.m.compose(this.p.set(x, y, WALL.z - WALL_GAP + 0.02), this.q, this.s.set(1, 1, 1));
@@ -189,12 +228,43 @@ export class PictureLights {
   clear(slot: number): void {
     this.shape[slot * 4] = 0;
     this.shapeAttr.needsUpdate = true;
+    this.age[slot] = Infinity;
+    this.setOn(slot, 0);
     this.m.makeScale(0, 0, 0);
     this.wash.setMatrixAt(slot, this.m);
     this.hood.setMatrixAt(slot, this.m);
     this.lip.setMatrixAt(slot, this.m);
     this.arm.setMatrixAt(slot, this.m);
     this.touch();
+  }
+
+  /** Per-frame: advance the switch-on ramp of freshly placed lamps. */
+  update(dt: number, reducedMotion = false): void {
+    for (let i = 0; i < this.age.length; i++) {
+      const a = this.age[i];
+      if (a === Infinity) continue;
+      const next = a + dt;
+      this.setOn(i, lampRamp(next, reducedMotion));
+      this.age[i] = next >= LAMP_RAMP_S ? Infinity : next;
+    }
+  }
+
+  /** Current switch-on level of a slot's lamp (0 off → 1 fully lit). */
+  onLevel(slot: number): number {
+    return this.on[slot];
+  }
+
+  /** Extra glow currently applied to a slot's lamp (heat/hover). */
+  glowAt(slot: number): number {
+    return this.shape[slot * 4 + 2];
+  }
+
+  private setOn(slot: number, level: number): void {
+    if (this.on[slot] === level) return;
+    this.on[slot] = level;
+    this.onAttr.needsUpdate = true;
+    this.lip.setColorAt(slot, this.tint.setScalar(level));
+    if (this.lip.instanceColor) this.lip.instanceColor.needsUpdate = true;
   }
 
   /** Extra brightness for one lamp (activity heat, hover) and whether it is the focused piece. */

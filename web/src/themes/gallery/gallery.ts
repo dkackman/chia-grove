@@ -13,12 +13,16 @@ import { PlayButton$ } from "./play-button.js";
 import { SpendDust } from "./dust.js";
 import { netspaceLight } from "./ambience.js";
 import { shouldHang } from "./select.js";
-import { loadArtTexture } from "./media.js";
+import { discardArt, loadArtTexture } from "./media.js";
 import { resolveMedia, thumbnailSrc } from "../../ui/media.js";
 import { sensitivePlaceholderTexture } from "../shared/textures.js";
 import { framePiece } from "./camera.js";
 import { FlingTracker } from "./swipe.js";
 import { LoadPool } from "../shared/load-pool.js";
+import { isFormFieldTarget } from "../../ui/shortcuts.js";
+import { InFlightArt, shouldHangLoaded } from "./art-loads.js";
+import { EmptyWall } from "./empty-state.js";
+import { docentX, shouldStartDocent, type DocentTour } from "./docent.js";
 
 const FOV = 45;
 
@@ -42,7 +46,11 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
   const loop = createRenderLoop(canvas);
   const { renderer } = loop;
   let reducedMotion = loop.reducedMotion;
-  loop.onReducedMotionChange((reduced) => (reducedMotion = reduced));
+  loop.onReducedMotionChange((reduced) => {
+    reducedMotion = reduced;
+    pieces.setReducedMotion(reduced);
+    if (reduced) docent = null;
+  });
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(GALLERY.backdrop);
@@ -67,6 +75,10 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
 
   const wall = createWall(scene);
   const pieces = new Pieces(scene, reducedMotion ? 24 : 60);
+  pieces.setReducedMotion(reducedMotion);
+  // bare wall before the first NFT: empty hooks + an "installation" placard,
+  // centred where the resting camera looks (newestX() - VIEW_AHEAD)
+  const emptyWall = new EmptyWall(scene, -VIEW_AHEAD + 1, REST_Y);
   const dust = new SpendDust(scene, glowTexture(), reducedMotion ? 80 : 220);
   const placard = new Placard$();
   const playButton = new PlayButton$();
@@ -88,14 +100,28 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
   let manualX = 0;
   let manualUntil = 0;
   let nowT = 0; // latest frame time, so input handlers share the render clock
+  // quiet-gallery docent tour: drives manualX/manualUntil while running; any
+  // user input or a new piece cancels it (and restarts the quiet clock)
+  let docent: DocentTour | null = null;
+  let lastActivity = 0;
+  const noteActivity = (): void => {
+    lastActivity = nowT;
+    docent = null;
+  };
 
   const clampPan = (x: number): number => Math.max(PAN_LEFT_LIMIT, Math.min(pieces.newestX(), x));
   const worldPerPixel = (): number =>
     (2 * (REST_Z - WALL.z) * Math.tan((FOV * Math.PI) / 180 / 2) * camera.aspect) / innerWidth;
 
   // launchers whose art is queued or mid-load — guards the async window so a
-  // burst of events for the same brand-new NFT doesn't hang duplicate frames
-  const pending = new Set<string>();
+  // burst of events for the same brand-new NFT doesn't hang duplicate frames,
+  // and lets a timed-out or reorg-orphaned load be discarded when it lands
+  const inflight = new InFlightArt();
+  // a load that will never hang: forget any content-flag remembered for it
+  // (unless another load for the NFT is under way, or it hung meanwhile)
+  const releaseLauncher = (launcher: string): void => {
+    if (!inflight.has(launcher) && !pieces.hasLauncher(launcher)) pieces.forgetSensitive(launcher);
+  };
   // paces and coalesces art fetches so a snapshot flood can't 429 the proxy
   const artLoads = new LoadPool(ART_LOAD_CONCURRENCY, ART_LOAD_TIMEOUT_MS);
   let nftSeq = 0; // monotonic order of NFTs queued for hanging
@@ -123,7 +149,7 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
       case "sprout": {
         if (event.kind !== "nft") {
           // non-NFT spends are ambient filler; subsample so big blocks stay calm
-          if (dustThrottle++ % 3 === 0) dust.emit(event, pieces.newestX());
+          if (dustThrottle++ % 3 === 0) dust.emit(event, camera.position.x);
           break;
         }
         if (!event.launcherId) break;
@@ -133,39 +159,56 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
           if (pieces.ping(event)) refreshPlacardIf(launcher);
           break;
         }
-        if (!shouldHang(event) || pending.has(launcher)) break;
+        if (!shouldHang(event) || inflight.has(launcher)) break;
         const media = resolveMedia(event);
-        if (media.render === "none") break;
+        if (media.render === "none") {
+          releaseLauncher(launcher); // audio etc. never hangs
+          break;
+        }
         if (media.render !== "art") {
           // blocked/sensitive → hang a neutral placeholder; never fetch the art.
           // Clone the singleton because pieces disposes mat.map on slot eviction;
           // a clone keeps the shared source intact so future filtered frames render.
           pieces.add(event, sensitivePlaceholderTexture().clone());
+          noteActivity();
           break;
         }
         const src = media.src;
         const kind = media.kind;
         const poster = thumbnailSrc(event) ?? undefined;
-        pending.add(launcher);
+        const job = inflight.begin(launcher, event.height);
         const mySeq = nftSeq++;
+        const abandon = (): void => {
+          inflight.settle(job);
+          releaseLauncher(launcher);
+        };
         artLoads.submit({
           // if this many newer NFTs have queued behind it, this one would be
-          // wrapped straight off the wall — skip the fetch (and free its guard)
-          stillWanted: () => nftSeq - mySeq < pieces.capacity,
-          onDrop: () => pending.delete(launcher),
-          onTimeout: () => pending.delete(launcher),
+          // wrapped straight off the wall — skip the fetch (and free its guard);
+          // a reorg may also have orphaned it while it queued
+          stillWanted: () => job.live && nftSeq - mySeq < pieces.capacity,
+          onDrop: abandon,
+          onTimeout: abandon,
           start: (done) => {
             loadArtTexture(
               src,
               kind,
               (texture, video) => {
                 done(); // release the pool slot regardless of dedup outcome
-                pending.delete(launcher);
+                // a load that outlived its timeout, was orphaned by a reorg, or
+                // whose NFT reached the wall another way meanwhile is dropped
+                const live = inflight.settle(job);
+                if (!shouldHangLoaded(live, pieces.hasLauncher(launcher))) {
+                  discardArt(texture, video);
+                  releaseLauncher(launcher);
+                  return;
+                }
                 pieces.add(event, texture, video);
+                noteActivity();
               },
               () => {
                 done();
-                pending.delete(launcher);
+                abandon();
               },
               poster
             );
@@ -181,9 +224,17 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
         break;
       case "reorg":
         pieces.removeRecent(event.forkHeight);
+        // loads still in flight for orphaned blocks must not land afterwards
+        for (const job of inflight.cancelFrom(event.forkHeight)) releaseLauncher(job.launcher);
         break;
       case "content-flag": {
-        if (pieces.markSensitive(event.launcherId, sensitivePlaceholderTexture().clone())) {
+        // remember the flag only while this NFT's art is loading (add() applies
+        // it when it lands); with nothing hung or loading, later events for it
+        // arrive already stamped by the server's persisted verdict
+        const remember = inflight.has(event.launcherId);
+        if (
+          pieces.markSensitive(event.launcherId, sensitivePlaceholderTexture().clone(), remember)
+        ) {
           refreshPlacardIf(event.launcherId);
           hidePlayButtonIf(event.launcherId);
         }
@@ -235,6 +286,7 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
   const fling = new FlingTracker();
 
   canvas.addEventListener("pointerdown", (e) => {
+    noteActivity();
     downX = lastX = e.clientX;
     downY = e.clientY;
     dragging = false;
@@ -247,6 +299,7 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
     canvas.setPointerCapture?.(e.pointerId);
   });
   canvas.addEventListener("pointermove", (e) => {
+    noteActivity();
     if (e.buttons & 1) {
       const dx = e.clientX - lastX;
       lastX = e.clientX;
@@ -286,9 +339,17 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
     else unfocus();
   });
   addEventListener("keydown", (e) => {
+    // leave typing (the scene selector) and browser/OS chords alone
+    if (isFormFieldTarget(e.target) || e.ctrlKey || e.metaKey || e.altKey) return;
     if (e.key === "Escape") {
-      unfocus();
-    } else if (!focused && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+      // only a focused piece consumes Escape; with nothing focused it falls
+      // through to whatever else listens (the app shell)
+      if (focused) {
+        noteActivity();
+        unfocus();
+      }
+    } else if (!focused && !e.shiftKey && (e.key === "ArrowLeft" || e.key === "ArrowRight")) {
+      noteActivity();
       // Same reasoning as the pointer handlers above: panning has no effect
       // while zoomed into a piece, so don't touch manualX/manualUntil then —
       // camera.position.x is a close-up framing position, not a wall-pan one.
@@ -303,6 +364,7 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
     nowT = t;
 
     pieces.update(t, dt);
+    emptyWall.setVisible(pieces.count() === 0);
     dust.setFocused(focused !== null);
     dust.update(dt);
 
@@ -329,6 +391,33 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
       lookTarget.copy(focused.target);
       ease = reducedMotion ? 1 : Math.min(dt * 1.6, 1);
     } else {
+      // quiet room → the docent strolls back through older pieces, then hands
+      // back to auto-follow (never under reduced motion, never while browsing)
+      const oldest = pieces.oldestX();
+      if (
+        !docent &&
+        !reducedMotion &&
+        oldest !== null &&
+        nowT >= manualUntil &&
+        shouldStartDocent(nowT, lastActivity, camera.position.x, oldest)
+      ) {
+        docent = {
+          fromX: camera.position.x,
+          toX: Math.max(PAN_LEFT_LIMIT, oldest),
+          startedAt: nowT,
+        };
+      }
+      if (docent) {
+        const x = docentX(docent, nowT);
+        if (x === null) {
+          docent = null;
+          lastActivity = nowT; // the next tour waits another quiet spell
+          manualUntil = 0;
+        } else {
+          manualX = clampPan(x);
+          manualUntil = nowT + 0.5;
+        }
+      }
       const manual = nowT < manualUntil;
       // auto target keeps the newest column right-of-center; a slow ease means a
       // mint burst fills the visible area instead of whipping past, while manual

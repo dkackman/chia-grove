@@ -8,3 +8,11 @@ import type { SproutEvent } from "@grove/shared";
 export function shouldHang(event: SproutEvent): boolean {
   return event.kind === "nft" && !!event.mediaKind;
 }
+
+/**
+ * The wall label a hung piece wears: a fresh mint is a "new acquisition"; any
+ * other spend of an NFT (a transfer or sale) gets the gallery's red "sold" dot.
+ */
+export function hangTag(event: SproutEvent): "acquisition" | "sold" {
+  return event.mint ? "acquisition" : "sold";
+}

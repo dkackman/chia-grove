@@ -15,6 +15,32 @@ export function artVideoTexture(video: HTMLVideoElement): THREE.VideoTexture {
   return srgb(new THREE.VideoTexture(video));
 }
 
+type VideoLike = {
+  pause?: () => void;
+  removeAttribute?: (name: string) => void;
+  load?: () => void;
+};
+
+function releaseVideoLike(media: VideoLike | null | undefined): void {
+  if (!media || typeof media.pause !== "function") return;
+  media.pause();
+  media.removeAttribute?.("src");
+  media.load?.();
+}
+
+/**
+ * Throw away a loaded art result that will not be hung (a late load whose NFT
+ * is already on the wall, timed out, or was orphaned by a reorg): stop any
+ * <video> behind it — the lazily-held poster element, or the one a
+ * VideoTexture wraps — so it can't keep buffering, and dispose the texture.
+ */
+export function discardArt(texture: THREE.Texture, video?: HTMLVideoElement): void {
+  releaseVideoLike(video as VideoLike | undefined);
+  const image = texture.image as VideoLike | undefined;
+  if (image !== (video as unknown)) releaseVideoLike(image);
+  texture.dispose();
+}
+
 /**
  * Load an NFT's media as a Three.js texture, mirroring the media-type handling
  * of the detail-card popup: still images become a TextureLoader texture, videos
