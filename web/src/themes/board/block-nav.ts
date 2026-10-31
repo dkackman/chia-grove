@@ -8,6 +8,16 @@ export function parseHeightInput(raw: string): number | null {
   return Number.isSafeInteger(n) ? n : null;
 }
 
+/**
+ * The height a prev/next step lands on: never below 0 and, once the chain tip
+ * is known, never past it (there's no block there to load yet). Pure.
+ */
+export function stepHeight(current: number, delta: number, tip: number | null): number {
+  let h = current + delta;
+  if (tip !== null) h = Math.min(h, tip);
+  return Math.max(0, h);
+}
+
 export interface BoardNavCallbacks {
   onFind(height: number): void;
   onPrev(): void;
@@ -67,6 +77,11 @@ export class BoardNav {
 
     root.append(form, controls);
     this.setMode("live");
+  }
+
+  /** Disables "next" while the detail view sits on the chain tip. */
+  setAtTip(atTip: boolean): void {
+    this.nextBtn.disabled = atTip;
   }
 
   setMode(mode: "live" | "detail"): void {

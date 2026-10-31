@@ -1,5 +1,13 @@
 import { expect, test } from "vitest";
-import { parseHeightInput } from "../src/themes/board/block-nav.js";
+import { parseHeightInput, stepHeight } from "../src/themes/board/block-nav.js";
+
+test("stepHeight never steps past the chain tip or below 0", () => {
+  expect(stepHeight(100, 1, 200)).toBe(101);
+  expect(stepHeight(200, 1, 200)).toBe(200); // at the tip: stays put
+  expect(stepHeight(500, 1, 200)).toBe(200); // found a future height: next pulls back to tip
+  expect(stepHeight(0, -1, 200)).toBe(0);
+  expect(stepHeight(100, 1, null)).toBe(101); // tip not known yet
+});
 
 test("parses a plain integer height", () => {
   expect(parseHeightInput("1234567")).toBe(1234567);

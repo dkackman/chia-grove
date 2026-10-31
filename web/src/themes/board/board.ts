@@ -14,7 +14,6 @@ import {
   isBlockStart,
   cardMetaFor,
   cellHoverKey,
-  toDisplayRows,
   patchMediaFilter,
   BOARD_COLS,
   HEIGHT_COLS,
@@ -23,18 +22,15 @@ import type { DisplayRow } from "./rows.js";
 import { fitDistance } from "./fit.js";
 import { BlockDetail, type DetailStatus } from "./detail.js";
 import { readBlockParam, writeBlockParam } from "./url-state.js";
-import { BoardNav } from "./block-nav.js";
+import { BoardNav, stepHeight } from "./block-nav.js";
 import { Cabinet, cabinetLayout } from "./cabinet.js";
+import { BlockLedger } from "./ledger.js";
+import { FloodDetector } from "./flood.js";
 
 const LEDGER_ROWS = 20;
-const HISTORY = 500; // spends kept in memory for scrolling back through
-// Sprouts/frame above which an already-busy board snaps instead of riffling.
-// Tuned just under the feed's 60/frame drain budget so only the sustained
-// connect-snapshot backlog snaps; a normal live block (even one overlapping a
-// still-settling riffle) stays under this and riffles. A settled board always
-// riffles regardless — this only gates the `!wasIdle` case.
-const FAST_FORWARD = 48;
+const HISTORY_BLOCKS = 300; // blocks of display rows kept for scrolling back through
 const SCROLL_PX_PER_ROW = 30; // wheel delta per row scrolled
+const DRAG_THRESHOLD_PX = 8; // pointer travel before a press becomes a scroll-drag
 
 const DETAIL_MESSAGES: Record<Exclude<DetailStatus, "loaded">, string> = {
   loading: "LOADING…",
@@ -110,7 +106,9 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
     onReturnToLive: () => returnToLive(),
   });
 
-  const events: SproutEvent[] = []; // newest first, capped at HISTORY
+  // live scrollback as per-block display rows (newest first), capped by blocks
+  const history = new BlockLedger(HISTORY_BLOCKS);
+  const flood = new FloodDetector();
   let displayRows: DisplayRow[] = [];
   let ledgerDirty = false;
   let sproutsSinceFrame = 0;
@@ -161,6 +159,7 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
       lastRenderedOffset = -1;
       header.setDetail(state.height, state.status, state.spendCount, state.fees);
       nav.setMode("detail");
+      nav.setAtTip(lastLiveBlock !== null && state.height >= lastLiveBlock.height);
       cabinet.setLamp("detail");
       detailDirty = true;
     }
@@ -172,7 +171,9 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
   }
 
   function stepDetail(delta: number): void {
-    enterDetail(Math.max(0, detail.currentHeight + delta));
+    // never step past the chain tip — there's no block there to load yet
+    const height = stepHeight(detail.currentHeight, delta, lastLiveBlock?.height ?? null);
+    if (height !== detail.currentHeight) enterDetail(height);
   }
 
   function returnToLive(pushUrl = true): void {
@@ -198,8 +199,7 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
   feed.onEvent((event) => {
     switch (event.type) {
       case "sprout":
-        events.unshift(event);
-        if (events.length > HISTORY) events.pop();
+        history.add(event);
         ledgerDirty = true;
         sproutsSinceFrame++;
         break;
@@ -207,20 +207,16 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
         lastLiveBlock = event;
         if (mode === "live")
           header.setBlock(event.height, event.spendCount, event.fees, event.timestamp);
+        else nav.setAtTip(detail.currentHeight >= event.height);
         break;
       case "ambient":
         header.setAmbient(event.mempoolSize, event.netspace);
         break;
-      case "reorg": {
-        const before = events.length;
-        for (let i = events.length - 1; i >= 0; i--) {
-          if (events[i].height >= event.forkHeight) events.splice(i, 1);
-        }
-        if (events.length !== before) ledgerDirty = true;
+      case "reorg":
+        if (history.reorg(event.forkHeight)) ledgerDirty = true;
         break;
-      }
       case "content-flag": {
-        patchMediaFilter(events, event.launcherId, event.mediaFilter);
+        patchMediaFilter(history.sprouts(), event.launcherId, event.mediaFilter);
         if (mode === "detail") {
           patchMediaFilter(
             displayRows.filter((r): r is SproutEvent => r.type === "sprout"),
@@ -236,6 +232,8 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
   let lastClock = 0;
 
   function update(dt: number, t: number): void {
+    // fed every frame so the detector sees the quiet frames between blocks too
+    const flooded = flood.observe(sproutsSinceFrame);
     if (mode === "live") {
       if (scrollOffset > maxOffset()) scrollOffset = maxOffset(); // a reorg may have shrunk history
       const scrolled = scrollOffset !== lastRenderedOffset;
@@ -243,18 +241,23 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
         const wasIdle = ledger.idle();
         if (ledgerDirty) {
           const prevLen = displayRows.length;
-          displayRows = toDisplayRows(events);
-          // keep the same block in view when scrolled back
-          if (scrollOffset > 0) {
-            scrollOffset = Math.min(scrollOffset + displayRows.length - prevLen, maxOffset());
+          const anchor = scrollOffset > 0 ? displayRows[scrollOffset] : undefined;
+          displayRows = history.rows();
+          // keep the same row in view when scrolled back (rows are stable
+          // objects; fall back to the length delta if the anchor was evicted)
+          if (anchor) {
+            const at = displayRows.indexOf(anchor);
+            const next = at >= 0 ? at : scrollOffset + displayRows.length - prevLen;
+            scrollOffset = Math.max(0, Math.min(next, maxOffset()));
           }
           ledgerDirty = false;
         }
         // Scrubbing through history snaps instantly; a settled board always
         // riffles a fresh block no matter how many spends it carries. Only snap
-        // when we're already mid-riffle and being flooded (e.g. the startup
-        // snapshot replay) so the board can catch up instead of churning forever.
-        const flooding = !wasIdle && sproutsSinceFrame > FAST_FORWARD;
+        // when we're already mid-riffle and being flooded for many frames on
+        // end (the connect-snapshot replay) so the board can catch up instead
+        // of churning forever — a big live block still riffles.
+        const flooding = !wasIdle && flooded;
         renderLedger(scrolled || reducedMotion || flooding);
         lastRenderedOffset = scrollOffset;
         header.setLive(scrollOffset === 0);
@@ -295,23 +298,74 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
   });
   loop.start({ camera, scene, update });
 
+  /** Scrolls by `px` (positive = toward older rows) at `pxPerRow`. */
+  function scrollByPx(px: number, pxPerRow: number): void {
+    const max = maxOffset();
+    if (max === 0) return;
+    scrollAccum += px;
+    const step = Math.trunc(scrollAccum / pxPerRow);
+    if (step !== 0) {
+      scrollAccum -= step * pxPerRow;
+      scrollOffset = Math.max(0, Math.min(max, scrollOffset + step));
+    }
+  }
+
   // wheel / trackpad scrolls vertically through history (live) or through a
   // busy block's spend list (detail); scrolling down reveals older rows
   canvas.addEventListener(
     "wheel",
     (e) => {
-      const max = maxOffset();
-      if (max === 0) return;
-      scrollAccum += e.deltaY;
-      const step = Math.trunc(scrollAccum / SCROLL_PX_PER_ROW);
-      if (step !== 0) {
-        scrollAccum -= step * SCROLL_PX_PER_ROW;
-        scrollOffset = Math.max(0, Math.min(max, scrollOffset + step));
-      }
+      if (maxOffset() === 0) return;
+      scrollByPx(e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY, SCROLL_PX_PER_ROW);
       e.preventDefault();
     },
     { passive: false }
   );
+
+  // Vertical pointer drag (touch, or a mouse) scrolls the same way, grabbing the
+  // rows: pull up to reveal older ones. A press that travels less than the
+  // threshold stays a tap, so picking a row still works; a real drag swallows
+  // the click the browser fires on release (see isDragging).
+  let dragPointer: number | null = null;
+  let dragStartY = 0;
+  let dragLastY = 0;
+  let dragging = false;
+  let suppressClick = false;
+  // one ledger row's on-screen height, so the rows track the finger 1:1
+  const rowPx = () =>
+    (cell / (2 * camera.position.z * Math.tan(THREE.MathUtils.degToRad(VFOV) / 2))) *
+    canvas.clientHeight;
+
+  canvas.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    dragPointer = e.pointerId;
+    dragStartY = dragLastY = e.clientY;
+    dragging = false;
+    suppressClick = false;
+    scrollAccum = 0;
+  });
+  canvas.addEventListener("pointermove", (e) => {
+    if (e.pointerId !== dragPointer || !(e.buttons & 1)) return;
+    if (!dragging) {
+      if (Math.abs(e.clientY - dragStartY) <= DRAG_THRESHOLD_PX) return;
+      dragging = true;
+      canvas.setPointerCapture?.(e.pointerId);
+    }
+    scrollByPx(dragLastY - e.clientY, Math.max(4, rowPx()));
+    dragLastY = e.clientY;
+  });
+  const endDrag = (e: PointerEvent) => {
+    if (e.pointerId !== dragPointer) return;
+    dragPointer = null;
+    if (dragging) {
+      dragging = false;
+      // the click (if any) fires right after pointerup in the same task
+      suppressClick = true;
+      setTimeout(() => (suppressClick = false), 0);
+    }
+  };
+  canvas.addEventListener("pointerup", endDrag);
+  canvas.addEventListener("pointercancel", endDrag);
 
   addEventListener("popstate", () => {
     const height = readBlockParam(location.search);
@@ -339,6 +393,7 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
       return row ? row.height : null;
     },
     selectHeight: (height) => enterDetail(height),
+    isDragging: () => dragging || suppressClick,
     setHovered: (object, instanceId) =>
       ledger.highlightRow(
         object === ledger.mesh && instanceId !== undefined ? ledger.rowOf(instanceId) : null
