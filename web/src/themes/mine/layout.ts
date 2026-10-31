@@ -128,3 +128,114 @@ export function seatCell(seatIndex: number): Seat {
 export function cellLocal(cell: Cell, layer: number): { x: number; z: number; y: number } {
   return { x: cell.col * SPACING, z: cell.row * SPACING, y: layer * CUBE };
 }
+
+/** Seat height in layers per special kind: a cube fills one layer, a villager
+ *  (head tops out at ~1.15) two, an easel painting (1.0 post + 1.3 frame) three. */
+export const SEAT_HEIGHT = { cat: 1, did: 2, nft: 3 } as const;
+
+/** Specials placed per block (airdrops stay bounded). */
+export const SPECIAL_BUDGET = 600;
+
+/**
+ * Column-aware seating for one chunk's specials. Each floor cell keeps its
+ * column top (next free layer); a special takes the lowest column, center-first,
+ * and raises it by its own height — so a painting or villager never shares
+ * space with a cube or another special stacked into the same column. With only
+ * 1-layer cubes this reduces exactly to `seatCell` (fill the footprint at layer
+ * 1, then stack).
+ */
+export class ChunkSeats {
+  private readonly tops = new Array<number>(FLOOR_TILES).fill(1);
+  private placed = 0;
+  /** coin ids seated in this chunk — cleared when the spiral laps back here */
+  readonly coinIds = new Set<string>();
+
+  next(height: number, coinId?: string): Seat | null {
+    if (this.placed >= SPECIAL_BUDGET) return null;
+    let best = 0;
+    for (let i = 1; i < FLOOR_TILES; i++) if (this.tops[i] < this.tops[best]) best = i;
+    const cell = FLOOR_ORDER[best];
+    const layer = this.tops[best];
+    this.tops[best] += Math.max(1, height);
+    this.placed++;
+    if (coinId) this.coinIds.add(coinId);
+    return { col: cell.col, row: cell.row, layer };
+  }
+}
+
+/**
+ * Per-chunk seating keyed by block-slot index. The spiral wraps after
+ * MAX_BLOCK_SLOTS blocks; when it laps back onto a slot, `startChunk` returns
+ * the coin ids the previous visit seated there so the caller can clear those
+ * still-alive specials (otherwise the new lap's seats z-fight with them), and
+ * the slot's seating restarts from an empty footprint.
+ */
+export class SpecialSeats {
+  private readonly chunks = new Map<number, ChunkSeats>();
+  private current = new ChunkSeats();
+
+  startChunk(index: number): ReadonlySet<string> {
+    const stale = this.chunks.get(index)?.coinIds ?? new Set<string>();
+    this.current = new ChunkSeats();
+    this.chunks.set(index, this.current);
+    return stale;
+  }
+
+  next(height: number, coinId?: string): Seat | null {
+    return this.current.next(height, coinId);
+  }
+}
+
+/** Gap between the island's outer edge and the ring of mempool torches. */
+export const TORCH_MARGIN = 2;
+
+/** Rim-torch ring radius: just outside the island's current extent. */
+export function torchRadius(filledBlocks: number): number {
+  return spiralRadius(Math.max(1, filledBlocks)) + TORCH_MARGIN;
+}
+
+/**
+ * Maps block heights onto spiral slots so a reorg can rewind the build cursor.
+ * `advance` hands out the next slot (wrapping at MAX_BLOCK_SLOTS); `rewind`
+ * drops every recorded block with `height >= forkHeight` (0 = everything) and
+ * moves the cursor back to the first one's slot, so the replacement chain is
+ * rebuilt on the fork's chunk instead of leaving bare orphaned chunks behind.
+ */
+export class BlockCursor {
+  private readonly blocks: Array<{ height: number; index: number }> = [];
+  private nextIndex = 0;
+  private total = 0; // blocks placed and not rewound
+
+  /** The slot the next block will take. */
+  get index(): number {
+    return this.nextIndex;
+  }
+  /** How far the spiral has populated (≤ MAX_BLOCK_SLOTS) — drives framing. */
+  get filled(): number {
+    return Math.min(this.total, MAX_BLOCK_SLOTS);
+  }
+
+  advance(height: number): number {
+    const index = this.nextIndex;
+    this.nextIndex = (index + 1) % MAX_BLOCK_SLOTS;
+    this.total++;
+    this.blocks.push({ height, index });
+    // only the latest lap's slots are meaningful to rewind onto
+    if (this.blocks.length > MAX_BLOCK_SLOTS) this.blocks.shift();
+    return index;
+  }
+
+  /** Rewinds to the fork's slot and returns it, or null if nothing recorded is invalidated. */
+  rewind(forkHeight: number): number | null {
+    const first = this.blocks.findIndex((b) => b.height >= forkHeight);
+    if (first < 0) return null;
+    const removed = this.blocks.length - first;
+    const forkIndex = this.blocks[first].index;
+    this.blocks.length = first;
+    this.nextIndex = forkIndex;
+    // on the first lap the removed chunks are now bare; once lapped, older
+    // terrain still covers every slot, so the fill (camera framing) stays full
+    this.total -= removed;
+    return forkIndex;
+  }
+}
