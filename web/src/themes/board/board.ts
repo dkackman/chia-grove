@@ -3,7 +3,7 @@ import * as THREE from "three";
 import type { GroveFeed } from "../../net/feed.js";
 import type { BlockEvent, GroveEvent, SproutEvent } from "@grove/shared";
 import type { VisualizationHandle } from "../types.js";
-import { createFrameLimiter } from "../shared/frame-limiter.js";
+import { createRenderLoop } from "../shared/render-loop.js";
 import { BOARD } from "./palette.js";
 import { buildGlyphAtlas } from "./glyphs.js";
 import { FlapGrid } from "./flapgrid.js";
@@ -42,11 +42,9 @@ const DETAIL_MESSAGES: Record<Exclude<DetailStatus, "loaded">, string> = {
 };
 
 export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): VisualizationHandle {
-  const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
-  renderer.setSize(innerWidth, innerHeight);
+  const loop = createRenderLoop(canvas);
+  let reducedMotion = loop.reducedMotion;
+  loop.onReducedMotionChange((reduced) => (reducedMotion = reduced));
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(BOARD.backdrop);
@@ -226,18 +224,9 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
     }
   });
 
-  const frameCallbacks: Array<() => void> = [];
-  const timer = new THREE.Timer();
-  const limiter = createFrameLimiter();
   let lastClock = 0;
 
-  function frame(): void {
-    requestAnimationFrame(frame);
-    if (!limiter.shouldRender(performance.now())) return;
-    timer.update();
-    const dt = Math.min(timer.getDelta(), 0.1);
-    const t = timer.getElapsed();
-
+  function update(dt: number, t: number): void {
     if (mode === "live") {
       if (scrollOffset > maxOffset()) scrollOffset = maxOffset(); // a reorg may have shrunk history
       const scrolled = scrollOffset !== lastRenderedOffset;
@@ -291,18 +280,11 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
     camera.position.z += (baseZ - camera.position.z) * Math.min(dt * 2, 1);
     camera.lookAt(0, centerY, 0);
     cabinet.update(t, camera.position.x, reducedMotion);
-
-    for (const fn of frameCallbacks) fn();
-    renderer.render(scene, camera);
   }
-  frame();
-
-  addEventListener("resize", () => {
-    camera.aspect = innerWidth / innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(innerWidth, innerHeight);
+  loop.onResize(() => {
     baseZ = fitDistance(contentW, contentH, VFOV, camera.aspect);
   });
+  loop.start({ camera, scene, update });
 
   // wheel / trackpad scrolls vertically through history (live) or through a
   // busy block's spend list (detail); scrolling down reveals older rows
@@ -333,7 +315,7 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
 
   return {
     camera,
-    onFrame: (fn) => frameCallbacks.push(fn),
+    onFrame: loop.onFrame,
     pickables: () => [ledger.mesh],
     metaFor: (object, instanceId) => {
       if (object !== ledger.mesh || instanceId === undefined) return null;

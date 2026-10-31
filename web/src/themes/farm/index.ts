@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import type { Visualization } from "../types.js";
 import { glowTexture } from "../shared/textures.js";
-import { createFrameLimiter } from "../shared/frame-limiter.js";
+import { createRenderLoop } from "../shared/render-loop.js";
 import { Motes } from "../shared/motes.js";
 import { createPostFx } from "../shared/postfx.js";
 import { createOrbitControl } from "../shared/orbit.js";
@@ -33,12 +33,11 @@ export const farm: Visualization = {
     ["sw-crow", "crows — reorg"],
   ],
   start(canvas, feed) {
-    const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const loop = createRenderLoop(canvas);
+    const { renderer } = loop;
+    let reducedMotion = loop.reducedMotion;
+    loop.onReducedMotionChange((reduced) => (reducedMotion = reduced));
     const orbit = createOrbitControl(canvas);
-
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
-    renderer.setSize(innerWidth, innerHeight);
 
     const scene = new THREE.Scene();
     // the sky dome (sky.ts) covers the background; this is only a fallback
@@ -93,7 +92,6 @@ export const farm: Visualization = {
     let currentRow = 0;
     let plantIndex = 0;
     let clockT = 0;
-    const frameCallbacks: Array<() => void> = [];
 
     feed.onEvent((event) => {
       switch (event.type) {
@@ -127,14 +125,7 @@ export const farm: Visualization = {
     });
     feed.onStatus((status) => sky.setSignalLost(status === "stale"));
 
-    const timer = new THREE.Timer();
-    const limiter = createFrameLimiter();
-    function frame(): void {
-      requestAnimationFrame(frame);
-      if (!limiter.shouldRender(performance.now())) return;
-      timer.update();
-      const dt = Math.min(timer.getDelta(), 0.1);
-      const t = timer.getElapsed();
+    function update(dt: number, t: number): void {
       clockT = t;
 
       // drift along the field's near edge, looking across the rows at the barn
@@ -165,21 +156,12 @@ export const farm: Visualization = {
       crows.update(t);
       turbines.update(t, dt);
       motes.update(t, dt);
-      for (const fn of frameCallbacks) fn();
-      postfx.render();
     }
-    frame();
-
-    addEventListener("resize", () => {
-      camera.aspect = innerWidth / innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(innerWidth, innerHeight);
-      postfx.setSize(innerWidth, innerHeight);
-    });
+    loop.start({ camera, postfx, update });
 
     return {
       camera,
-      onFrame: (fn) => frameCallbacks.push(fn),
+      onFrame: loop.onFrame,
       isDragging: () => orbit.isDragging(),
       pickables: () => crops.pickables(),
       metaFor: (object, instanceId) => crops.metaFor(object, instanceId),

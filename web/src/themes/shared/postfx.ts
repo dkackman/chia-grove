@@ -20,6 +20,9 @@ export interface PostFxOptions {
 export interface PostFx {
   render(): void;
   setSize(width: number, height: number): void;
+  setPixelRatio(ratio: number): void;
+  /** Toggle the bloom pass (the adaptive-quality governor drops it on slow devices). */
+  setBloomEnabled(on: boolean): void;
 }
 
 /**
@@ -42,14 +45,13 @@ export function createPostFx(
   composer.setSize(innerWidth, innerHeight);
 
   composer.addPass(new RenderPass(scene, camera));
-  composer.addPass(
-    new UnrealBloomPass(
-      new THREE.Vector2(innerWidth, innerHeight),
-      opts.bloomStrength,
-      opts.bloomRadius,
-      opts.bloomThreshold
-    )
+  const bloom = new UnrealBloomPass(
+    new THREE.Vector2(innerWidth, innerHeight),
+    opts.bloomStrength,
+    opts.bloomRadius,
+    opts.bloomThreshold
   );
+  composer.addPass(bloom);
   // OutputPass applies renderer.toneMapping and converts to the output color
   // space; it must be last.
   composer.addPass(new OutputPass());
@@ -58,5 +60,9 @@ export function createPostFx(
     render: () => composer.render(),
     // EffectComposer.setSize resizes its targets and every pass (incl. bloom)
     setSize: (width, height) => composer.setSize(width, height),
+    setPixelRatio: (ratio) => composer.setPixelRatio(ratio),
+    setBloomEnabled: (on) => {
+      bloom.enabled = on;
+    },
   };
 }

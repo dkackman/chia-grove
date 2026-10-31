@@ -2,7 +2,7 @@ import * as THREE from "three";
 import type { BlockEvent, GroveEvent, SproutEvent } from "@grove/shared";
 import type { GroveFeed } from "../../net/feed.js";
 import type { VisualizationHandle } from "../types.js";
-import { createFrameLimiter } from "../shared/frame-limiter.js";
+import { createRenderLoop } from "../shared/render-loop.js";
 import { createPostFx } from "../shared/postfx.js";
 import { catColor } from "../shared/cat-color.js";
 import { mulberry32 } from "../shared/util.js";
@@ -63,11 +63,10 @@ const AMBER = new THREE.Color(0xffa63d);
 const DID_VIOLET = new THREE.Color(0xb97aff);
 
 export function startTimelord(canvas: HTMLCanvasElement, feed: GroveFeed): VisualizationHandle {
-  const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
-  renderer.setSize(innerWidth, innerHeight);
+  const loop = createRenderLoop(canvas);
+  const { renderer } = loop;
+  let reducedMotion = loop.reducedMotion;
+  loop.onReducedMotionChange((reduced) => (reducedMotion = reduced));
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(48, innerWidth / innerHeight, 0.1, 900);
@@ -359,17 +358,10 @@ export function startTimelord(canvas: HTMLCanvasElement, feed: GroveFeed): Visua
   let focusSeq = 0;
   let focusInit = false;
   const lookAt = new THREE.Vector3();
-  const frameCallbacks: Array<() => void> = [];
-  const timer = new THREE.Timer();
-  const limiter = createFrameLimiter();
   const size = new THREE.Vector2();
 
-  function frame(): void {
-    requestAnimationFrame(frame);
-    if (!limiter.shouldRender(performance.now())) return;
-    timer.update();
-    const dt = Math.min(timer.getDelta(), 0.1);
-    t = timer.getElapsed();
+  function update(dt: number, elapsed: number): void {
+    t = elapsed;
     orbitTime += dt * (reducedMotion ? 0.12 : 1);
 
     const target = headSeq < 0 ? 0 : travel.target(headSeq, oldestSeq);
@@ -418,23 +410,13 @@ export function startTimelord(canvas: HTMLCanvasElement, feed: GroveFeed): Visua
     const pinned = travel.pinned !== null;
     const shown = blocks.get(Math.round(target));
     hud.update(!pinned, shown?.height ?? null, Math.max(0, headSeq - Math.round(target)), traveled);
-
-    for (const fn of frameCallbacks) fn();
-    postfx.render();
   }
-  frame();
-
-  addEventListener("resize", () => {
-    camera.aspect = innerWidth / innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(innerWidth, innerHeight);
-    postfx.setSize(innerWidth, innerHeight);
-  });
+  loop.start({ camera, postfx, update });
 
   const spendSets = [coins, gems, halos];
   return {
     camera,
-    onFrame: (fn) => frameCallbacks.push(fn),
+    onFrame: loop.onFrame,
     isDragging: () => control.isDragging(),
     pickables: () => [crystals.mesh, coins.mesh, gems.mesh, halos.mesh, ...cards.pickables()],
     metaFor(object, instanceId) {

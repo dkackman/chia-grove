@@ -2,7 +2,7 @@ import * as THREE from "three";
 import type { GroveFeed } from "../../net/feed.js";
 import type { VisualizationHandle } from "../types.js";
 import { createPostFx } from "../shared/postfx.js";
-import { createFrameLimiter } from "../shared/frame-limiter.js";
+import { createRenderLoop } from "../shared/render-loop.js";
 import { glowTexture } from "../shared/textures.js";
 import { GALLERY } from "./palette.js";
 import { WALL } from "./layout.js";
@@ -39,11 +39,10 @@ const IDLE_RESUME_S = 4; // resume auto-follow this long after the last manual p
 const PAN_LEFT_LIMIT = -2; // how far left of the first column the view may pan
 
 export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): VisualizationHandle {
-  const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
-  renderer.setSize(innerWidth, innerHeight);
+  const loop = createRenderLoop(canvas);
+  const { renderer } = loop;
+  let reducedMotion = loop.reducedMotion;
+  loop.onReducedMotionChange((reduced) => (reducedMotion = reduced));
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(GALLERY.backdrop);
@@ -300,15 +299,7 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
     }
   });
 
-  const frameCallbacks: Array<() => void> = [];
-  const timer = new THREE.Timer();
-  const limiter = createFrameLimiter();
-  function frame(): void {
-    requestAnimationFrame(frame);
-    if (!limiter.shouldRender(performance.now())) return;
-    timer.update();
-    const dt = Math.min(timer.getDelta(), 0.1);
-    const t = timer.getElapsed();
+  function update(dt: number, t: number): void {
     nowT = t;
 
     pieces.update(t, dt);
@@ -351,23 +342,13 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
     tmpLook.lerp(lookTarget, ease);
     camera.lookAt(tmpLook);
     wall.follow(camera.position.x);
-
-    for (const fn of frameCallbacks) fn();
-    postfx.render();
   }
   tmpLook.copy(lookTarget);
-  frame();
-
-  addEventListener("resize", () => {
-    camera.aspect = innerWidth / innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(innerWidth, innerHeight);
-    postfx.setSize(innerWidth, innerHeight);
-  });
+  loop.start({ camera, postfx, update });
 
   return {
     camera,
     selfManagedInput: true,
-    onFrame: (fn) => frameCallbacks.push(fn),
+    onFrame: loop.onFrame,
   };
 }

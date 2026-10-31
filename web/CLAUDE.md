@@ -10,6 +10,10 @@ The frontend supports multiple visualizations ("themes") behind the `Visualizati
 
 Six themes ship: `grove`, `farm`, `gallery`, `mine`, `board`, `timelord`. Shared helpers (instancing, textures, CAT colors, amount scales, PRNG) live in `src/themes/shared/`.
 
+### Render loop (`src/themes/shared/render-loop.ts`)
+
+Every theme gets its renderer and frame loop from `createRenderLoop(canvas)`: `loop.renderer`, a live `loop.reducedMotion` (+ `onReducedMotionChange`), `loop.onFrame` (hand straight to the handle's `onFrame`), `loop.onResize` for extra resize work, and `loop.start({ camera, update(dt, t), postfx | scene })`. It owns the 60 fps frame limiter, a page-visibility-aware `THREE.Timer` (no `t` jump after a hidden tab; `dt` clamped to 0.1 s), the resize handler (re-reads `devicePixelRatio`), and the adaptive-quality `QualityGovernor` (`quality.ts`): smoothed frame time >20 ms for 2 s steps the pixel-ratio cap 1.75 → 1.25 → 1, then disables bloom (`PostFx.setBloomEnabled`); 20 s of fast frames steps back up, doubling the wait after each relapse.
+
 ### `InstancedKind` (`src/themes/shared/instanced.ts`)
 
 Shared `THREE.InstancedMesh` wrapper used by all themes:

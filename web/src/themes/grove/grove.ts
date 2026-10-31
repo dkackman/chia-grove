@@ -2,7 +2,7 @@ import * as THREE from "three";
 import type { GroveEvent, SproutEvent } from "@grove/shared";
 import type { GroveFeed } from "../../net/feed.js";
 import { type XZ } from "../shared/util.js";
-import { createFrameLimiter } from "../shared/frame-limiter.js";
+import { createRenderLoop } from "../shared/render-loop.js";
 import { createGround } from "./ground.js";
 import { blockPosition } from "./layout.js";
 import { COLORS } from "./palette.js";
@@ -40,11 +40,10 @@ function nightSkyGradient(): THREE.CanvasTexture {
 // NOTE: no explicit return-type annotation — the inferred type must include
 // the handler setters added via Object.assign (later tasks rely on them).
 export function startGrove(canvas: HTMLCanvasElement, feed: GroveFeed) {
-  const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
-  renderer.setSize(innerWidth, innerHeight);
+  const loop = createRenderLoop(canvas);
+  const { renderer } = loop;
+  let reducedMotion = loop.reducedMotion;
+  loop.onReducedMotionChange((reduced) => (reducedMotion = reduced));
 
   const orbit = createOrbitControl(canvas);
 
@@ -104,15 +103,7 @@ export function startGrove(canvas: HTMLCanvasElement, feed: GroveFeed) {
 
   feed.onStatus((status) => sky.setSignalLost(status === "stale"));
 
-  const timer = new THREE.Timer();
-  const limiter = createFrameLimiter();
-  function frame(): void {
-    requestAnimationFrame(frame);
-    if (!limiter.shouldRender(performance.now())) return;
-    timer.update();
-    const dt = Math.min(timer.getDelta(), 0.1);
-    const t = timer.getElapsed();
-
+  function update(dt: number, t: number): void {
     const angle = (reducedMotion ? 0.8 : t * 0.02) + orbit.getOffset();
     const radius = 34 + (reducedMotion ? 0 : Math.sin(t * 0.07) * 2.5);
     camera.position.set(
@@ -125,16 +116,8 @@ export function startGrove(canvas: HTMLCanvasElement, feed: GroveFeed) {
     sky.update(dt, t);
     ground.update(dt);
     extraUpdate(dt, t);
-    postfx.render();
   }
-  frame();
-
-  addEventListener("resize", () => {
-    camera.aspect = innerWidth / innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(innerWidth, innerHeight);
-    postfx.setSize(innerWidth, innerHeight);
-  });
+  loop.start({ camera, postfx, update });
 
   // hooks consumed by later tasks (kept on the handle object via closure setters)
   return Object.assign(

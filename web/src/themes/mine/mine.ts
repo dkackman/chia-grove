@@ -2,7 +2,7 @@ import * as THREE from "three";
 import type { GroveEvent, SproutEvent } from "@grove/shared";
 import type { GroveFeed } from "../../net/feed.js";
 import type { XZ } from "../shared/util.js";
-import { createFrameLimiter } from "../shared/frame-limiter.js";
+import { createRenderLoop } from "../shared/render-loop.js";
 import { createOrbitControl } from "../shared/orbit.js";
 import { createPostFx } from "../shared/postfx.js";
 import { chunkPosition, spiralRadius, MAX_BLOCK_SLOTS } from "./layout.js";
@@ -11,11 +11,10 @@ import { createWater } from "./water.js";
 import { createClouds } from "./clouds.js";
 
 export function startMine(canvas: HTMLCanvasElement, feed: GroveFeed) {
-  const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
-
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
-  renderer.setSize(innerWidth, innerHeight);
+  const loop = createRenderLoop(canvas);
+  const { renderer } = loop;
+  let reducedMotion = loop.reducedMotion;
+  loop.onReducedMotionChange((reduced) => (reducedMotion = reduced));
 
   const orbit = createOrbitControl(canvas);
   const scene = new THREE.Scene();
@@ -73,8 +72,6 @@ export function startMine(canvas: HTMLCanvasElement, feed: GroveFeed) {
   });
   feed.onStatus((status) => sky.setSignalLost(status === "stale"));
 
-  const timer = new THREE.Timer();
-  const limiter = createFrameLimiter();
   // Camera distance tracks the island's *current* extent so a sparse island
   // isn't stranded in the center of the view and a full one still fits frame.
   // Factors reproduce the original 120-block framing (radius 38 / height 17 at
@@ -82,13 +79,7 @@ export function startMine(canvas: HTMLCanvasElement, feed: GroveFeed) {
   // MIN_CAM_DIST floors it so the first few blocks aren't framed from underwater.
   const MIN_CAM_DIST = 14;
   let camDist = MIN_CAM_DIST;
-  function frame(): void {
-    requestAnimationFrame(frame);
-    if (!limiter.shouldRender(performance.now())) return;
-    timer.update();
-    const dt = Math.min(timer.getDelta(), 0.1);
-    const t = timer.getElapsed();
-
+  function update(dt: number, t: number): void {
     // Reduced-motion: frame the full island statically (no per-block dolly, in
     // keeping with the fixed angle below). Otherwise ease toward the current
     // fill so a sparse island isn't stranded in the center of the view.
@@ -110,16 +101,8 @@ export function startMine(canvas: HTMLCanvasElement, feed: GroveFeed) {
     clouds.update(t, camera, sky.cloudColor);
     water.update(t);
     extraUpdate(dt, t);
-    postfx.render();
   }
-  frame();
-
-  addEventListener("resize", () => {
-    camera.aspect = innerWidth / innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(innerWidth, innerHeight);
-    postfx.setSize(innerWidth, innerHeight);
-  });
+  loop.start({ camera, postfx, update });
 
   return Object.assign(
     { renderer, camera, scene, sky, water },
