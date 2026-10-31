@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { SUN_DIR, sunStrength } from "../src/themes/farm/sky.js";
+import { netspaceEib, SUN_DIR, SUN_MAX, SUN_MIN, trendStrength } from "../src/themes/farm/sky.js";
 import { cloudTime } from "../src/themes/farm/clouds.js";
 
 // The sky dome paints the sun's disc along SUN_DIR and the key light shines
@@ -19,15 +19,27 @@ function degrees(rad: number): number {
   return (rad * 180) / Math.PI;
 }
 
-test("sun strength tracks netspace within the daylight range", () => {
-  expect(sunStrength("0")).toBe(0.7);
-  expect(sunStrength("not a number")).toBe(0.7);
+test("netspace parses to EiB, junk to zero", () => {
   const eib = (n: number) => String(BigInt(n) * 2n ** 60n);
-  expect(sunStrength(eib(30))).toBeCloseTo(1.1, 6);
-  expect(sunStrength(eib(1000))).toBe(1.35);
+  expect(netspaceEib(eib(30))).toBeCloseTo(30, 6);
+  expect(netspaceEib("not a number")).toBe(0);
+  expect(netspaceEib("0")).toBe(0);
+});
+
+test("sun strength follows the session's netspace trend across the visible range", () => {
+  expect(trendStrength(20, 20)).toBe(1);
+  // a 1% move is plainly visible, either way
+  expect(trendStrength(20.2, 20)).toBeGreaterThan(1.15);
+  expect(trendStrength(19.8, 20)).toBeLessThan(0.85);
+  // big moves clamp to the range
+  expect(trendStrength(40, 20)).toBe(SUN_MAX);
+  expect(trendStrength(1, 20)).toBe(SUN_MIN);
+  // no baseline yet, or no data: neutral
+  expect(trendStrength(20, 0)).toBe(1);
+  expect(trendStrength(0, 20)).toBe(1);
   let previous = 0;
-  for (let n = 0; n <= 60; n += 5) {
-    const s = sunStrength(eib(n));
+  for (let n = 19; n <= 21; n += 0.1) {
+    const s = trendStrength(n, 20);
     expect(s).toBeGreaterThanOrEqual(previous);
     previous = s;
   }

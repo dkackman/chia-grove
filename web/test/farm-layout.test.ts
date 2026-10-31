@@ -5,6 +5,8 @@ import {
   ROW_CAPACITY,
   rowDirection,
   rowZ,
+  STRIP_WIDTH,
+  lapOffset,
 } from "../src/themes/farm/layout.js";
 
 test("rows are evenly spaced and centered on z=0", () => {
@@ -29,10 +31,11 @@ test("plants advance along the row in opposite directions on alternate rows", ()
 test("positions are deterministic per coin id and stay in the field", () => {
   const coin = "cafebabe" + "00".repeat(28);
   expect(plantPosition(3, 7, coin)).toEqual(plantPosition(3, 7, coin));
-  for (const index of [0, 50, ROW_CAPACITY - 1, ROW_CAPACITY + 5]) {
+  for (const index of [0, 50, ROW_CAPACITY - 1, ROW_CAPACITY + 5, 3 * ROW_CAPACITY - 1]) {
     const p = plantPosition(3, index, coin);
     expect(Math.abs(p.x)).toBeLessThanOrEqual(FIELD.rowLength / 2 + 0.2);
-    expect(Math.abs(p.z - rowZ(3))).toBeLessThanOrEqual(0.2);
+    // inside the row's soil bed, clear of the neighbouring rows
+    expect(Math.abs(p.z - rowZ(3))).toBeLessThanOrEqual(STRIP_WIDTH / 2);
   }
 });
 
@@ -41,4 +44,22 @@ test("overflow wraps back along the row", () => {
   const wrapped = plantPosition(0, ROW_CAPACITY, coin);
   const first = plantPosition(0, 0, coin);
   expect(Math.abs(wrapped.x - first.x)).toBeLessThan(0.5);
+});
+
+test("each lap of an overflowing row is offset across the bed, so crops don't stack", () => {
+  const coin = "deadbeef" + "00".repeat(28);
+  const laps = [0, 1, 2, 3].map((lap) => plantPosition(0, lap * ROW_CAPACITY + 7, coin));
+  for (let i = 0; i < laps.length; i++) {
+    for (let j = i + 1; j < laps.length; j++) {
+      const apart = Math.hypot(laps[i].x - laps[j].x, laps[i].z - laps[j].z);
+      expect(apart).toBeGreaterThan(0.08);
+    }
+  }
+  expect(lapOffset(0)).toEqual({ dx: 0, dz: 0 });
+  expect(lapOffset(1).dz).toBeGreaterThan(0);
+  expect(lapOffset(2).dz).toBeLessThan(0);
+  for (let lap = 0; lap < 20; lap++) {
+    expect(Math.abs(lapOffset(lap).dz)).toBeLessThan(STRIP_WIDTH / 2 - 0.15);
+    expect(lapOffset(lap).dx).toBeLessThan(FIELD.plantSpacing);
+  }
 });

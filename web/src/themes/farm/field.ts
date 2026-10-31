@@ -8,8 +8,10 @@ import { STRIP_LENGTH, STRIP_WIDTH, soilMaterial, soilUniforms } from "./soil.js
 import { PASS_SECONDS } from "./tractor.js";
 
 export interface Field {
-  /** The tractor starts plowing `row` at time `t`: the soil is turned behind it. */
-  plow(row: number, t: number): void;
+  /** The tractor starts across `row` at `passStart` (after its headland turn;
+   *  in the past for a replayed block): the soil is turned behind it. `now` is
+   *  the current time, at which the row it was on counts as finished. */
+  plow(row: number, passStart: number, now?: number): void;
   /** Advance ambient detail (chimney smoke, soil reveal and drying). */
   update(t: number): void;
 }
@@ -381,14 +383,14 @@ export function createField(scene: THREE.Scene, reducedMotion = false, anisotrop
   const updateSmoke = createSmoke(scene, barnX - 2, 6, barnZ + 0.7, reducedMotion);
 
   return {
-    plow(row, t) {
-      // the tractor jumps to the new row, so the row it was on is finished
+    plow(row, passStart, now = passStart) {
+      // the tractor heads for the new row, so the row it was on is finished
       // (matches Tractor.hasPassed, which releases that row's crops at once)
       if (activeRow >= 0 && activeRow !== row) {
-        plowState[activeRow * 3] = Math.min(plowState[activeRow * 3], t - PASS_SECONDS);
+        plowState[activeRow * 3] = Math.min(plowState[activeRow * 3], now - PASS_SECONDS);
       }
       activeRow = row;
-      plowState[row * 3] = t;
+      plowState[row * 3] = passStart;
       plowState[row * 3 + 1] = rowDirection(row);
       plowState[row * 3 + 2] = plowed[row] ? 1 : 0;
       plowAttr.needsUpdate = true;
