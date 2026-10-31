@@ -31,7 +31,9 @@ import { Cards } from "./cards.js";
 import { Fx } from "./fx.js";
 import { createStage, dialSweep } from "./stage.js";
 import { TimeTravel, createCameraControl } from "./controls.js";
-import { Hud } from "./hud.js";
+import { Hud, blockSummaryText } from "./hud.js";
+import { HoldQueue } from "./held.js";
+import { HeightUrl, readHeightParam } from "./deep-link.js";
 import { crystalGeometry, coinGeometry, gemGeometry, haloGeometry } from "./geometry.js";
 
 interface BlockMeta {
@@ -44,9 +46,27 @@ interface BlockRec {
   height: number;
   pos: Vec3;
   glow: number;
+  /** spends drawn as orbiters */
   drawn: number;
+  /** NFT cards planted */
   nfts: number;
+  /** spends past the per-block budgets that were not drawn */
+  skipped: number;
+  spendCount: number;
+  fees: string;
+  timestamp: number;
 }
+
+/** NFT cards planted per block at most. */
+const NFTS_PER_BLOCK = 15;
+/**
+ * Spare crystal/glow slots beyond MAX_BLOCKS: a reorg rewinds `seq`, so the
+ * replacement blocks are added while the orphans are still imploding, and the
+ * rings must not overwrite the oldest live block to make room.
+ */
+const REORG_SLACK = 32;
+/** Held events handed to the scene per frame at most (the feed drains its snapshot at 120). */
+const RELEASE_BUDGET = 240;
 
 /** A replayed block older than this is history: no fanfare, the funnel snaps. */
 const FRESH_SECONDS = 240;
@@ -86,11 +106,11 @@ export function startTimelord(canvas: HTMLCanvasElement, feed: GroveFeed): Visua
     scene,
     shared,
     crystalGeometry(),
-    MAX_BLOCKS,
+    MAX_BLOCKS + REORG_SLACK,
     { metal: 0.15, spec: 1.2, shininess: 60, rim: 1.1, ambient: 0.1, glow: 0.22 },
     { localTilt: 0, pickScale: 1.1 }
   );
-  const glows = new Glows(scene, shared, MAX_BLOCKS);
+  const glows = new Glows(scene, shared, MAX_BLOCKS + REORG_SLACK);
   const coins = new Orbiters<SproutEvent>(scene, shared, coinGeometry(), 12000, {
     metal: 0.92,
     spec: 2.2,
@@ -124,7 +144,6 @@ export function startTimelord(canvas: HTMLCanvasElement, feed: GroveFeed): Visua
   const seqByHeight = new Map<number, number>();
   let headSeq = -1;
   let oldestSeq = 0;
-  let skipHeight: number | null = null; // a re-sent block (reconnect snapshot) and its spends
   let lastBlockWall = performance.now();
   let lastFanfare = -10;
   let t = 0;
@@ -132,17 +151,30 @@ export function startTimelord(canvas: HTMLCanvasElement, feed: GroveFeed): Visua
 
   const travel = new TimeTravel();
   let traveled = false;
-  const goLive = () => travel.live();
+  // any travel by hand overrides a deep link still waiting for its block
+  const cancelDeepLink = () => (deepLink.pending = deepLink.seq = null);
+  const goLive = () => {
+    cancelDeepLink();
+    travel.live();
+  };
   const control = createCameraControl(
     canvas,
     (n) => {
       if (headSeq < 0) return;
+      cancelDeepLink();
       travel.scroll(n, headSeq, oldestSeq);
       if (n > 0) traveled = true;
     },
     goLive
   );
   const hud = new Hud(goLive);
+
+  // ?height= deep link: `pending` until the replay delivers that block (`seq`)
+  const deepLink: { pending: number | null; seq: number | null } = {
+    pending: readHeightParam(location.search),
+    seq: null,
+  };
+  const heightUrl = new HeightUrl(deepLink.pending);
 
   const color = new THREE.Color();
 
@@ -161,15 +193,11 @@ export function startTimelord(canvas: HTMLCanvasElement, feed: GroveFeed): Visua
   }
 
   function onBlock(event: BlockEvent): void {
-    // Not newer than the head → a re-sent block (reconnect snapshot replay),
-    // including ones already recycled off the bottom of the helix. A reorg
-    // rewinds the head below the fork first, so replacement blocks still land.
+    // The feed never re-sends a block (snapshot dedupe) and a reorg rewinds the
+    // head below its fork first, so heights only climb — this is just a cheap
+    // guard on the helix's seq ↔ height ordering.
     const head = blocks.get(headSeq);
-    if (head && event.height <= head.height) {
-      skipHeight = event.height;
-      return;
-    }
-    skipHeight = null;
+    if (head && event.height <= head.height) return;
     const seq = ++headSeq;
     while (seq - oldestSeq >= MAX_BLOCKS) recycleOldest();
     const pos = blockPosition(seq);
@@ -192,10 +220,20 @@ export function startTimelord(canvas: HTMLCanvasElement, feed: GroveFeed): Visua
       pos,
       color.clone().multiplyScalar(0.8),
       1.2 + crystalScale(event.spendCount) * 1.2,
-      infused,
-      seq % MAX_BLOCKS
+      infused
     );
-    blocks.set(seq, { seq, height: event.height, pos, glow, drawn: 0, nfts: 0 });
+    blocks.set(seq, {
+      seq,
+      height: event.height,
+      pos,
+      glow,
+      drawn: 0,
+      nfts: 0,
+      skipped: 0,
+      spendCount: event.spendCount,
+      fees: event.fees,
+      timestamp: event.timestamp,
+    });
     seqByHeight.set(event.height, seq);
 
     shared.uHeadPos.value.set(pos.x, pos.y, pos.z);
@@ -208,16 +246,27 @@ export function startTimelord(canvas: HTMLCanvasElement, feed: GroveFeed): Visua
     // (demo backlog, reconnect) would otherwise stack dozens of flares
     if (fresh && t - lastFanfare > 2) {
       lastFanfare = t;
-      shared.uPulse.value = 1;
-      fx.shockwave(pos, color, 6, infused, 2.2);
-      fx.flare(pos, 0xeafff6, 3.2, infused, 1.4);
+      // reduced motion: a soft head-light swell, no expanding rings or flares
+      shared.uPulse.value = reducedMotion ? 0.3 : 1;
+      if (!reducedMotion) {
+        fx.shockwave(pos, color, 6, infused, 2.2);
+        fx.flare(pos, 0xeafff6, 3.2, infused, 1.4);
+      }
+    }
+    if (deepLink.pending === event.height) deepLink.seq = seq;
+    else if (
+      deepLink.pending !== null &&
+      deepLink.seq === null &&
+      event.height > deepLink.pending
+    ) {
+      // heights only climb: the linked block is older than anything retained
+      deepLink.pending = null;
     }
   }
 
   function onSprout(event: SproutEvent): void {
-    if (event.height === skipHeight) return;
-    const seq = seqByHeight.get(event.height) ?? headSeq;
-    const rec = blocks.get(seq);
+    const seq = seqByHeight.get(event.height);
+    const rec = seq === undefined ? undefined : blocks.get(seq);
     if (!rec) return;
 
     if (event.kind === "nft") {
@@ -225,16 +274,22 @@ export function startTimelord(canvas: HTMLCanvasElement, feed: GroveFeed): Visua
         const at = cards.ping(event.launcherId, t);
         if (at) return;
       }
-      if (rec.nfts >= 15) return;
+      if (rec.nfts >= NFTS_PER_BLOCK) {
+        rec.skipped++;
+        return;
+      }
       const to = cards.plant(event, rec.pos, rec.seq, rec.nfts++, t + INFUSE_SECONDS);
-      if (event.mint) {
+      if (event.mint && !reducedMotion) {
         fx.flare(to, 0xffd66b, 3.5, t + INFUSE_SECONDS + 1.3, 1.6, 2.5);
         fx.shockwave(to, 0xffc94a, 3.5, t + INFUSE_SECONDS + 1.3, 1.4);
       }
       return;
     }
 
-    if (rec.drawn >= PER_BLOCK_BUDGET) return;
+    if (rec.drawn >= PER_BLOCK_BUDGET) {
+      rec.skipped++;
+      return;
+    }
     const j = rec.drawn++;
     const rand = mulberry32(parseInt(event.coinId.slice(0, 8), 16) || j + 1);
     const orbit = orbitFor(j, rand);
@@ -287,7 +342,8 @@ export function startTimelord(canvas: HTMLCanvasElement, feed: GroveFeed): Visua
     const head = blocks.get(headSeq);
     if (head) shared.uHeadPos.value.set(head.pos.x, head.pos.y, head.pos.z);
     vortex.moveTo(blockPosition(headSeq + 1), false);
-    skipHeight = null;
+    // the linked block was orphaned: wait for its replacement at that height
+    if (deepLink.seq !== null && deepLink.seq >= firstSeq) deepLink.seq = null;
   }
 
   function onContentFlag(launcherId: string): void {
@@ -299,8 +355,11 @@ export function startTimelord(canvas: HTMLCanvasElement, feed: GroveFeed): Visua
    * whirl down into its slot; it (and every event behind it, to keep order)
    * lands once they arrive.
    */
-  function startsMigration(event: BlockEvent): boolean {
-    if (reducedMotion || !(event.mempoolIncluded && event.mempoolIncluded > 0)) return false;
+  function startsMigration(event: GroveEvent): boolean {
+    if (event.type !== "block") return false;
+    // a hidden tab's frame clock is frozen, so a hold would never expire
+    if (reducedMotion || document.hidden) return false;
+    if (!(event.mempoolIncluded && event.mempoolIncluded > 0)) return false;
     const head = blocks.get(headSeq);
     if (!head || event.height <= head.height) return false;
     if (Date.now() / 1000 - event.timestamp > MIGRATE_FRESH_SECONDS) return false;
@@ -310,21 +369,22 @@ export function startTimelord(canvas: HTMLCanvasElement, feed: GroveFeed): Visua
     return true;
   }
 
-  const held: GroveEvent[] = [];
-  let holdUntil = 0;
-  let migrated: GroveEvent | null = null;
+  const held = new HoldQueue<GroveEvent>(MIGRATE_HOLD_SECONDS);
+  let releasedThisFrame = 0;
 
   function release(): void {
-    while (held.length > 0 && t >= holdUntil) {
-      const event = held[0];
-      if (event.type === "block" && event !== migrated && startsMigration(event)) {
-        migrated = event;
-        holdUntil = t + MIGRATE_HOLD_SECONDS;
-        return;
-      }
-      held.shift();
-      handle(event);
+    if (document.hidden) {
+      // no frames run while hidden: break any hold and land everything now
+      // rather than letting the queue grow until the tab returns
+      held.release(Infinity, Infinity, handle, startsMigration);
+      return;
     }
+    releasedThisFrame += held.release(
+      t,
+      RELEASE_BUDGET - releasedThisFrame,
+      handle,
+      startsMigration
+    );
   }
 
   feed.onEvent((event: GroveEvent) => {
@@ -362,7 +422,20 @@ export function startTimelord(canvas: HTMLCanvasElement, feed: GroveFeed): Visua
 
   function update(dt: number, elapsed: number): void {
     t = elapsed;
+    releasedThisFrame = 0;
     orbitTime += dt * (reducedMotion ? 0.12 : 1);
+
+    if (deepLink.seq !== null) {
+      // travel once the linked block has a successor (so the jump pins it rather
+      // than going live); a link to the live head itself just stays live
+      if (headSeq > deepLink.seq) {
+        travel.jump(deepLink.seq, headSeq);
+        traveled = true;
+        deepLink.pending = deepLink.seq = null;
+      } else if (Date.now() / 1000 - (blocks.get(headSeq)?.timestamp ?? 0) < FRESH_SECONDS) {
+        deepLink.pending = deepLink.seq = null;
+      }
+    }
 
     const target = headSeq < 0 ? 0 : travel.target(headSeq, oldestSeq);
     if (!focusInit && headSeq >= 0) {
@@ -410,15 +483,26 @@ export function startTimelord(canvas: HTMLCanvasElement, feed: GroveFeed): Visua
     const pinned = travel.pinned !== null;
     const shown = blocks.get(Math.round(target));
     hud.update(!pinned, shown?.height ?? null, Math.max(0, headSeq - Math.round(target)), traveled);
+    // the URL waits until a pending deep link resolves, so it isn't clobbered first
+    if (deepLink.pending === null) {
+      heightUrl.update(pinned ? (shown?.height ?? null) : null, performance.now());
+    }
+
+    // rebuilt once per frame; the picker may ask several times
+    pickList.length = staticPicks.length;
+    for (const panel of cards.pickables()) pickList.push(panel);
   }
-  loop.start({ camera, postfx, update });
 
   const spendSets = [coins, gems, halos];
+  const staticPicks: THREE.Object3D[] = [crystals.mesh, coins.mesh, gems.mesh, halos.mesh];
+  const pickList: THREE.Object3D[] = [...staticPicks];
+  loop.start({ camera, postfx, update });
+
   return {
     camera,
     onFrame: loop.onFrame,
     isDragging: () => control.isDragging(),
-    pickables: () => [crystals.mesh, coins.mesh, gems.mesh, halos.mesh, ...cards.pickables()],
+    pickables: () => pickList,
     metaFor(object, instanceId) {
       for (const set of spendSets) if (object === set.mesh) return set.metaAt(instanceId);
       return cards.metaFor(object);
@@ -430,10 +514,14 @@ export function startTimelord(canvas: HTMLCanvasElement, feed: GroveFeed): Visua
     selectHeight(height) {
       const seq = seqByHeight.get(height);
       if (seq === undefined) return;
+      cancelDeepLink();
       travel.jump(seq, headSeq);
       traveled = true;
     },
     setHovered(object, instanceId) {
+      const crystal = object === crystals.mesh ? crystals.metaAt(instanceId) : null;
+      const rec = crystal ? blocks.get(crystal.seq) : undefined;
+      hud.setBlockInfo(rec ? blockSummaryText(rec, Date.now() / 1000) : null);
       crystals.setHovered(object === crystals.mesh ? instanceId : undefined);
       for (const set of spendSets) set.setHovered(object === set.mesh ? instanceId : undefined);
       cards.setHovered(object);

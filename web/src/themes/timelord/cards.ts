@@ -5,7 +5,7 @@ import { resolveMedia, thumbnailSrc } from "../../ui/media.js";
 import { sensitivePlaceholderTexture } from "../shared/textures.js";
 import { LoadPool } from "../shared/load-pool.js";
 import { mulberry32 } from "../shared/util.js";
-import { cardPosition, type Vec3 } from "./layout.js";
+import { cardPosition, clamp01, deathTime, smoothstep, type Vec3 } from "./layout.js";
 
 // Same pacing as the mine paintings: replay churns hundreds of NFTs through a
 // small pool, so cap concurrent /img fetches and drop loads for recycled slots.
@@ -82,7 +82,8 @@ export class Cards {
   private readonly tetherCol: Float32Array;
   private next = 0;
   private hovered = -1;
-  private readonly tmp = new THREE.Vector3();
+  private tethersActive = false;
+  private readonly picks: THREE.Object3D[] = [];
 
   constructor(scene: THREE.Scene) {
     const plane = new THREE.PlaneGeometry(1, 1);
@@ -249,6 +250,8 @@ export class Cards {
   }
 
   update(t: number, camera: THREE.Camera, focusY: number): void {
+    let active = 0;
+    this.picks.length = 0;
     for (let i = 0; i < this.pool.length; i++) {
       const c = this.pool[i];
       const o = i * 6;
@@ -256,7 +259,7 @@ export class Cards {
         this.tetherPos.fill(0, o, o + 6);
         continue;
       }
-      const fly = Math.max(0, Math.min(1, (t - c.bornAt) / FLY_SECONDS));
+      const fly = clamp01((t - c.bornAt) / FLY_SECONDS);
       const e = 1 - (1 - fly) ** 4;
       let s = e;
       if (c.dieAt > 0) {
@@ -264,6 +267,7 @@ export class Cards {
         s *= 1 - k;
         if (k >= 1) {
           c.group.visible = false;
+          this.tetherPos.fill(0, o, o + 6);
           continue;
         }
       }
@@ -291,35 +295,41 @@ export class Cards {
       fu.uHover.value = this.hovered === i ? 1 : 0;
 
       // tether: crystal → card, brightest at the card end
-      this.tmp.copy(c.group.position);
-      this.tetherPos.set(
-        [c.from.x, c.from.y, c.from.z, this.tmp.x, this.tmp.y - 0.9 * s, this.tmp.z],
-        o
-      );
+      const p = c.group.position;
+      const tp = this.tetherPos;
+      tp[o] = c.from.x;
+      tp[o + 1] = c.from.y;
+      tp[o + 2] = c.from.z;
+      tp[o + 3] = p.x;
+      tp[o + 4] = p.y - 0.9 * s;
+      tp[o + 5] = p.z;
       const b = 0.35 * fade * (1 + flash * 2 + (this.hovered === i ? 1.5 : 0));
       const mint = c.meta?.mint;
-      this.tetherCol.set(
-        [
-          0.05 * b,
-          0.25 * b,
-          0.2 * b,
-          (mint ? 1 : 0.5) * b,
-          (mint ? 0.8 : 0.9) * b,
-          (mint ? 0.4 : 1) * b,
-        ],
-        o
-      );
+      const tc = this.tetherCol;
+      tc[o] = 0.05 * b;
+      tc[o + 1] = 0.25 * b;
+      tc[o + 2] = 0.2 * b;
+      tc[o + 3] = (mint ? 1 : 0.5) * b;
+      tc[o + 4] = (mint ? 0.8 : 0.9) * b;
+      tc[o + 5] = (mint ? 0.4 : 1) * b;
+      active++;
+      if (c.meta && c.panel.visible) this.picks.push(c.panel);
     }
-    this.tethers.geometry.attributes.position.needsUpdate = true;
-    this.tethers.geometry.attributes.color.needsUpdate = true;
+    // skip the upload once every tether is gone and already zeroed on the GPU
+    if (active > 0 || this.tethersActive) {
+      this.tethers.geometry.attributes.position.needsUpdate = true;
+      this.tethers.geometry.attributes.color.needsUpdate = true;
+    }
+    this.tethersActive = active > 0;
   }
 
   setHovered(object: THREE.Object3D | null): void {
     this.hovered = object ? this.pool.findIndex((c) => c.panel === object) : -1;
   }
 
-  pickables(): THREE.Object3D[] {
-    return this.pool.filter((c) => c.meta && c.panel.visible).map((c) => c.panel);
+  /** Visible, live card panels — rebuilt by `update`, so the array is reused. */
+  pickables(): readonly THREE.Object3D[] {
+    return this.picks;
   }
 
   metaFor(object: THREE.Object3D): SproutEvent | null {
@@ -349,7 +359,7 @@ export class Cards {
       this.byLauncher.delete(c.meta.launcherId);
     }
     c.meta = null;
-    c.dieAt = t;
+    c.dieAt = deathTime(t);
   }
 
   private release(slot: number): void {
@@ -362,11 +372,6 @@ export class Cards {
     c.panelMat.map = null;
     c.meta = null;
   }
-}
-
-function smoothstep(a: number, b: number, x: number): number {
-  const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
-  return t * t * (3 - 2 * t);
 }
 
 /**
