@@ -2,7 +2,8 @@ import * as THREE from "three";
 import {
   ERUPT_SECONDS,
   IMPLODE_SECONDS,
-  orbitPoint,
+  deathTime,
+  orbitPointInto,
   reachAt,
   scaleAt,
   type Orbit,
@@ -142,6 +143,8 @@ export class Orbiters<T> {
   private orbitTime = 0;
   /** radius of the pick sphere relative to the drawn size */
   private readonly pickScale: number;
+  /** bound on how far any body strays from its block centre (orbit + pick radius) */
+  private readonly boundsRadius: number;
 
   constructor(
     scene: THREE.Scene,
@@ -149,7 +152,7 @@ export class Orbiters<T> {
     base: THREE.BufferGeometry,
     private readonly cap: number,
     style: OrbiterStyle,
-    opts: { localTilt?: number; pickScale?: number } = {}
+    opts: { localTilt?: number; pickScale?: number; boundsRadius?: number } = {}
   ) {
     this.geometry = new THREE.InstancedBufferGeometry();
     this.geometry.index = base.index;
@@ -203,6 +206,9 @@ export class Orbiters<T> {
     this.dieAt = new Float32Array(cap);
     this.sizes = new Float32Array(cap);
     this.pickScale = opts.pickScale ?? 0.75;
+    // widest orbit: 1.05 + 0.17·√PER_BLOCK_BUDGET + 0.12 ≈ 4.2 (+0.4 for halos),
+    // plus vertical scatter and the pick sphere itself
+    this.boundsRadius = opts.boundsRadius ?? 5.5;
   }
 
   /** Launch a body; returns its slot. The ring overwrites the oldest once full. */
@@ -241,7 +247,7 @@ export class Orbiters<T> {
       if (!meta || !predicate(meta)) continue;
       this.metas[i] = null;
       // instant: backdate the death so the implosion is already complete
-      this.dieAt[i] = instant ? t - IMPLODE_SECONDS - 1 : t;
+      this.dieAt[i] = deathTime(instant ? t - IMPLODE_SECONDS - 1 : t);
       this.aLife.setY(i, this.dieAt[i]);
       this.markDirty(i);
     }
@@ -268,9 +274,9 @@ export class Orbiters<T> {
   }
 
   /** Current world position of a live body (for effects anchored to it). */
-  positionOf(index: number): Vec3 {
+  positionOf(index: number, out: Vec3 = { x: 0, y: 0, z: 0 }): Vec3 {
     const reach = reachAt(this.time, this.born[index], this.dieAt[index]);
-    return orbitPoint(this.centers[index], this.orbits[index], this.orbitTime, reach);
+    return orbitPointInto(out, this.centers[index], this.orbits[index], this.orbitTime, reach);
   }
 
   update(t: number, orbitTime: number): void {
@@ -296,15 +302,30 @@ export class Orbiters<T> {
   }
 
   private readonly scratch = new THREE.Vector3();
+  private readonly point: Vec3 = { x: 0, y: 0, z: 0 };
 
   private raycastInto(raycaster: THREE.Raycaster, hits: THREE.Intersection[]): void {
     const ray = raycaster.ray;
     const focusY = (this.uniforms.uFocusY.value as number) ?? 0;
+    const bounds2 = this.boundsRadius * this.boundsRadius;
+    // A block's bodies share one centre object and sit in contiguous slots, so
+    // the per-block sphere test runs once per run of slots, not per body.
+    let center: Vec3 | null = null;
+    let near = false;
     for (let i = 0; i < this.used; i++) {
       if (!this.metas[i]) continue;
+      const c = this.centers[i];
+      if (c !== center) {
+        center = c;
+        near =
+          c.y > focusY - 40 - this.boundsRadius &&
+          c.y < focusY + 30 + this.boundsRadius &&
+          ray.distanceSqToPoint(this.scratch.set(c.x, c.y, c.z)) <= bounds2;
+      }
+      if (!near) continue;
       const scale = scaleAt(this.time, this.born[i], this.dieAt[i]);
       if (scale < 0.3) continue;
-      const p = this.positionOf(i);
+      const p = this.positionOf(i, this.point);
       // bodies faded into the depths of history aren't pickable
       if (p.y < focusY - 40 || p.y > focusY + 30) continue;
       const radius = Math.max(0.22, this.sizes[i] * this.pickScale);

@@ -18,21 +18,37 @@ export interface OrbitControl {
   dispose(): void;
 }
 
+export interface OrbitControlOptions {
+  sensitivity?: number;
+  dragThreshold?: number;
+  /**
+   * Vertical drag, in CSS pixels per pointermove (positive = pointer moved
+   * down). When given, a drag also starts on vertical movement past the
+   * threshold, not just horizontal.
+   */
+  onDragY?: (dyPixels: number) => void;
+  /** Wheel over the canvas (registered non-passive; the handler may preventDefault). */
+  onWheel?: (e: WheelEvent) => void;
+}
+
 export function createOrbitControl(
   canvas: HTMLCanvasElement,
-  opts: { sensitivity?: number; dragThreshold?: number } = {}
+  opts: OrbitControlOptions = {}
 ): OrbitControl {
-  const { sensitivity = 2.0, dragThreshold = 4 } = opts;
+  const { sensitivity = 2.0, dragThreshold = 4, onDragY, onWheel } = opts;
   const state = new OrbitState();
   let dragging = false;
   let suppressNextClick = false;
   let downX = 0;
+  let downY = 0;
   let lastX = 0;
+  let lastY = 0;
 
   function onPointerDown(e: PointerEvent): void {
     if (e.button !== 0) return;
     suppressNextClick = false;
     downX = lastX = e.clientX;
+    downY = lastY = e.clientY;
     dragging = false;
     canvas.setPointerCapture?.(e.pointerId);
   }
@@ -40,10 +56,16 @@ export function createOrbitControl(
   function onPointerMove(e: PointerEvent): void {
     if (!(e.buttons & 1)) return;
     const dx = e.clientX - lastX;
+    const dy = e.clientY - lastY;
     lastX = e.clientX;
-    if (!dragging && Math.abs(e.clientX - downX) > dragThreshold) dragging = true;
+    lastY = e.clientY;
+    const moved = onDragY
+      ? Math.hypot(e.clientX - downX, e.clientY - downY)
+      : Math.abs(e.clientX - downX);
+    if (!dragging && moved > dragThreshold) dragging = true;
     if (dragging) {
       state.accumulate((dx / innerWidth) * Math.PI * 2 * sensitivity);
+      onDragY?.(dy);
       canvas.style.cursor = "grabbing";
     }
   }
@@ -61,6 +83,7 @@ export function createOrbitControl(
   canvas.addEventListener("pointermove", onPointerMove);
   canvas.addEventListener("pointerup", onPointerUp);
   canvas.addEventListener("pointercancel", onPointerUp);
+  if (onWheel) canvas.addEventListener("wheel", onWheel, { passive: false });
 
   return {
     getOffset: () => state.offset,
@@ -78,6 +101,7 @@ export function createOrbitControl(
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerup", onPointerUp);
       canvas.removeEventListener("pointercancel", onPointerUp);
+      if (onWheel) canvas.removeEventListener("wheel", onWheel);
     },
   };
 }

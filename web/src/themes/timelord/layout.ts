@@ -80,6 +80,11 @@ export function orbitFor(j: number, rand: () => number): Orbit {
  * a hovered coin is exactly where it is drawn.
  */
 export function orbitPoint(center: Vec3, o: Orbit, t: number, reach: number): Vec3 {
+  return orbitPointInto({ x: 0, y: 0, z: 0 }, center, o, t, reach);
+}
+
+/** `orbitPoint` written into `out` — allocation-free for per-frame picking. */
+export function orbitPointInto(out: Vec3, center: Vec3, o: Orbit, t: number, reach: number): Vec3 {
   const a = o.phase + t * o.speed;
   const r = o.radius * reach;
   // point in the orbital plane
@@ -94,11 +99,10 @@ export function orbitPoint(center: Vec3, o: Orbit, t: number, reach: number): Ve
   // swing the tilted plane about Y to its ascending node
   const cn = Math.cos(o.node);
   const sn = Math.sin(o.node);
-  return {
-    x: center.x + px * cn - tz * sn,
-    y: center.y + ty,
-    z: center.z + px * sn + tz * cn,
-  };
+  out.x = center.x + px * cn - tz * sn;
+  out.y = center.y + ty;
+  out.z = center.z + px * sn + tz * cn;
+  return out;
 }
 
 /** Log-scaled coin diameter for an XCH amount (mojos, 1 XCH = 1e12). */
@@ -180,8 +184,14 @@ export function cardPosition(blockSeq: number, k: number): Vec3 {
   };
 }
 
-function clamp01(v: number): number {
+export function clamp01(v: number): number {
   return v < 0 ? 0 : v > 1 ? 1 : v;
+}
+
+/** GLSL-style smoothstep. */
+export function smoothstep(a: number, b: number, x: number): number {
+  const t = clamp01((x - a) / (b - a));
+  return t * t * (3 - 2 * t);
 }
 
 function mix(
@@ -190,6 +200,16 @@ function mix(
   t: number
 ): [number, number, number] {
   return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+}
+
+/**
+ * Every life attribute in this theme (orbiters, glows, thread segments, cards)
+ * uses `dieAt <= 0` to mean "alive", so a death stamp must stay positive —
+ * early in a session (t ≈ 0) a backdated `t - k` would otherwise read as
+ * alive and leave a zombie body on screen.
+ */
+export function deathTime(t: number): number {
+  return Math.max(1e-3, t);
 }
 
 export const ERUPT_SECONDS = 1.4;

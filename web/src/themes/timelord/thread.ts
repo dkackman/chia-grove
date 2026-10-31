@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import { HELIX_RADIUS, PITCH, STEP_ANGLE, helixAngle } from "./layout.js";
+import { HELIX_RADIUS, PITCH, STEP_ANGLE, deathTime, helixAngle } from "./layout.js";
 import { FADE_GLSL, type SceneUniforms } from "./shading.js";
 
 /** Seconds for a new segment to grow from the previous crystal to the new one. */
@@ -9,6 +9,10 @@ export const INFUSE_SECONDS = 0.9;
 const BRAID_RADIUS = 0.3;
 /** Full twists per segment — must be a whole number so strands join seamlessly. */
 const TWIST = 1;
+/** Extra instances that carry burning reorged segments, so the replacement chain can reuse their slots at once. */
+const BURN_SLOTS = 24;
+/** `born` of an empty instance — the vertex shader collapses it off-screen. */
+const EMPTY = 1e9;
 
 /**
  * One strand of the braid over a single block segment. Local coordinates run
@@ -60,6 +64,7 @@ varying vec3 vWorld;
 varying vec2 vLife;
 vec3 rotY(vec3 p, float a) { float c = cos(a), s = sin(a); return vec3(p.x * c - p.z * s, p.y, p.x * s + p.z * c); }
 void main() {
+  if (aSeg.z > 1.0e8) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }
   vec3 world = rotY(position, aSeg.x) + vec3(0.0, aSeg.y, 0.0);
   vU = uv.x;
   vStrand = aStrand;
@@ -117,6 +122,7 @@ export class Thread {
   private readonly material: THREE.ShaderMaterial;
   /** block seq held by each instance slot (−1 = empty) */
   private readonly seqs: Int32Array;
+  private nextBurn = 0;
 
   constructor(
     scene: THREE.Scene,
@@ -134,7 +140,10 @@ export class Thread {
     this.geometry.setAttribute("position", base.getAttribute("position"));
     this.geometry.setAttribute("uv", base.getAttribute("uv"));
     this.geometry.setAttribute("aStrand", base.getAttribute("aStrand"));
-    this.aSeg = new THREE.InstancedBufferAttribute(new Float32Array(cap * 4), 4);
+    // [0, cap) live segments by seq; [cap, cap + BURN_SLOTS) reorg embers
+    const segs = new Float32Array((cap + BURN_SLOTS) * 4);
+    for (let i = 0; i < cap + BURN_SLOTS; i++) segs[i * 4 + 2] = EMPTY;
+    this.aSeg = new THREE.InstancedBufferAttribute(segs, 4);
     this.aSeg.setUsage(THREE.DynamicDrawUsage);
     this.geometry.setAttribute("aSeg", this.aSeg);
     this.geometry.instanceCount = 0;
@@ -162,15 +171,23 @@ export class Thread {
     this.geometry.instanceCount = Math.max(this.geometry.instanceCount, i + 1);
   }
 
-  /** Burn out every segment at or after `fromSeq` (reorg). */
+  /**
+   * Burn out every segment at or after `fromSeq` (reorg). Each burning segment
+   * moves to an ember slot so the replacement block, which reuses the same seq,
+   * can grow in its old slot without cutting the burn short.
+   */
   burn(fromSeq: number, t: number): void {
     for (let i = 0; i < this.cap; i++) {
-      if (this.seqs[i] >= fromSeq) {
-        this.seqs[i] = -1;
-        this.aSeg.setW(i, t);
-        this.upload(i);
-      }
+      if (this.seqs[i] < fromSeq) continue;
+      const j = this.cap + this.nextBurn;
+      this.nextBurn = (this.nextBurn + 1) % BURN_SLOTS;
+      this.aSeg.setXYZW(j, this.aSeg.getX(i), this.aSeg.getY(i), this.aSeg.getZ(i), deathTime(t));
+      this.upload(j);
+      this.seqs[i] = -1;
+      this.aSeg.setZ(i, EMPTY);
+      this.upload(i);
     }
+    this.geometry.instanceCount = this.cap + BURN_SLOTS;
   }
 
   update(t: number): void {

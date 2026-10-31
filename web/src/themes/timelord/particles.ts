@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import { FADE_GLSL, type SceneUniforms } from "./shading.js";
-import type { Vec3 } from "./layout.js";
+import { deathTime, type Vec3 } from "./layout.js";
 
 /** Pixel-accurate point sizing: world-unit `size` → gl_PointSize at the vertex's depth. */
 const POINT_SIZE_GLSL = /* glsl */ `
@@ -113,7 +113,7 @@ export class Glows {
   }
 
   kill(index: number, t: number): void {
-    this.life.setY(index, t);
+    this.life.setY(index, deathTime(t));
     this.life.addUpdateRange(index * 2, 2);
     this.life.needsUpdate = true;
   }
