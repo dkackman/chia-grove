@@ -24,12 +24,34 @@ interface Wisp {
   baseScale: number;
 }
 
+/** Glow levels for a bloom's halo: births hot, then cools toward `rest`. */
+export const GLOW = {
+  birth: 0.3,
+  rest: 0.3,
+  mintBirth: 0.85,
+  /** mints stay brighter than ordinary blooms for good, so they read as mints */
+  mintRest: 0.45,
+  /** per second; ~16 s for a mint to cool from birth to rest */
+  mintDecay: 0.025,
+} as const;
+
+/** Bloom geometry variant: the ringed variant (1) is reserved for mints. */
+export function bloomVariant(mint: boolean | undefined, r: number): number {
+  if (mint) return 1;
+  return r < 0.5 ? 0 : 2;
+}
+
+/** Cool a glow level toward its resting level; never below it. */
+export function coolGlow(base: number, rest: number, decay: number, dt: number): number {
+  return base > rest ? Math.max(rest, base - dt * decay) : base;
+}
+
 interface BloomGlow {
   sprite: THREE.Sprite;
-  /** a fainter flat pool of the same light on the ground, seating the bloom */
-  pool: THREE.Mesh;
-  /** settled glow level (mint starts hot, then decays toward the resting level) */
+  /** current glow level (0 = unplanted / cleared) */
   base: number;
+  /** settled level the glow cools toward */
+  rest: number;
   /** per-instance phase so blooms breathe out of sync, not as one throb */
   phase: number;
 }
@@ -133,13 +155,22 @@ export class FloraSystem {
   private readonly bloom: InstancedKind[];
   private readonly wisps: Wisp[];
   private readonly bloomGlows: BloomGlow[][];
+  /**
+   * Ground pools for every bloom glow, one instanced draw: slot
+   * `variant * CAPS.bloom + index`. Additive, so the instance colour
+   * (emissive x level) is the pool's opacity.
+   */
+  private readonly pools: THREE.InstancedMesh;
+  private readonly kinds: InstancedKind[];
+  private readonly poolColor = new THREE.Color(COLORS.bloomEmissive);
+  private readonly matrix = new THREE.Matrix4();
   private nextWisp = 0;
   private gustUntil = 0;
   private readonly color = new THREE.Color();
 
   constructor(
     scene: THREE.Scene,
-    private readonly reducedMotion = false
+    private reducedMotion = false
   ) {
     const grassMaterial = new THREE.MeshStandardMaterial({
       color: COLORS.grass,
@@ -181,7 +212,31 @@ export class FloraSystem {
       (geometry) => new InstancedKind(scene, geometry, bloomMaterial, CAPS.bloom, 0.04)
     );
 
+    this.kinds = [...this.grass, ...this.mushroom, ...this.bloom];
+
     const glowMap = glowTexture();
+    this.pools = new THREE.InstancedMesh(
+      new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2),
+      new THREE.MeshBasicMaterial({
+        map: glowMap,
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      }),
+      VARIANTS * CAPS.bloom
+    );
+    this.pools.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    const zero = new THREE.Matrix4().makeScale(0, 0, 0);
+    const black = new THREE.Color(0);
+    for (let i = 0; i < VARIANTS * CAPS.bloom; i++) {
+      this.pools.setMatrixAt(i, zero);
+      this.pools.setColorAt(i, black);
+    }
+    this.pools.instanceColor!.setUsage(THREE.DynamicDrawUsage);
+    this.pools.frustumCulled = false;
+    this.pools.raycast = () => {};
+    scene.add(this.pools);
+
     this.bloomGlows = this.bloom.map(() =>
       Array.from({ length: CAPS.bloom }, () => {
         const sprite = new THREE.Sprite(
@@ -194,21 +249,10 @@ export class FloraSystem {
             blending: THREE.AdditiveBlending,
           })
         );
+        // hidden until planted: an opacity-0 sprite still costs a draw call
+        sprite.visible = false;
         scene.add(sprite);
-        const pool = new THREE.Mesh(
-          new THREE.PlaneGeometry(1, 1),
-          new THREE.MeshBasicMaterial({
-            map: glowMap,
-            color: COLORS.bloomEmissive,
-            transparent: true,
-            opacity: 0,
-            depthWrite: false,
-            blending: THREE.AdditiveBlending,
-          })
-        );
-        pool.rotation.x = -Math.PI / 2;
-        scene.add(pool);
-        return { sprite, pool, base: 0, phase: Math.random() * Math.PI * 2 };
+        return { sprite, base: 0, rest: 0, phase: Math.random() * Math.PI * 2 };
       })
     );
 
@@ -224,13 +268,68 @@ export class FloraSystem {
         })
       );
       sprite.scale.setScalar(0.9);
+      sprite.visible = false;
       scene.add(sprite);
       return { sprite, meta: null, bornAt: 0, phase: Math.random() * 10, baseScale: 0.9 };
     });
   }
 
   private allKinds(): InstancedKind[] {
-    return [...this.grass, ...this.mushroom, ...this.bloom];
+    return this.kinds;
+  }
+
+  setReducedMotion(reduced: boolean): void {
+    this.reducedMotion = reduced;
+  }
+
+  /** Reorg: remove every sprout from `height` up (0 = everything). */
+  clearAbove(height: number): void {
+    const doomed = (meta: SproutEvent) => meta.height >= height;
+    this.bloom.forEach((kind, variant) => {
+      kind.slots.forEach((slot, index) => {
+        if (slot.meta && doomed(slot.meta)) this.hideGlow(variant, index);
+      });
+    });
+    for (const kind of this.kinds) kind.clearWhere(doomed);
+    for (const wisp of this.wisps) {
+      if (wisp.meta && doomed(wisp.meta)) {
+        if (this.hovered && "wisp" in this.hovered && this.hovered.wisp === wisp) {
+          this.hovered = null;
+        }
+        wisp.meta = null;
+        wisp.sprite.material.opacity = 0;
+        wisp.sprite.visible = false;
+      }
+    }
+    if (this.hovered && "kind" in this.hovered && !this.hovered.kind.metaAt(this.hovered.index)) {
+      this.hovered = null;
+    }
+  }
+
+  private hideGlow(variant: number, index: number): void {
+    const glow = this.bloomGlows[variant][index];
+    glow.base = 0;
+    glow.rest = 0;
+    glow.sprite.material.opacity = 0;
+    glow.sprite.visible = false;
+    const slot = variant * CAPS.bloom + index;
+    this.pools.setMatrixAt(slot, this.matrix.makeScale(0, 0, 0));
+    this.pools.setColorAt(slot, this.poolColor.setScalar(0));
+    this.pools.instanceMatrix.needsUpdate = true;
+    this.pools.instanceColor!.needsUpdate = true;
+  }
+
+  /** Live sprout counts per kind (tests / diagnostics). */
+  activeCounts(): { grass: number; mushroom: number; bloom: number; wisp: number; glows: number } {
+    const live = (kinds: InstancedKind[]) =>
+      kinds.reduce((n, k) => n + k.slots.filter((s) => s.meta).length, 0);
+    return {
+      grass: live(this.grass),
+      mushroom: live(this.mushroom),
+      bloom: live(this.bloom),
+      wisp: this.wisps.filter((w) => w.meta).length,
+      glows: this.bloomGlows.flat().filter((g) => g.base > 0 && g.sprite.visible).length,
+    };
   }
 
   plant(event: SproutEvent, blockPos: XZ, t: number): void {
@@ -241,7 +340,8 @@ export class FloraSystem {
     // separate hash slice from sproutOffset's so pose doesn't correlate with
     // position within the cluster
     const rand = mulberry32(parseInt(event.coinId.slice(8, 16), 16));
-    const variant = Math.floor(rand() * VARIANTS);
+    const variantRoll = rand();
+    const variant = Math.floor(variantRoll * VARIANTS);
     const pose: Pose = {
       height: 1,
       rotY: rand() * Math.PI * 2,
@@ -277,14 +377,19 @@ export class FloraSystem {
         this.color.setHSL(0.07 + rand() * 0.07, 0.5, 0.78 + rand() * 0.1);
         pose.color = this.color;
         pose.height = (event.mint ? 1.35 : 1) * (0.9 + rand() * 0.3);
-        const index = this.bloom[variant].plant(event, x, z, t, pose);
-        const glow = this.bloomGlows[variant][index];
+        const bv = bloomVariant(event.mint, variantRoll);
+        const index = this.bloom[bv].plant(event, x, z, t, pose);
+        const glow = this.bloomGlows[bv][index];
         glow.sprite.position.set(x, 0.85 * pose.height, z);
-        glow.base = event.mint ? 0.5 : 0.3;
+        glow.base = event.mint ? GLOW.mintBirth : GLOW.birth;
+        glow.rest = event.mint ? GLOW.mintRest : GLOW.rest;
         glow.sprite.material.opacity = glow.base;
         glow.sprite.scale.setScalar(event.mint ? 1.7 : 1.15);
-        glow.pool.position.set(x, 0.05, z);
-        glow.pool.scale.setScalar(event.mint ? 2.6 : 1.8);
+        glow.sprite.visible = true;
+        const poolScale = event.mint ? 2.6 : 1.8;
+        this.matrix.makeScale(poolScale, 1, poolScale).setPosition(x, 0.05, z);
+        this.pools.setMatrixAt(bv * CAPS.bloom + index, this.matrix);
+        this.pools.instanceMatrix.needsUpdate = true;
         break;
       }
       case "did": {
@@ -295,6 +400,8 @@ export class FloraSystem {
         wisp.baseScale = 0.65 + rand() * 0.5;
         wisp.sprite.scale.setScalar(wisp.baseScale);
         wisp.sprite.position.set(x, 0, z);
+        wisp.sprite.material.opacity = 0;
+        wisp.sprite.visible = true;
         break;
       }
     }
@@ -313,18 +420,23 @@ export class FloraSystem {
     }
 
     const breatheAmp = this.reducedMotion ? 0 : 0.16;
-    for (const glows of this.bloomGlows) {
-      for (const g of glows) {
-        if (g.base <= 0) continue;
-        // mint blooms cool from their bright birth glow toward the resting level
-        if (g.base > 0.3) g.base = Math.max(0.3, g.base - dt * 0.12);
+    let poolsDirty = false;
+    this.bloomGlows.forEach((glows, variant) => {
+      glows.forEach((g, index) => {
+        if (g.base <= 0) return;
+        // mint blooms cool slowly from their bright birth glow to a level that
+        // stays above an ordinary bloom's, so mints remain recognizable
+        g.base = coolGlow(g.base, g.rest, GLOW.mintDecay, dt);
         // gentle out-of-sync breathing on top of the settled level
         const breathe = 1 + breatheAmp * Math.sin(t * 0.7 + g.phase);
         g.sprite.material.opacity = g.base * breathe;
         // a fainter ground pool of the same light seats the bloom
-        (g.pool.material as THREE.MeshBasicMaterial).opacity = g.base * 0.5 * breathe;
-      }
-    }
+        this.poolColor.setHex(COLORS.bloomEmissive).multiplyScalar(g.base * 0.5 * breathe);
+        this.pools.setColorAt(variant * CAPS.bloom + index, this.poolColor);
+        poolsDirty = true;
+      });
+    });
+    if (poolsDirty) this.pools.instanceColor!.needsUpdate = true;
     for (const wisp of this.wisps) {
       if (!wisp.meta) continue;
       const progress = Math.min((t - wisp.bornAt) / 2, 1);

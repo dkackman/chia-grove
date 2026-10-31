@@ -1,10 +1,12 @@
 import * as THREE from "three";
-import type { GroveEvent, SproutEvent } from "@grove/shared";
+import type { BlockEvent, GroveEvent, SproutEvent } from "@grove/shared";
 import type { GroveFeed } from "../../net/feed.js";
 import { type XZ } from "../shared/util.js";
 import { createRenderLoop } from "../shared/render-loop.js";
 import { createGround } from "./ground.js";
 import { blockPosition } from "./layout.js";
+import { BlockSlots, isReplayed } from "./blocks.js";
+import { Lantern } from "./lantern.js";
 import { COLORS } from "./palette.js";
 import { createSky } from "./sky.js";
 import { createPostFx } from "../shared/postfx.js";
@@ -38,12 +40,19 @@ function nightSkyGradient(): THREE.CanvasTexture {
 }
 
 // NOTE: no explicit return-type annotation — the inferred type must include
-// the handler setters added via Object.assign (later tasks rely on them).
+// the handler setters (index.ts relies on them).
 export function startGrove(canvas: HTMLCanvasElement, feed: GroveFeed) {
   const loop = createRenderLoop(canvas);
   const { renderer } = loop;
   let reducedMotion = loop.reducedMotion;
-  loop.onReducedMotionChange((reduced) => (reducedMotion = reduced));
+  const motionListeners: Array<(reduced: boolean) => void> = [];
+  loop.onReducedMotionChange((reduced) => {
+    reducedMotion = reduced;
+    sky.setReducedMotion(reduced);
+    ground.setReducedMotion(reduced);
+    lantern.setReducedMotion(reduced);
+    for (const fn of motionListeners) fn(reduced);
+  });
 
   const orbit = createOrbitControl(canvas);
 
@@ -57,6 +66,8 @@ export function startGrove(canvas: HTMLCanvasElement, feed: GroveFeed) {
 
   const sky = createSky(scene, reducedMotion);
   const ground = createGround(scene, reducedMotion);
+  const lantern = new Lantern(scene);
+  lantern.setReducedMotion(reducedMotion);
 
   // bloom makes the bioluminescent emissives, moon, and fireflies truly glow;
   // ACES rolls the bright additive highlights off instead of clipping to white
@@ -71,22 +82,27 @@ export function startGrove(canvas: HTMLCanvasElement, feed: GroveFeed) {
   // wired up by later tasks (flora, fireflies):
   let onSprout = (_event: SproutEvent, _blockPos: XZ) => {};
   let onAmbientExtra = (_mempoolSize: number, _mempoolCost: string) => {};
-  let onBlockExtra = (_pos: XZ) => {};
-  let onReorgExtra = () => {};
+  /** `live` is false for replayed history (snapshot): skip the fanfare. */
+  let onBlockExtra = (_pos: XZ, _event: BlockEvent, _live: boolean) => {};
+  let onReorgExtra = (_forkHeight: number) => {};
   let extraUpdate = (_dt: number, _t: number) => {};
 
-  let blockIndex = 0;
+  const slots = new BlockSlots(MAX_BLOCK_SLOTS);
   let currentBlockPos = blockPosition(0);
 
   feed.onEvent((event: GroveEvent) => {
     switch (event.type) {
-      case "block":
-        currentBlockPos = blockPosition(blockIndex);
-        blockIndex = (blockIndex + 1) % MAX_BLOCK_SLOTS;
-        ground.ripple(currentBlockPos.x, currentBlockPos.z);
-        sky.pulse();
-        onBlockExtra(currentBlockPos);
+      case "block": {
+        currentBlockPos = blockPosition(slots.place(event.height, event.timestamp));
+        const live = !isReplayed(event.timestamp, Date.now() / 1000);
+        lantern.moveTo(currentBlockPos, event.timestamp);
+        if (live) {
+          ground.ripple(currentBlockPos.x, currentBlockPos.z);
+          sky.pulse();
+        }
+        onBlockExtra(currentBlockPos, event, live);
         break;
+      }
       case "sprout":
         onSprout(event, currentBlockPos);
         break;
@@ -94,10 +110,21 @@ export function startGrove(canvas: HTMLCanvasElement, feed: GroveFeed) {
         sky.setNetspace(event.netspace);
         onAmbientExtra(event.mempoolSize, event.mempoolCost);
         break;
-      case "reorg":
-        ground.ripple(0, 0);
-        onReorgExtra();
+      case "reorg": {
+        // ember ripple from the newest surviving block (the fork point)
+        slots.rewind(event.forkHeight);
+        const slot = slots.current();
+        if (slot >= 0) {
+          currentBlockPos = blockPosition(slot);
+          lantern.moveTo(currentBlockPos, slots.currentTimestamp());
+        } else {
+          currentBlockPos = blockPosition(0);
+          lantern.hide();
+        }
+        ground.ripple(currentBlockPos.x, currentBlockPos.z, 1);
+        onReorgExtra(event.forkHeight);
         break;
+      }
     }
   });
 
@@ -115,23 +142,29 @@ export function startGrove(canvas: HTMLCanvasElement, feed: GroveFeed) {
 
     sky.update(dt, t);
     ground.update(dt);
+    lantern.update(t, Date.now() / 1000);
     extraUpdate(dt, t);
   }
   loop.start({ camera, postfx, update });
 
-  // hooks consumed by later tasks (kept on the handle object via closure setters)
-  return Object.assign(
-    { renderer, camera, scene },
-    {
-      setSproutHandler: (fn: typeof onSprout) => (onSprout = fn),
-      setAmbientHandler: (fn: typeof onAmbientExtra) => (onAmbientExtra = fn),
-      setBlockHandler: (fn: typeof onBlockExtra) => (onBlockExtra = fn),
-      setReorgHandler: (fn: typeof onReorgExtra) => (onReorgExtra = fn),
-      setUpdateHandler: (fn: typeof extraUpdate) => (extraUpdate = fn),
-      isDragging: () => orbit.isDragging(),
-      reducedMotion,
-    }
-  );
+  // hooks consumed by index.ts (kept on the handle object via closure setters).
+  // A plain literal, not Object.assign, so the reducedMotion getter stays live.
+  return {
+    renderer,
+    camera,
+    scene,
+    setSproutHandler: (fn: typeof onSprout) => (onSprout = fn),
+    setAmbientHandler: (fn: typeof onAmbientExtra) => (onAmbientExtra = fn),
+    setBlockHandler: (fn: typeof onBlockExtra) => (onBlockExtra = fn),
+    setReorgHandler: (fn: typeof onReorgExtra) => (onReorgExtra = fn),
+    setUpdateHandler: (fn: typeof extraUpdate) => (extraUpdate = fn),
+    isDragging: () => orbit.isDragging(),
+    /** live: follows the OS setting */
+    get reducedMotion() {
+      return reducedMotion;
+    },
+    onReducedMotionChange: (fn: (reduced: boolean) => void) => void motionListeners.push(fn),
+  };
 }
 
 export type GroveRuntime = ReturnType<typeof startGrove>;
