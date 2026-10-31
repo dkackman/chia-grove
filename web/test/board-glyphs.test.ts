@@ -6,6 +6,7 @@ import {
   glyphCell,
   isRenderable,
   nextGlyph,
+  flipsBetween,
 } from "../src/themes/board/glyphs.js";
 
 test("glyph table starts with space and fits the atlas", () => {
@@ -60,4 +61,27 @@ test("nextGlyph steps one toward target and wraps", () => {
   expect(nextGlyph(0, 0)).toBe(0); // already there
   expect(nextGlyph(0, 5)).toBe(1); // step forward
   expect(nextGlyph(GLYPHS.length - 1, 0)).toBe(0); // wraps to start
+});
+
+test("digit and blank transitions riffle the short numeric drum (≤ 10 flips)", () => {
+  const drum = " 0123456789";
+  for (const a of drum) {
+    for (const b of drum) {
+      expect(flipsBetween(charToGlyph(a), charToGlyph(b))).toBeLessThanOrEqual(10);
+    }
+  }
+  // the clock seconds wrap 9 → 0 is a single flip, not a lap of the table
+  expect(flipsBetween(charToGlyph("9"), charToGlyph("0"))).toBe(1);
+  expect(flipsBetween(charToGlyph("4"), charToGlyph("5"))).toBe(1);
+  expect(flipsBetween(charToGlyph(" "), charToGlyph("0"))).toBe(1);
+});
+
+test("non-numeric transitions still use the full drum and always land", () => {
+  expect(flipsBetween(charToGlyph(" "), charToGlyph("A"))).toBe(1);
+  expect(flipsBetween(charToGlyph("A"), charToGlyph("C"))).toBe(2);
+  for (let a = 0; a < GLYPHS.length; a++) {
+    for (let b = 0; b < GLYPHS.length; b++) {
+      expect(flipsBetween(a, b)).toBeLessThan(GLYPHS.length);
+    }
+  }
 });

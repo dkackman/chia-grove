@@ -8,6 +8,9 @@ const PUNCT = "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"; // all 32 printable ASCII sy
 const SPECIAL = "▸★▮·×"; // markers: block-start ▸, mint ★, missing-glyph ▮, mid-dot ·, times ×
 export const GLYPHS = " ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789" + PUNCT + SPECIAL;
 export const ATLAS_COLS = 9; // 9×9 = 81 cells ≥ GLYPHS.length (74)
+/** Where the two leaves meet, as a fraction of the cell from its top — a touch
+ *  above center. The atlas draws its seam here; the flip shader hinges on it. */
+export const FLAP_FOLD = 0.48;
 
 const INDEX = new Map<string, number>();
 for (let i = 0; i < GLYPHS.length; i++) INDEX.set(GLYPHS[i], i);
@@ -33,10 +36,40 @@ export function glyphCell(index: number): { col: number; row: number } {
   return { col: index % ATLAS_COLS, row: Math.floor(index / ATLAS_COLS) };
 }
 
-/** One riffle step from `cur` toward `target`, wrapping the table. Pure. */
+// A real Solari board fits numeric columns (clock, heights, amounts, counts)
+// with a short digit-only drum, so a digit change is a quick flick rather than
+// a lap of the whole alphabet. Emulate that per transition: whenever both the
+// shown and target glyphs are digits (or blank), riffle the 0–9 cycle instead
+// of the full table — 9→0 is one flip, so the clock's seconds never show junk.
+// Blank joins the cycle as a side door (blank → 0, 9 → blank) so a number
+// widening or shrinking also lands in at most 10 flips.
+const BLANK = 0;
+const DIGIT0 = GLYPHS.indexOf("0");
+const isDigit = (g: number) => g >= DIGIT0 && g < DIGIT0 + 10;
+
+/**
+ * One riffle step from `cur` toward `target`. Digit/blank → digit/blank steps
+ * round the short numeric drum; anything else steps through the full table,
+ * wrapping. Always terminates: both drums are cycles containing the target.
+ * Pure.
+ */
 export function nextGlyph(cur: number, target: number): number {
   if (cur === target) return target;
+  const numericTarget = isDigit(target) || target === BLANK;
+  if (numericTarget && cur === BLANK) return DIGIT0;
+  if (numericTarget && isDigit(cur)) {
+    const d = cur - DIGIT0;
+    if (d === 9) return target === BLANK ? BLANK : DIGIT0;
+    return cur + 1;
+  }
   return (cur + 1) % GLYPHS.length;
+}
+
+/** Flips needed to riffle from `cur` to `target` (0 when equal). Pure. */
+export function flipsBetween(cur: number, target: number): number {
+  let n = 0;
+  for (let g = cur; g !== target; g = nextGlyph(g, target)) n++;
+  return n;
 }
 
 /**
@@ -55,7 +88,7 @@ function drawFlap(
   const m = Math.max(1, Math.round(S * 0.03)); // gap to the recessed slot
   const r = Math.round(S * 0.1); // rounded card corners
   const w = S - 2 * m;
-  const fold = 0.48; // vertical fold position — a touch above the tile center
+  const fold = FLAP_FOLD;
 
   // near-black slot the card sits in (shows at the rounded corners + gaps)
   ctx.fillStyle = "#050506";
