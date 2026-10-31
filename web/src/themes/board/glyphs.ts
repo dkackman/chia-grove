@@ -33,10 +33,40 @@ export function glyphCell(index: number): { col: number; row: number } {
   return { col: index % ATLAS_COLS, row: Math.floor(index / ATLAS_COLS) };
 }
 
-/** One riffle step from `cur` toward `target`, wrapping the table. Pure. */
+// A real Solari board fits numeric columns (clock, heights, amounts, counts)
+// with a short digit-only drum, so a digit change is a quick flick rather than
+// a lap of the whole alphabet. Emulate that per transition: whenever both the
+// shown and target glyphs are digits (or blank), riffle the 0–9 cycle instead
+// of the full table — 9→0 is one flip, so the clock's seconds never show junk.
+// Blank joins the cycle as a side door (blank → 0, 9 → blank) so a number
+// widening or shrinking also lands in at most 10 flips.
+const BLANK = 0;
+const DIGIT0 = GLYPHS.indexOf("0");
+const isDigit = (g: number) => g >= DIGIT0 && g < DIGIT0 + 10;
+
+/**
+ * One riffle step from `cur` toward `target`. Digit/blank → digit/blank steps
+ * round the short numeric drum; anything else steps through the full table,
+ * wrapping. Always terminates: both drums are cycles containing the target.
+ * Pure.
+ */
 export function nextGlyph(cur: number, target: number): number {
   if (cur === target) return target;
+  const numericTarget = isDigit(target) || target === BLANK;
+  if (numericTarget && cur === BLANK) return DIGIT0;
+  if (numericTarget && isDigit(cur)) {
+    const d = cur - DIGIT0;
+    if (d === 9) return target === BLANK ? BLANK : DIGIT0;
+    return cur + 1;
+  }
   return (cur + 1) % GLYPHS.length;
+}
+
+/** Flips needed to riffle from `cur` to `target` (0 when equal). Pure. */
+export function flipsBetween(cur: number, target: number): number {
+  let n = 0;
+  for (let g = cur; g !== target; g = nextGlyph(g, target)) n++;
+  return n;
 }
 
 /**
