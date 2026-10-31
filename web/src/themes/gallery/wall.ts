@@ -42,11 +42,13 @@ export function createWall(scene: THREE.Scene): WallHandle {
   // frame (via onBeforeRender) so the cards, wall, and picture-lights reflect.
   // the dark color tint dims it and the custom blur shader softens it, so the
   // reflection reads as a subtle wet-sheen rather than a crisp mirror image.
+  // Because the sheen is blurred in UV space anyway, 512² is indistinguishable
+  // from 1024² here at a quarter of the per-frame mirror-pass fill cost.
   const floor = new Reflector(new THREE.PlaneGeometry(span, 60), {
     color: GALLERY.floorMirror,
     clipBias: 0.003,
-    textureWidth: 1024,
-    textureHeight: 1024,
+    textureWidth: 512,
+    textureHeight: 512,
     shader: floorReflectionShader,
   });
   // the dark floor base the faint reflection blends over (kept in the palette)

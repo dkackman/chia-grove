@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import type { SproutEvent } from "@grove/shared";
-import { shouldHang } from "../src/themes/gallery/select.js";
+import { hangTag, shouldHang } from "../src/themes/gallery/select.js";
 
 const sprout = (over: Partial<SproutEvent>): SproutEvent => ({
   type: "sprout",
@@ -26,4 +26,10 @@ test("skips NFTs without a usable image (no mediaKind)", () => {
 test("skips non-NFT kinds", () => {
   expect(shouldHang(sprout({ kind: "xch" }))).toBe(false);
   expect(shouldHang(sprout({ kind: "cat" }))).toBe(false);
+});
+
+test("mints wear the acquisition tag; transfers the sold dot", () => {
+  expect(hangTag(sprout({ mint: true }))).toBe("acquisition");
+  expect(hangTag(sprout({ mint: false }))).toBe("sold");
+  expect(hangTag(sprout({ mint: undefined }))).toBe("sold");
 });
