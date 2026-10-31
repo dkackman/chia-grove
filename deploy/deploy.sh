@@ -36,6 +36,12 @@ rsync -az --delete \
 # when package-lock.json didn't change — a needless memory spike on most
 # deploys. Skip it when the lockfile is unchanged from the last deploy that
 # actually ran it (.deploy-lockhash records that deploy's hash).
+#
+# ONNXRUNTIME_NODE_INSTALL=skip: on linux/x64 onnxruntime-node's postinstall
+# otherwise downloads and extracts the ~236MB CUDA EP nupkg from NuGet. The
+# droplet has no GPU and the CPU EP ships inside the npm tarball, so that
+# download is pure cost — and it failed the v0.14.0 deploy with ENOSPC,
+# leaving node_modules wiped under the still-running old process.
 if command -v sha256sum >/dev/null 2>&1; then
   LOCK_HASH="$(sha256sum package-lock.json | cut -d' ' -f1)"
 else
@@ -46,7 +52,7 @@ ssh "$HOST" "cd $TARGET && \
   if [ -d node_modules ] && [ -f .deploy-lockhash ] && [ \"\$(cat .deploy-lockhash)\" = '$LOCK_HASH' ]; then \
     echo 'package-lock.json unchanged, skipping npm ci'; \
   else \
-    npm ci --omit=dev && echo '$LOCK_HASH' > .deploy-lockhash; \
+    ONNXRUNTIME_NODE_INSTALL=skip npm ci --omit=dev && echo '$LOCK_HASH' > .deploy-lockhash; \
   fi && \
   sudo systemctl restart chia-grove"
 echo "deployed $VERSION to $HOST"
