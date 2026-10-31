@@ -5,10 +5,13 @@ import type { XZ } from "../shared/util.js";
 import { createRenderLoop } from "../shared/render-loop.js";
 import { createOrbitControl } from "../shared/orbit.js";
 import { createPostFx } from "../shared/postfx.js";
-import { chunkPosition, spiralRadius, MAX_BLOCK_SLOTS } from "./layout.js";
+import { chunkPosition, spiralRadius, BlockCursor, MAX_BLOCK_SLOTS } from "./layout.js";
 import { createMineSky } from "./sky.js";
 import { createWater } from "./water.js";
 import { createClouds } from "./clouds.js";
+
+/** Blocks older than this are replay/catch-up, not live — no per-block fanfare. */
+const REPLAY_AGE_MS = 120_000;
 
 export function startMine(canvas: HTMLCanvasElement, feed: GroveFeed) {
   const loop = createRenderLoop(canvas);
@@ -36,23 +39,25 @@ export function startMine(canvas: HTMLCanvasElement, feed: GroveFeed) {
   // wired up by later tasks (island/cats/structures/vfx via index.ts)
   let onSprout = (_event: SproutEvent, _chunk: XZ, _height: number) => {};
   let onAmbientExtra = (_mempoolSize: number) => {};
-  let onBlockExtra = (_chunk: XZ, _index: number) => {};
-  let onReorgExtra = (_forkHeight: number) => {};
+  let onBlockExtra = (_chunk: XZ, _index: number, _live: boolean) => {};
+  let onReorgExtra = (_forkHeight: number, _forkChunk: XZ | null) => {};
   let onContentFlag = (_launcherId: string) => {};
   let extraUpdate = (_dt: number, _t: number) => {};
 
-  let blockIndex = 0;
-  let filledBlocks = 0; // how far the spiral has populated — drives camera framing
+  // block height → spiral slot; `cursor.filled` (how far the spiral has
+  // populated) drives camera framing, and a reorg rewinds it to the fork's slot
+  const cursor = new BlockCursor();
   let currentChunk = chunkPosition(0);
 
   feed.onEvent((event: GroveEvent) => {
     switch (event.type) {
       case "block": {
-        const index = blockIndex;
+        const index = cursor.advance(event.height);
         currentChunk = chunkPosition(index);
-        blockIndex = (index + 1) % MAX_BLOCK_SLOTS;
-        filledBlocks = Math.min(filledBlocks + 1, MAX_BLOCK_SLOTS);
-        onBlockExtra(currentChunk, index);
+        // snapshot replay (and catch-up after a reconnect) delivers old blocks
+        // in a burst — flag them so per-block fanfare stays quiet
+        const live = event.timestamp * 1000 > Date.now() - REPLAY_AGE_MS;
+        onBlockExtra(currentChunk, index, live);
         break;
       }
       case "sprout":
@@ -62,9 +67,13 @@ export function startMine(canvas: HTMLCanvasElement, feed: GroveFeed) {
         sky.setNetspace(event.netspace);
         onAmbientExtra(event.mempoolSize);
         break;
-      case "reorg":
-        onReorgExtra(event.forkHeight);
+      case "reorg": {
+        // rewind the build cursor so the replacement chain rebuilds from the
+        // fork's chunk (not past bare orphaned ones), and aim the creeper there
+        const forkIndex = cursor.rewind(event.forkHeight);
+        onReorgExtra(event.forkHeight, forkIndex === null ? null : chunkPosition(forkIndex));
         break;
+      }
       case "content-flag":
         onContentFlag(event.launcherId);
         break;
@@ -85,7 +94,7 @@ export function startMine(canvas: HTMLCanvasElement, feed: GroveFeed) {
     // fill so a sparse island isn't stranded in the center of the view.
     const target = reducedMotion
       ? spiralRadius(MAX_BLOCK_SLOTS)
-      : Math.max(MIN_CAM_DIST, spiralRadius(filledBlocks));
+      : Math.max(MIN_CAM_DIST, spiralRadius(cursor.filled));
     camDist += (target - camDist) * (reducedMotion ? 1 : Math.min(1, dt * 0.8));
 
     const angle = (reducedMotion ? 0.8 : t * 0.015) + orbit.getOffset();
@@ -114,7 +123,10 @@ export function startMine(canvas: HTMLCanvasElement, feed: GroveFeed) {
       setContentFlagHandler: (fn: typeof onContentFlag) => (onContentFlag = fn),
       setUpdateHandler: (fn: typeof extraUpdate) => (extraUpdate = fn),
       isDragging: () => orbit.isDragging(),
-      reducedMotion,
+      /** live: the OS setting can flip while the scene runs */
+      isReducedMotion: () => reducedMotion,
+      /** how far the spiral has populated (≤ MAX_BLOCK_SLOTS) */
+      filledBlocks: () => cursor.filled,
     }
   );
 }
