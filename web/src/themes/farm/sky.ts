@@ -1,14 +1,7 @@
 import * as THREE from "three";
 import { FARM } from "./palette.js";
 import { CLOUD_GLSL, cloudTime, cloudUniforms } from "./clouds.js";
-
-function safeBigInt(value: string): bigint {
-  try {
-    return BigInt(value);
-  } catch {
-    return 0n;
-  }
-}
+import { safeBigInt } from "../shared/util.js";
 
 /**
  * Where the sun is: a late-afternoon sun low over the far right of the field,
@@ -25,14 +18,30 @@ const DOME_RADIUS = 420;
 const KEY_INTENSITY = 1.9;
 const FILL_INTENSITY = 1.05;
 
+/** Netspace in EiB (0 for anything unparsable). */
+export function netspaceEib(netspaceBytes: string): number {
+  return Number(safeBigInt(netspaceBytes) >> 50n) / 1024;
+}
+
+/** Sun strength range the netspace trend maps onto. */
+export const SUN_MIN = 0.75;
+export const SUN_MAX = 1.3;
+/** Strength change per unit of relative netspace change (1% → ±0.2). */
+const TREND_GAIN = 20;
+/** Per-sample weight of the slowly-following baseline (ambient arrives every
+ *  ~10 s, so the baseline lags by roughly a quarter of an hour). */
+export const BASELINE_RATE = 0.01;
+
 /**
- * Netspace → sun strength multiplier (same EiB mapping shape as the grove
- * moon, tuned for daylight): 0.7 at ≤ 10 EiB, rising 0.02 per EiB, capped at
- * 1.35.
+ * Netspace → sun strength, relative to the session's own baseline: absolute
+ * netspace barely moves in a session, so a fixed EiB scale left the sun
+ * effectively constant. Growing netspace brightens the afternoon, shrinking
+ * dims it, across [SUN_MIN, SUN_MAX]; at the baseline it is 1.
  */
-export function sunStrength(netspaceBytes: string): number {
-  const eib = Number(safeBigInt(netspaceBytes) >> 50n) / 1024;
-  return Math.min(1.35, Math.max(0.7, 0.7 + (eib - 10) * 0.02));
+export function trendStrength(eib: number, baselineEib: number): number {
+  if (!(baselineEib > 0) || !(eib > 0)) return 1;
+  const trend = eib / baselineEib - 1;
+  return Math.min(SUN_MAX, Math.max(SUN_MIN, 1 + trend * TREND_GAIN));
 }
 
 export interface FarmSky {
@@ -68,7 +77,8 @@ float skyClouds(vec2 p) {
     p = p * 2.07 + vec2(13.1, -7.7);
     a *= 0.5;
   }
-  return smoothstep(0.52, 0.74, n / 0.97);
+  // the feed going quiet rolls an overcast in: more, greyer cloud
+  return smoothstep(0.52 - 0.34 * uCloudCover, 0.74 - 0.2 * uCloudCover, n / 0.97);
 }
 void main() {
   vec3 dir = normalize(vDir);
@@ -93,7 +103,10 @@ void main() {
   float backlit = pow(sunDot, 8.0);
   cloudLit = mix(cloudLit, vec3(0.66, 0.7, 0.8), backlit * smoothstep(0.3, 1.0, cover) * 0.55);
   cloudLit += uSunColor * pow(sunDot, 24.0) * (1.0 - cover) * 0.45 * uSun;
+  cloudLit = mix(cloudLit, vec3(0.6, 0.62, 0.66), uCloudCover * 0.6);
   sky = mix(sky, cloudLit, cloud);
+  // and a flat, washed-out sky behind it
+  sky = mix(sky, vec3(dot(sky, vec3(0.3, 0.59, 0.11))) * 0.92, uCloudCover * 0.45);
 
   // sun: a soft glow, a tighter halo and a bright disc
   float glow = pow(sunDot, 48.0) * 0.1 + pow(sunDot, 1200.0) * 0.4;
@@ -115,6 +128,7 @@ export function createFarmSky(scene: THREE.Scene, reducedMotion = false): FarmSk
     uSunDir: { value: SUN_DIR.clone() },
     uSun: { value: 1 },
     uCloudTime: cloudUniforms.uCloudTime,
+    uCloudCover: cloudUniforms.uCloudCover,
   };
   const dome = new THREE.Mesh(
     new THREE.SphereGeometry(DOME_RADIUS, 48, 24),
@@ -144,6 +158,7 @@ export function createFarmSky(scene: THREE.Scene, reducedMotion = false): FarmSk
   scene.add(fillLight);
 
   let sunTarget = 1.0;
+  let baseline = 0;
   let signalLost = false;
   let level = 1.0;
   const cloudSpeed = reducedMotion ? 0.25 : 1;
@@ -151,16 +166,23 @@ export function createFarmSky(scene: THREE.Scene, reducedMotion = false): FarmSk
 
   return {
     update(dt, _t) {
-      const target = signalLost ? sunTarget * 0.35 : sunTarget;
+      // signal lost: overcast (uCloudCover, below) and a dimmer sun behind it
+      const target = signalLost ? sunTarget * 0.5 : sunTarget;
       level += (target - level) * Math.min(dt, 1);
       sunLight.intensity = KEY_INTENSITY * level;
       fillLight.intensity = FILL_INTENSITY * (0.55 + 0.45 * level);
       domeUniforms.uSun.value = level;
+      // ease the overcast in (and out again) over a few seconds
+      const cover = cloudUniforms.uCloudCover;
+      cover.value += ((signalLost ? 1 : 0) - cover.value) * Math.min(dt * 0.5, 1);
       cloudClock += dt * cloudSpeed;
       cloudUniforms.uCloudTime.value = cloudTime(cloudClock);
     },
     setNetspace(bytes) {
-      sunTarget = sunStrength(bytes);
+      const eib = netspaceEib(bytes);
+      if (!(eib > 0)) return;
+      baseline = baseline > 0 ? baseline + (eib - baseline) * BASELINE_RATE : eib;
+      sunTarget = trendStrength(eib, baseline);
     },
     setSignalLost(lost) {
       signalLost = lost;
