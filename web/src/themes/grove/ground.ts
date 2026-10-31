@@ -10,13 +10,15 @@ export const RIPPLE_POOL = 6;
 const MIST_RADIUS = 60;
 
 export interface Ground {
-  ripple(x: number, z: number): void;
+  /** Spawn a ripple; `tint` 0 = block (green), 1 = reorg (ember red). */
+  ripple(x: number, z: number, tint?: number): void;
   update(dt: number): void;
+  setReducedMotion(reduced: boolean): void;
 }
 
 /**
  * Block-ripple bookkeeping packed straight into a shader uniform: one vec4 per
- * slot — (x, z, progress 0..1, unused), progress < 0 = idle. Slots wrap, so a
+ * slot — (x, z, progress 0..1, tint 0..1), progress < 0 = idle. Slots wrap, so a
  * burst of blocks overwrites the oldest ripple. Pure data, no GPU — testable.
  */
 export class RipplePool {
@@ -31,10 +33,11 @@ export class RipplePool {
     for (let i = 0; i < size; i++) this.data[i * 4 + 2] = -1;
   }
 
-  spawn(x: number, z: number): void {
+  spawn(x: number, z: number, tint = 0): void {
     const o = this.next * 4;
     this.data[o] = x;
     this.data[o + 1] = z;
+    this.data[o + 3] = tint;
     this.data[o + 2] = 0;
     this.next = (this.next + 1) % this.size;
   }
@@ -78,6 +81,7 @@ uniform vec3 uSoil;
 uniform vec3 uMoss;
 uniform vec3 uVein;
 uniform vec3 uRipple;
+uniform vec3 uReorg;
 varying vec2 vXZ;
 ${NOISE_GLSL}
 
@@ -133,24 +137,25 @@ void main() {
   float spore = smoothstep(0.09, 0.0, length(so)) * step(0.955, sh) * patchMask * detail;
   spore *= 0.4 + 0.6 * sin(uTime * (0.8 + sh * 2.0) + sh * 50.0);
 
-  float front = 0.0;
-  float wake = 0.0;
+  // per-ripple tint (w): 0 = block green, 1 = reorg ember
+  vec3 front = vec3(0.0);
+  vec3 wake = vec3(0.0);
   for (int i = 0; i < ${RIPPLE_POOL}; i++) {
     vec4 r = uRipples[i];
     if (r.z < 0.0) continue;
     float radius = 1.0 + r.z * ${RIPPLE_REACH.toFixed(1)};
     float fade = 1.0 - r.z;
     float x = length(p - r.xy) - radius;
-    front += exp(-x * x * 1.6) * fade * fade;
+    front += mix(uRipple, uReorg, r.w) * (exp(-x * x * 1.6) * fade * fade);
     // lit band trailing ~5 units behind the wavefront
-    wake += smoothstep(-5.0, 0.0, x) * (1.0 - smoothstep(0.0, 0.4, x)) * fade;
+    wake += mix(uVein, uReorg, r.w) * (smoothstep(-5.0, 0.0, x) * (1.0 - smoothstep(0.0, 0.4, x)) * fade);
   }
 
   vec3 col = uSoil * (0.65 + 0.7 * grain * (0.5 + moss));
   col += uMoss * patchMask * (0.55 + 0.45 * grain);
-  col += uVein * network * (0.05 * breathe + 0.6 * min(wake, 1.2));
+  col += network * (uVein * 0.05 * breathe + 0.6 * min(wake, vec3(1.2)));
   col += uVein * spore * 0.35;
-  col += uRipple * front * (0.24 + network * 0.6);
+  col += front * (0.24 + network * 0.6);
   // break up 8-bit banding in the dark gradients
   col += (gHash21(gl_FragCoord.xy) - 0.5) / 255.0;
 
@@ -171,6 +176,7 @@ export function createGround(scene: THREE.Scene, reducedMotion = false): Ground 
       uMoss: { value: lin(0x0f3a24).multiplyScalar(0.35) },
       uVein: { value: lin(COLORS.mycelium) },
       uRipple: { value: lin(COLORS.ripple) },
+      uReorg: { value: lin(COLORS.reorg) },
     },
   ]);
   // UniformsUtils.merge clones values; hand the vec4 array to the shader as
@@ -220,8 +226,11 @@ export function createGround(scene: THREE.Scene, reducedMotion = false): Ground 
   let time = 0;
 
   return {
-    ripple(x, z) {
-      ripples.spawn(x, z);
+    setReducedMotion(reduced) {
+      reducedMotion = reduced;
+    },
+    ripple(x, z, tint = 0) {
+      ripples.spawn(x, z, tint);
     },
     update(dt) {
       const m = reducedMotion ? 0.2 : 1;
@@ -238,7 +247,7 @@ export function createGround(scene: THREE.Scene, reducedMotion = false): Ground 
       ripples.advance(dt);
       const d = ripples.data;
       for (let i = 0; i < RIPPLE_POOL; i++) {
-        rippleVecs[i].set(d[i * 4], d[i * 4 + 1], d[i * 4 + 2], 0);
+        rippleVecs[i].set(d[i * 4], d[i * 4 + 1], d[i * 4 + 2], d[i * 4 + 3]);
       }
     },
   };
