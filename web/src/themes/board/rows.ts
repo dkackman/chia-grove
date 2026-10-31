@@ -59,12 +59,28 @@ function status(e: SproutEvent): string {
  *  blanked on continuation rows (shown only at block starts + the top row). */
 export interface RowOptions {
   showHeight?: boolean;
+  /** first row of its block: draws the `▸` marker at the gutter's end */
+  blockStart?: boolean;
+}
+
+export const BLOCK_START_MARK = "▸";
+
+/**
+ * The HEIGHT_COLS-wide gutter: the height flush left (column 0 lines up with
+ * the header) and, on a block's first row, a `▸` in the gutter's last column
+ * pointing into the block. A height too long to leave that column free (8+
+ * digits) just drops the marker. Pure.
+ */
+export function gutterText(height: number, { showHeight = true, blockStart = false }: RowOptions) {
+  const h = showHeight || blockStart ? String(height) : "";
+  if (h.length >= HEIGHT_COLS) return padR(h, HEIGHT_COLS);
+  return padR(h, HEIGHT_COLS - 1) + (blockStart ? BLOCK_START_MARK : " ");
 }
 
 /** One fixed-width ledger line for an individual spend. Pure. Fields sum to BOARD_COLS (48). */
-export function rowText(event: SproutEvent, { showHeight = true }: RowOptions = {}): string {
+export function rowText(event: SproutEvent, opts: RowOptions = {}): string {
   return (
-    (showHeight ? padR(String(event.height), HEIGHT_COLS) : " ".repeat(HEIGHT_COLS)) +
+    gutterText(event.height, opts) +
     " " +
     padR(kindLabel(event), 3) +
     " " +
@@ -90,7 +106,7 @@ export interface AggregatedRow {
 
 export type DisplayRow = AggregatedRow | SproutEvent;
 
-function aggregatedRowText(row: AggregatedRow, { showHeight = true }: RowOptions): string {
+function aggregatedRowText(row: AggregatedRow, opts: RowOptions): string {
   const kindStr = row.kind.toUpperCase();
   const assetStr = row.kind === "cat" ? catLabel(row.catTicker, row.catName) : "-";
   const amountStr =
@@ -102,7 +118,7 @@ function aggregatedRowText(row: AggregatedRow, { showHeight = true }: RowOptions
   const countStr = `${String(row.count).padStart(3)} ${row.count === 1 ? "SPEND" : "SPENDS"}`;
 
   return (
-    (showHeight ? padR(String(row.height), HEIGHT_COLS) : " ".repeat(HEIGHT_COLS)) +
+    gutterText(row.height, opts) +
     " " +
     padR(kindStr, 3) +
     " " +

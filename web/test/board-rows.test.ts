@@ -1,7 +1,9 @@
 import { expect, test } from "vitest";
 import {
+  BLOCK_START_MARK,
   BOARD_COLS,
   HEIGHT_COLS,
+  gutterText,
   cardMetaFor,
   cellHoverKey,
   isBlockStart,
@@ -12,6 +14,7 @@ import {
   toDisplayRows,
 } from "../src/themes/board/rows.js";
 import type { AggregatedRow } from "../src/themes/board/rows.js";
+import { isRenderable } from "../src/themes/board/glyphs.js";
 import type { SproutEvent } from "@grove/shared";
 
 function sprout(over: Partial<SproutEvent>): SproutEvent {
@@ -463,4 +466,36 @@ test("patchMediaFilter patches only the matching NFT among several", () => {
   expect(a.mediaFilter).toBe("sensitive");
   expect(b.mediaFilter).toBeUndefined();
   expect(c.mediaFilter).toBe("sensitive");
+});
+
+// --- block-start marker ---
+
+test("a block-start row draws ▸ in the gutter's last column, height still flush left", () => {
+  const e = sprout({ kind: "xch", amount: "1000", height: 8123456 });
+  const t = rowText(e, { showHeight: true, blockStart: true });
+  expect(t.length).toBe(BOARD_COLS);
+  expect(t.startsWith("8123456")).toBe(true);
+  expect(t[HEIGHT_COLS - 1]).toBe(BLOCK_START_MARK);
+  expect(isRenderable(BLOCK_START_MARK)).toBe(true); // the atlas has a flap for it
+});
+
+test("continuation and top-visible rows carry no marker", () => {
+  const e = sprout({ kind: "xch", amount: "1000", height: 8123456 });
+  expect(rowText(e, { showHeight: true })).not.toContain(BLOCK_START_MARK);
+  expect(rowText(e, { showHeight: false })).not.toContain(BLOCK_START_MARK);
+});
+
+test("an 8-digit height keeps all its digits and drops the marker", () => {
+  const e = sprout({ kind: "xch", amount: "1000", height: 12345678 });
+  const t = rowText(e, { showHeight: true, blockStart: true });
+  expect(t.startsWith("12345678")).toBe(true);
+  expect(t.length).toBe(BOARD_COLS);
+});
+
+test("gutterText always spans HEIGHT_COLS", () => {
+  for (const blockStart of [false, true]) {
+    for (const showHeight of [false, true]) {
+      expect(gutterText(5121, { showHeight, blockStart }).length).toBe(HEIGHT_COLS);
+    }
+  }
 });

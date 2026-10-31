@@ -11,6 +11,7 @@ import { Header } from "./header.js";
 import {
   rowTextFor,
   shouldShowHeight,
+  isBlockStart,
   cardMetaFor,
   cellHoverKey,
   toDisplayRows,
@@ -134,8 +135,10 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
       const i = r + scrollOffset;
       const row = displayRows[i];
       if (row) {
-        const showHeight = shouldShowHeight(displayRows[i - 1], row, r === 0);
-        ledger.setRow(r, rowTextFor(row, { showHeight }), instant);
+        const prev = displayRows[i - 1];
+        const showHeight = shouldShowHeight(prev, row, r === 0);
+        const blockStart = isBlockStart(prev, row);
+        ledger.setRow(r, rowTextFor(row, { showHeight, blockStart }), instant);
       } else {
         ledger.clearRow(r);
       }
