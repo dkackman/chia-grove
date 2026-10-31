@@ -1,14 +1,25 @@
 import { GroveFeed } from "./net/feed.js";
-import { resolveTheme, THEME_STORAGE_KEY } from "./themes/index.js";
+import { resolveTheme, switchTheme, THEMES, THEME_STORAGE_KEY } from "./themes/index.js";
 import { attachPicker } from "./ui/picker.js";
 import { BlockConsole } from "./ui/console.js";
 import { initLegend } from "./ui/legend.js";
+import { shortcutFor } from "./ui/shortcuts.js";
 
 const canvas = document.getElementById("grove") as HTMLCanvasElement;
 const status = document.getElementById("status") as HTMLDivElement;
 
 const theme = resolveTheme(location.search, localStorage.getItem(THEME_STORAGE_KEY));
-initLegend(theme);
+const legend = initLegend(theme);
+
+// 1–6 switch scene, L toggles the legend (ignored while typing or with modifiers)
+addEventListener("keydown", (e) => {
+  if (e.defaultPrevented || e.repeat) return;
+  const shortcut = shortcutFor(e, THEMES.length);
+  if (!shortcut) return;
+  if (shortcut.type === "legend") legend.toggle();
+  else if (THEMES[shortcut.index].id !== theme.id) switchTheme(THEMES[shortcut.index].id);
+  e.preventDefault();
+});
 const blockConsole = new BlockConsole(document.getElementById("console") as HTMLDivElement);
 
 status.setAttribute("role", "status");

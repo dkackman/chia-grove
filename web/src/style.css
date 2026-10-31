@@ -744,3 +744,51 @@ body {
     display: none;
   }
 }
+
+/* ---- app shell: keyboard focus, reduced motion, phone layout ---------------- */
+
+/* keyboard focus ring for every shell control (mouse clicks don't show it) */
+button:focus-visible,
+select:focus-visible,
+input:focus-visible,
+a:focus-visible {
+  outline: 2px solid #3ddc84;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #card {
+    transform: none;
+    transition: opacity 120ms linear;
+  }
+}
+
+/*
+ * Phones: the detail card, block log and timelord HUD all live along the bottom
+ * edge. Stack them instead of letting them overlap: the HUD (timelord only)
+ * sits at the very bottom, the log toggle above it, and the card spans the
+ * width above the log toggle, drawn over the (non-interactive) log lines.
+ */
+@media (max-width: 640px) {
+  body {
+    --hud-clear: 0px;
+  }
+  body:has(#timelord-hud) {
+    --hud-clear: 64px;
+  }
+  #console {
+    bottom: calc(12px + var(--hud-clear));
+    right: 12px;
+    max-width: calc(100vw - 24px);
+  }
+  #card {
+    left: 12px;
+    right: 12px;
+    max-width: none;
+    bottom: calc(48px + var(--hud-clear));
+    max-height: calc(100vh - 120px - var(--hud-clear));
+    overflow-y: auto;
+    z-index: 2;
+  }
+}
