@@ -91,3 +91,7 @@ The chain as verifiable time: a rising helix of blocks threaded on a braid of th
 ## Network
 
 `GroveFeed` (`src/net/feed.ts`) connects to the WebSocket server, handles `Hello`/`Snapshot`/`Batch` messages, and dispatches `GroveEvent`s to the active theme. The `DrainQueue` drains the snapshot at 120 events/frame (~1.5 s at 60 fps) to avoid a single-frame spike.
+
+- Reconnect: a socket silent for 2 min (the server sends no ping, but ambient arrives every poll) is torn down and retried with exponential backoff (1 s → 30 s). Going `online`, or the tab becoming visible, skips the wait (and replaces an open socket quiet for >30 s). Status is `connecting` only for the first attempt; after any loss it stays `stale` until a message arrives, with `info.retryAt` for the HUD countdown.
+- Snapshot dedupe: every snapshot (the reconnect one included) goes through `SeenBlocks` (`src/net/seen-blocks.ts`), which drops blocks already dispatched (by height + headerHash), their sprouts, and reorgs whose replacement chain was already seen — while a reorg that happened during the disconnect still passes with its replacement blocks. Ambient and content-flag always pass. Themes never see the same block twice and need no snapshot guards of their own.
+- `ReorgEvent.forkHeight` is the first invalidated height: drop everything with `height >= forkHeight`.

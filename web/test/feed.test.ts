@@ -192,7 +192,7 @@ test("a live message resets the reconnect backoff back to 1s", () => {
   expect(FakeWebSocket.instances.length).toBe(countBefore + 1);
 });
 
-test("stale status fires after STALE_AFTER_MS of silence, refreshed by each message", () => {
+test("STALE_AFTER_MS of silence closes the socket and schedules a retry", () => {
   const feed = new GroveFeed();
   const statuses: FeedStatus[] = [];
   feed.onStatus((s) => statuses.push(s));
@@ -205,9 +205,119 @@ test("stale status fires after STALE_AFTER_MS of silence, refreshed by each mess
   ws.message({ type: "batch", events: [] }); // refreshes the stale timer
   vi.advanceTimersByTime(60_000); // 120s since the first message, only 60s since the refresh
   expect(statuses.at(-1)).toBe("live");
+  expect(ws.closeCalled).toBe(false);
 
   vi.advanceTimersByTime(60_000); // now 120s since the refresh
   expect(statuses.at(-1)).toBe("stale");
+  expect(ws.closeCalled).toBe(true);
+  const count = FakeWebSocket.instances.length;
+  vi.advanceTimersByTime(1000);
+  expect(FakeWebSocket.instances.length).toBe(count + 1);
+});
+
+test("retries stay stale instead of flapping back to connecting", () => {
+  const feed = new GroveFeed();
+  const statuses: FeedStatus[] = [];
+  feed.onStatus((s) => statuses.push(s));
+  feed.start();
+  latestSocket().close();
+  vi.advanceTimersByTime(1000); // retry #1
+  latestSocket().close();
+  vi.advanceTimersByTime(2000); // retry #2
+  expect(statuses.filter((s) => s === "connecting")).toHaveLength(1);
+  expect(statuses.slice(1).every((s) => s === "stale")).toBe(true);
+  latestSocket().message(hello(PROTOCOL_VERSION));
+  expect(statuses.at(-1)).toBe("live");
+});
+
+test("stale status carries the retry deadline", () => {
+  const feed = new GroveFeed();
+  const infos: Array<{ retryAt?: number }> = [];
+  feed.onStatus((_s, info) => infos.push(info));
+  feed.start();
+  const t0 = Date.now();
+  latestSocket().close();
+  expect(infos.at(-1)?.retryAt).toBe(t0 + 1000);
+  vi.advanceTimersByTime(1000);
+  expect(infos.at(-1)?.retryAt).toBeUndefined(); // attempt in flight
+});
+
+function stubEventTargets() {
+  const winListeners = new Map<string, () => void>();
+  const docListeners = new Map<string, () => void>();
+  const doc = {
+    visibilityState: "visible",
+    addEventListener: (type: string, cb: () => void) => void docListeners.set(type, cb),
+  };
+  vi.stubGlobal(
+    "addEventListener",
+    (type: string, cb: () => void) => void winListeners.set(type, cb)
+  );
+  vi.stubGlobal("document", doc);
+  return { winListeners, docListeners, doc };
+}
+
+test("going online cancels the backoff wait and reconnects immediately", () => {
+  const { winListeners } = stubEventTargets();
+  const feed = new GroveFeed();
+  feed.start();
+  for (let i = 0; i < 4; i++) {
+    latestSocket().close();
+    vi.advanceTimersByTime(30_000);
+  }
+  latestSocket().close(); // long backoff now pending
+  const count = FakeWebSocket.instances.length;
+  winListeners.get("online")?.();
+  expect(FakeWebSocket.instances.length).toBe(count + 1);
+  vi.advanceTimersByTime(60_000); // the cancelled retry must not fire a second socket
+  expect(FakeWebSocket.instances.length).toBe(count + 1);
+});
+
+test("online while a socket is healthy does not double-connect", () => {
+  const { winListeners } = stubEventTargets();
+  const feed = new GroveFeed();
+  feed.start();
+  latestSocket().message(hello(PROTOCOL_VERSION));
+  const count = FakeWebSocket.instances.length;
+  winListeners.get("online")?.();
+  expect(FakeWebSocket.instances.length).toBe(count);
+});
+
+test("becoming visible replaces a socket that went quiet (e.g. after sleep)", () => {
+  const { docListeners } = stubEventTargets();
+  const feed = new GroveFeed();
+  feed.start();
+  const ws = latestSocket();
+  ws.message(hello(PROTOCOL_VERSION));
+  vi.advanceTimersByTime(45_000);
+  const count = FakeWebSocket.instances.length;
+  docListeners.get("visibilitychange")?.();
+  expect(ws.closeCalled).toBe(true);
+  expect(FakeWebSocket.instances.length).toBe(count + 1);
+});
+
+test("a reconnect snapshot only dispatches blocks the client hasn't seen", () => {
+  const feed = new GroveFeed();
+  const received: GroveEvent[] = [];
+  feed.onEvent((e) => received.push(e));
+  feed.start();
+  const block = (height: number): GroveEvent => ({
+    type: "block",
+    height,
+    headerHash: `h${height}`,
+    timestamp: 0,
+    spendCount: 0,
+    fees: "0",
+  });
+  latestSocket().message({ type: "snapshot", events: [block(1), block(2)] });
+  fireFrame();
+  expect(received).toHaveLength(2);
+
+  latestSocket().close();
+  vi.advanceTimersByTime(1000);
+  latestSocket().message({ type: "snapshot", events: [block(1), block(2), block(3)] });
+  fireFrame();
+  expect(received.map((e) => (e.type === "block" ? e.height : -1))).toEqual([1, 2, 3]);
 });
 
 test("hello triggers a reload on protocol mismatch when the reload guard is unset", () => {
@@ -263,7 +373,8 @@ test("close() clears the drain queue so undrained events never dispatch", () => 
   expect(received).toHaveLength(0);
 
   const freshEvent: GroveEvent = { type: "reorg", forkHeight: 2 };
-  ws.message({ type: "snapshot", events: [freshEvent] }); // same feed, same underlying queue
+  vi.advanceTimersByTime(1000); // reconnect
+  latestSocket().message({ type: "snapshot", events: [freshEvent] }); // same feed, same queue
   fireFrame();
   expect(received).toEqual([freshEvent]);
 });
