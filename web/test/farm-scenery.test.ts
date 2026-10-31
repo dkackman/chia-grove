@@ -1,5 +1,7 @@
+import * as THREE from "three";
 import { expect, test } from "vitest";
 import {
+  blobShadow,
   farTreeLineGeometry,
   hedgeGeometry,
   hedgerowPlacements,
@@ -100,4 +102,25 @@ test("no hedgerow shrub stands inside a hill's opaque dome", () => {
 
 test("hedgerowPlacements is deterministic", () => {
   expect(hedgerowPlacements()).toEqual(hedgerowPlacements());
+});
+
+test("blob shadows merge into one mesh, each keeping its own opacity", () => {
+  const scene = new THREE.Scene();
+  const map = new THREE.Texture();
+  blobShadow(scene, map, 0, 0, 2, 2, 0.3);
+  blobShadow(scene, map, 5, 5, 1, 1, 0.2, 0.5);
+  blobShadow(scene, map, -5, 2, 3, 1, 0.34);
+  expect(scene.children.length).toBe(1);
+  const mesh = scene.children[0] as THREE.Mesh;
+  const color = mesh.geometry.getAttribute("color");
+  expect(color.itemSize).toBe(4);
+  expect(mesh.geometry.getAttribute("position").count).toBe(12);
+  const alphas = new Set<number>();
+  for (let i = 0; i < color.count; i++) alphas.add(Math.round(color.getW(i) * 100));
+  expect([...alphas].sort()).toEqual([20, 30, 34]);
+  // laid flat on the ground at the requested heights
+  const pos = mesh.geometry.getAttribute("position");
+  const ys = new Set<number>();
+  for (let i = 0; i < pos.count; i++) ys.add(Math.round(pos.getY(i) * 100));
+  expect([...ys].sort()).toEqual([3, 50]);
 });

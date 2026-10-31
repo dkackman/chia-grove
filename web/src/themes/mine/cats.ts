@@ -4,11 +4,12 @@ import type { XZ } from "../shared/util.js";
 import { mulberry32 } from "../shared/util.js";
 import { InstancedKind, type Pose } from "../shared/instanced.js";
 import { resolveCatBlock, type CatFamily } from "./material.js";
-import { seatCell, cellLocal, chunkElevation } from "./layout.js";
+import { cellLocal, chunkElevation, type Seat } from "./layout.js";
 import { woolTexture, glassTexture, emissiveCellTexture } from "./textures.js";
 
+// Seating (and the per-block SPECIAL_BUDGET) lives in layout.ts `SpecialSeats`,
+// shared with villagers and paintings so they stack instead of overlapping.
 const CAPS: Record<CatFamily, number> = { opaque: 2000, transparent: 600, emissive: 400 };
-const SPECIAL_BUDGET = 600; // cap cubes placed per block (airdrops stay bounded)
 
 export function cubeGeometry(): THREE.BufferGeometry {
   const g = new THREE.BoxGeometry(0.92, 0.92, 0.92);
@@ -58,7 +59,6 @@ export class CatBlocks {
   private readonly fam: Record<CatFamily, InstancedKind>;
   private readonly color = new THREE.Color();
   private chunk: XZ = { x: 0, z: 0 };
-  private seatIndex = 0;
 
   constructor(scene: THREE.Scene) {
     this.fam = {
@@ -86,16 +86,9 @@ export class CatBlocks {
 
   startBlock(chunk: XZ): void {
     this.chunk = chunk;
-    this.seatIndex = 0;
   }
 
-  /** Returns the seat cell so the caller can ground it; null if over budget. */
-  nextSeat(): { col: number; row: number; layer: number } | null {
-    if (this.seatIndex >= SPECIAL_BUDGET) return null;
-    return seatCell(this.seatIndex++);
-  }
-
-  plant(event: SproutEvent, seat: { col: number; row: number; layer: number }, t: number): void {
+  plant(event: SproutEvent, seat: Seat, t: number): void {
     const block = resolveCatBlock(event.assetId ?? "0".repeat(64));
     const rand = mulberry32(parseInt(event.coinId.slice(8, 16) || "0", 16));
     this.color.setHSL(block.color.h, block.color.s, block.color.l);
@@ -123,8 +116,12 @@ export class CatBlocks {
   update(t: number): void {
     for (const k of Object.values(this.fam)) k.update(t, 1);
   }
+  /** Remove every cube whose event matches (reorg, chunk revisit). */
+  clearWhere(predicate: (meta: SproutEvent) => boolean): void {
+    for (const k of Object.values(this.fam)) k.clearWhere(predicate);
+  }
   clearAbove(forkHeight: number): void {
-    for (const k of Object.values(this.fam)) k.clearWhere((m) => m.height >= forkHeight);
+    this.clearWhere((m) => m.height >= forkHeight);
   }
   pickables(): THREE.Object3D[] {
     return Object.values(this.fam).map((k) => k.mesh);

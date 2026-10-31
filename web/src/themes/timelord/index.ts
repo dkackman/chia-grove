@@ -14,6 +14,9 @@ export const timelord: Visualization = {
     ["sw-vortex", "vortex — mempool"],
     ["sw-dial", "dial — time since last block"],
     ["sw-stars", "stars — netspace"],
+    ["sw-key tl-key-travel", "↑ ↓ / PgUp PgDn / wheel / drag ↕ — travel through time"],
+    ["sw-key tl-key-live", "Esc / End / double-click — return to live"],
+    ["sw-key tl-key-click", "click a crystal — jump to its block"],
   ],
   start: (canvas, feed) => startTimelord(canvas, feed),
 };

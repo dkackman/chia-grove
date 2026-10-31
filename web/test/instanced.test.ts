@@ -132,8 +132,8 @@ test("update() marks only touched instances' matrix ranges dirty, not the whole 
   kind.plant(meta(1), 0, 0, 0, { ...FLAT });
   kind.plant(meta(2), 1, 0, 0, { ...FLAT });
   kind.update(5, 1); // settle both — writes each instance's matrix once
-  const starts = kind.mesh.instanceMatrix.updateRanges.map((r) => r.start).sort((a, b) => a - b);
-  expect(starts).toEqual([0, 16]); // instances 0 and 1 (16 floats/matrix) — not all 8 cap slots
+  // one contiguous range covering instances 0 and 1 (16 floats/matrix) — not all 8 cap slots
+  expect(kind.mesh.instanceMatrix.updateRanges).toEqual([{ start: 0, count: 32 }]);
 });
 
 test("clearWhere() marks only the zeroed instance's matrix range dirty", () => {
@@ -176,4 +176,37 @@ test("custom bounds set the instanced mesh bounding sphere", () => {
   );
   expect(kind.mesh.boundingSphere!.radius).toBe(140);
   expect(kind.mesh.boundingSphere!.center.y).toBe(1);
+});
+
+test("a settled non-swaying mesh only recomposes slots that are still growing", () => {
+  const kind = makeKind(8);
+  kind.plant(meta(1), 0, 0, 0, { ...FLAT });
+  kind.plant(meta(2), 1, 0, 0, { ...FLAT });
+  kind.update(5, 1); // both settled
+  kind.mesh.instanceMatrix.clearUpdateRanges();
+  kind.plant(meta(3), 2, 0, 5, { ...FLAT }); // slot 2
+  kind.update(5.5, 1);
+  expect(kind.mesh.instanceMatrix.updateRanges).toEqual([{ start: 32, count: 16 }]);
+  // finishes growing: written once at full size, then skipped
+  kind.mesh.instanceMatrix.clearUpdateRanges();
+  kind.update(7, 1);
+  expect(decompose(kind, 2).scl.y).toBeCloseTo(1);
+  const version = kind.mesh.instanceMatrix.version;
+  kind.update(8, 1);
+  expect(kind.mesh.instanceMatrix.version).toBe(version);
+});
+
+test("a swaying mesh uploads all live slots as a single range", () => {
+  const scene = new THREE.Scene();
+  const kind = new InstancedKind(
+    scene,
+    new THREE.BoxGeometry(1, 1, 1),
+    new THREE.MeshStandardMaterial(),
+    8,
+    0.1
+  );
+  for (let i = 0; i < 4; i++) kind.plant(meta(i), i, 0, 0, { ...FLAT });
+  kind.mesh.instanceMatrix.clearUpdateRanges();
+  kind.update(10, 1);
+  expect(kind.mesh.instanceMatrix.updateRanges).toEqual([{ start: 0, count: 64 }]);
 });

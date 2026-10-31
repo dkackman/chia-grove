@@ -116,6 +116,12 @@ export class CropSystem {
   private readonly sunflowerGlows: THREE.Sprite[][];
   private pending: PendingCrop[] = [];
   private wiltUntil = 0;
+  /** planted crops dipping in the current wilt */
+  private wilting: Array<{ kind: InstancedKind; index: number }> = [];
+  /** which field row each planted crop stands in (keyed by its event) */
+  private readonly rowOf = new WeakMap<SproutEvent, number>();
+  private readonly matrix = new THREE.Matrix4();
+  private readonly dipMatrix = new THREE.Matrix4();
 
   constructor(scene: THREE.Scene, glowMap: THREE.Texture) {
     const wheatMaterial = new THREE.MeshStandardMaterial({
@@ -133,7 +139,9 @@ export class CropSystem {
       roughness: 0.55,
     });
     this.gourd = gourdGeometries().map(
-      (geometry) => new InstancedKind(scene, geometry, gourdMaterial, CAPS.gourd, 0.008)
+      // gourds and scarecrows sit still: swayAmp 0 also lets InstancedKind skip
+      // re-uploading their matrices once they have grown
+      (geometry) => new InstancedKind(scene, geometry, gourdMaterial, CAPS.gourd, 0)
     );
 
     const sunflowerMaterial = new THREE.MeshStandardMaterial({
@@ -150,7 +158,7 @@ export class CropSystem {
       roughness: 0.9,
     });
     this.scarecrow = scarecrowGeometries().map(
-      (geometry) => new InstancedKind(scene, geometry, scarecrowMaterial, CAPS.scarecrow, 0.012)
+      (geometry) => new InstancedKind(scene, geometry, scarecrowMaterial, CAPS.scarecrow, 0)
     );
 
     this.sunflowerGlows = this.sunflower.map(() =>
@@ -165,6 +173,8 @@ export class CropSystem {
             blending: THREE.AdditiveBlending,
           })
         );
+        // hidden until its sunflower is planted: an opacity-0 sprite still costs a draw
+        sprite.visible = false;
         scene.add(sprite);
         return sprite;
       })
@@ -238,8 +248,10 @@ export class CropSystem {
         continue;
       }
       const index = crop.kinds[crop.variant].plant(crop.event, crop.x, crop.z, t, crop.pose);
+      this.rowOf.set(crop.event, crop.row);
       if (crop.glowOpacity !== undefined) {
         const glow = this.sunflowerGlows[crop.variant][index];
+        glow.visible = true;
         glow.position.set(crop.x, 0.95 * crop.pose.height, crop.z);
         glow.material.opacity = crop.glowOpacity;
         glow.scale.setScalar(crop.glowOpacity > 0.18 ? 1.7 : 1.15);
@@ -248,18 +260,48 @@ export class CropSystem {
     this.pending = keep;
   }
 
-  /** Crows make the field flinch: recent crops dip for a couple of seconds. */
-  wilt(t: number): void {
+  /** Crows make the field flinch: the crops on `rows` (the recent rows the
+   *  flock sweeps) dip for a couple of seconds. */
+  wilt(t: number, rows: readonly number[]): void {
     this.wiltUntil = t + 2;
+    const band = new Set(rows);
+    this.wilting = [];
+    for (const kind of this.allKinds()) {
+      for (let index = 0; index < kind.mesh.count; index++) {
+        const meta = kind.metaAt(index);
+        const row = meta ? this.rowOf.get(meta) : undefined;
+        if (row !== undefined && band.has(row)) this.wilting.push({ kind, index });
+      }
+    }
+  }
+
+  /** Number of planted crops in the current wilt (for tests). */
+  wiltingCount(): number {
+    return this.wilting.length;
   }
 
   /** Reorg: remove crops (planted or still queued) from blocks at or above the fork. */
   clearAbove(forkHeight: number): void {
     this.pending = this.pending.filter((crop) => crop.event.height < forkHeight);
     for (const kind of this.allKinds()) kind.clearWhere((meta) => meta.height >= forkHeight);
+    this.hideOrphanGlows();
+  }
+
+  /** The tractor is about to re-plow `row` (the field wrapped, or a reorg
+   *  rewound onto it): clear whatever still stands there. */
+  clearRow(row: number): void {
+    this.pending = this.pending.filter((crop) => crop.row !== row);
+    for (const kind of this.allKinds()) kind.clearWhere((meta) => this.rowOf.get(meta) === row);
+    this.hideOrphanGlows();
+  }
+
+  private hideOrphanGlows(): void {
     this.sunflower.forEach((kind, variant) => {
       for (const [index, glow] of this.sunflowerGlows[variant].entries()) {
-        if (!kind.metaAt(index)) glow.material.opacity = 0;
+        if (!kind.metaAt(index)) {
+          glow.material.opacity = 0;
+          glow.visible = false;
+        }
       }
     });
   }
@@ -269,7 +311,22 @@ export class CropSystem {
     const remaining = Math.max(0, this.wiltUntil - t);
     const dip =
       remaining > 0 ? 1 - 0.22 * Math.min(1, remaining / 2) * Math.abs(Math.sin(remaining * 5)) : 1;
-    for (const kind of this.allKinds()) kind.update(t, dip);
+    // While wilting, force a full recompose (a gust factor a hair under 1 —
+    // invisible — makes InstancedKind rewrite every live slot this frame, and
+    // the frame after the wilt ends restores them), then squash only the
+    // wilting crops toward their base.
+    const wilting = remaining > 0 && this.wilting.length > 0;
+    for (const kind of this.allKinds()) kind.update(t, wilting ? 1 - 1e-6 : 1);
+    if (wilting) {
+      this.dipMatrix.makeScale(1, dip, 1);
+      for (const { kind, index } of this.wilting) {
+        if (!kind.metaAt(index)) continue;
+        kind.mesh.getMatrixAt(index, this.matrix);
+        kind.mesh.setMatrixAt(index, this.matrix.multiply(this.dipMatrix));
+      }
+    } else if (remaining === 0) {
+      this.wilting = [];
+    }
     for (const glows of this.sunflowerGlows) {
       for (const glow of glows) {
         if (glow.material.opacity > 0.12) {

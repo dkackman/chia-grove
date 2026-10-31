@@ -36,6 +36,7 @@ export interface BlockData {
 export interface ChainHandlers {
   onBlock(block: BlockData): void | Promise<void>;
   onAmbient(state: ChainState): void;
+  /** `forkHeight` is the first invalidated height (0 for a reorg deeper than memory). */
   onReorg(forkHeight: number): void;
 }
 

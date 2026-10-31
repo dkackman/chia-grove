@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { FIELD } from "./layout.js";
+import { FIELD, STRIP_WIDTH } from "./layout.js";
 import { FARM } from "./palette.js";
 import { EDGE_X, PASS_SECONDS } from "./tractor.js";
 import { mulberry32 } from "../shared/util.js";
@@ -15,9 +15,7 @@ import { mulberry32 } from "../shared/util.js";
  * computed in the fragment shader from a single time uniform.
  */
 
-/** Width of a soil strip across the row. Nearly the full row pitch, so plowed
- *  rows read as one worked field with a dark furrow between beds. */
-export const STRIP_WIDTH = FIELD.rowSpacing * 0.94;
+export { STRIP_WIDTH };
 /** Length of a soil strip: a little past the row ends. */
 export const STRIP_LENGTH = FIELD.rowLength + 1.4;
 /** World length along the row that one tile of the soil texture covers. */

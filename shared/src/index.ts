@@ -63,6 +63,9 @@ export interface AmbientEvent {
 
 export interface ReorgEvent {
   type: "reorg";
+  /** First invalidated height: clients drop everything with `height >= forkHeight`
+   *  (replacement blocks arrive next, starting at this height). 0 means a reorg
+   *  deeper than the server's hash memory — everything is invalidated. */
   forkHeight: number;
 }
 

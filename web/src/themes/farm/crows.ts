@@ -32,8 +32,7 @@ export class Crows {
     );
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.mesh.frustumCulled = false;
-    const zero = new THREE.Matrix4().makeScale(0, 0, 0);
-    for (let i = 0; i < count; i++) this.mesh.setMatrixAt(i, zero);
+    this.mesh.visible = false;
     scene.add(this.mesh);
     this.offsets = Array.from({ length: count }, () => ({
       dz: Math.random(),
@@ -51,12 +50,11 @@ export class Crows {
 
   update(t: number): void {
     const progress = (t - this.startedAt) / FLIGHT_SECONDS;
+    // between reorgs the flock is simply hidden: no draw, no matrix upload
+    const flying = progress >= 0 && progress <= 1;
+    this.mesh.visible = flying;
+    if (!flying) return;
     for (let i = 0; i < this.count; i++) {
-      if (progress < 0 || progress > 1) {
-        this.matrix.makeScale(0, 0, 0);
-        this.mesh.setMatrixAt(i, this.matrix);
-        continue;
-      }
       const o = this.offsets[i];
       const flap = 1 + Math.sin(t * 11 + o.dphase) * 0.5;
       this.position.set(

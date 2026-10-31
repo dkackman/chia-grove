@@ -40,6 +40,7 @@ export class BlockConsole {
     this.toggle = document.createElement("button");
     this.toggle.id = "console-toggle";
     this.toggle.type = "button";
+    this.toggle.setAttribute("aria-controls", "console-body");
 
     this.body = document.createElement("div");
     this.body.id = "console-body";
@@ -60,6 +61,8 @@ export class BlockConsole {
   private render(): void {
     this.body.hidden = this.collapsed;
     this.toggle.textContent = this.collapsed ? "▤" : "log ✕";
+    this.toggle.setAttribute("aria-expanded", String(!this.collapsed));
+    this.toggle.setAttribute("aria-label", this.collapsed ? "Show block log" : "Hide block log");
   }
 
   handle(event: GroveEvent): void {

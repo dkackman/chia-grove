@@ -20,11 +20,14 @@ export const CLOUD_SHADOW_STRENGTH = 0.6;
 
 export const cloudUniforms = {
   uCloudTime: { value: 0 },
+  /** 0 fair weather → 1 overcast (the feed has gone quiet); sky.ts eases it */
+  uCloudCover: { value: 0 },
 };
 
 /** Shared GLSL: a cheap value-noise fbm and the cloud cover (0 clear, 1 overcast). */
 export const CLOUD_GLSL = /* glsl */ `
 uniform float uCloudTime;
+uniform float uCloudCover;
 float farmHash(vec2 p) {
   p = fract(p * vec2(123.34, 456.21));
   p += dot(p, p + 45.32);
@@ -43,7 +46,7 @@ float farmNoise(vec2 p) {
 float farmCloudCover(vec2 xz) {
   vec2 p = xz / ${CLOUD_SCALE.toFixed(1)} + vec2(${CLOUD_WIND[0]}, ${CLOUD_WIND[1]}) * uCloudTime;
   float n = 0.5 * farmNoise(p) + 0.3 * farmNoise(p * 2.03 + 17.1) + 0.2 * farmNoise(p * 4.1 - 9.3);
-  return smoothstep(0.5, 0.7, n);
+  return smoothstep(0.5 - 0.3 * uCloudCover, 0.7 - 0.15 * uCloudCover, n);
 }
 `;
 
@@ -62,6 +65,7 @@ function patchMaterial(material: THREE.MeshStandardMaterial): void {
   material.onBeforeCompile = (shader, renderer) => {
     previous.call(material, shader, renderer);
     shader.uniforms.uCloudTime = cloudUniforms.uCloudTime;
+    shader.uniforms.uCloudCover = cloudUniforms.uCloudCover;
     shader.vertexShader = shader.vertexShader
       .replace("#include <common>", "#include <common>\nvarying vec3 vCloudWorld;")
       .replace(

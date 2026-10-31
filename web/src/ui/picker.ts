@@ -106,6 +106,15 @@ export function attachPicker(canvas: HTMLCanvasElement, viz: VisualizationHandle
     }
   });
 
+  // Escape dismisses a pinned card (keyboard users can't "click away")
+  addEventListener("keydown", (event) => {
+    if (event.key !== "Escape" || !pinned) return;
+    pinned = false;
+    insideCard = false;
+    clearCardTimers();
+    hideCard();
+  });
+
   canvas.addEventListener("click", (event) => {
     if (viz.isDragging?.()) return;
     const hit = intersect(event.clientX, event.clientY);

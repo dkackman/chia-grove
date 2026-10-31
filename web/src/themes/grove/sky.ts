@@ -100,9 +100,53 @@ void main() {
 
 export interface Sky {
   update(dt: number, t: number): void;
-  pulse(): void;
+  /** Flare the aurora; `strength` 0..1 (replayed history flares faintly). */
+  pulse(strength?: number): void;
   setNetspace(bytes: string): void;
   setSignalLost(lost: boolean): void;
+  setReducedMotion(reduced: boolean): void;
+}
+
+/** Moon brightness at rest (netspace on its trend) and its visible range. */
+export const MOON_REST = 0.85;
+export const MOON_MIN = 0.55;
+export const MOON_MAX = 1.1;
+/** Brightness per unit relative deviation: +1 % over trend → +0.25. */
+const MOON_GAIN = 25;
+/** Fast EMA (smooths the noisy per-block space estimate) and slow baseline. */
+const TREND_FAST_SECONDS = 10 * 60;
+const TREND_SLOW_SECONDS = 6 * 60 * 60;
+
+/**
+ * Session-relative netspace trend. Absolute netspace moves by fractions of a
+ * percent per session, so mapping it straight to brightness is imperceptible.
+ * Instead the moon follows a fast EMA against a slow EMA baseline (seeded on
+ * the first reading): growing netspace waxes it, shrinking wanes it.
+ */
+export class NetspaceTrend {
+  private fast = 0;
+  private slow = 0;
+  private lastAt = NaN;
+
+  /** Feed a reading (any unit) at `nowSec`; returns the moon brightness. */
+  update(value: number, nowSec: number): number {
+    if (!(value > 0)) return this.brightness();
+    if (Number.isNaN(this.lastAt)) {
+      this.fast = this.slow = value;
+    } else {
+      const dt = Math.max(0, nowSec - this.lastAt);
+      this.fast += (value - this.fast) * (1 - Math.exp(-dt / TREND_FAST_SECONDS));
+      this.slow += (value - this.slow) * (1 - Math.exp(-dt / TREND_SLOW_SECONDS));
+    }
+    this.lastAt = nowSec;
+    return this.brightness();
+  }
+
+  brightness(): number {
+    if (!(this.slow > 0)) return MOON_REST;
+    const rel = (this.fast - this.slow) / this.slow;
+    return Math.min(MOON_MAX, Math.max(MOON_MIN, MOON_REST + rel * MOON_GAIN));
+  }
 }
 
 export function createSky(scene: THREE.Scene, reducedMotion = false): Sky {
@@ -323,9 +367,10 @@ export function createSky(scene: THREE.Scene, reducedMotion = false): Sky {
   }
 
   let auroraEnergy = 0;
-  let moonTarget = 0.9;
-  let moonLevel = 0.9;
+  let moonTarget = MOON_REST;
+  let moonLevel = MOON_REST;
   let signalLost = false;
+  const trend = new NetspaceTrend();
 
   return {
     update(dt, t) {
@@ -335,7 +380,8 @@ export function createSky(scene: THREE.Scene, reducedMotion = false): Sky {
       auroraUniforms.uTime.value = reducedMotion ? t * 0.1 : t;
 
       const target = signalLost ? moonTarget * 0.35 : moonTarget;
-      moonLevel += (target - moonLevel) * Math.min(dt, 1);
+      // ease over a few seconds so a trend step reads as waxing, not a blink
+      moonLevel += (target - moonLevel) * Math.min(dt * 0.4, 1);
       moonUniforms.uBright.value = moonLevel;
       moonLight.intensity = 0.15 + moonLevel * 0.5;
 
@@ -343,15 +389,18 @@ export function createSky(scene: THREE.Scene, reducedMotion = false): Sky {
       if (starShader) starShader.uniforms.uTime.value = reducedMotion ? 0 : t;
       updateMeteor(t);
     },
-    pulse() {
-      auroraEnergy = 1;
+    pulse(strength = 1) {
+      auroraEnergy = Math.max(auroraEnergy, strength);
     },
     setNetspace(bytes) {
-      const eib = Number(safeBigInt(bytes) >> 50n) / 1024;
-      moonTarget = Math.min(1.05, Math.max(0.55, 0.55 + (eib - 10) * 0.0125));
+      const pib = Number(safeBigInt(bytes) >> 50n);
+      moonTarget = trend.update(pib, Date.now() / 1000);
     },
     setSignalLost(lost) {
       signalLost = lost;
+    },
+    setReducedMotion(reduced) {
+      reducedMotion = reduced;
     },
   };
 }

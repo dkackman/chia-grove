@@ -1,23 +1,24 @@
 import * as THREE from "three";
 import type { Visualization } from "../types.js";
 import { glowTexture } from "../shared/textures.js";
-import { createFrameLimiter } from "../shared/frame-limiter.js";
+import { createRenderLoop } from "../shared/render-loop.js";
 import { Motes } from "../shared/motes.js";
 import { createPostFx } from "../shared/postfx.js";
 import { createOrbitControl } from "../shared/orbit.js";
 import { FIELD, rowZ } from "./layout.js";
 import { FARM } from "./palette.js";
 import { CropSystem } from "./crops.js";
-import { Tractor } from "./tractor.js";
+import { PASS_SECONDS, Tractor } from "./tractor.js";
 import { createField } from "./field.js";
 import { createScenery } from "./scenery.js";
 import { createProps } from "./props.js";
 import { createFarmSky } from "./sky.js";
 import { createTerrain } from "./terrain.js";
-import { Chickens } from "./chickens.js";
+import { chaseCount, Chickens } from "./chickens.js";
 import { Crows } from "./crows.js";
 import { Turbines } from "./turbines.js";
 import { applyCloudShadows } from "./clouds.js";
+import { blockAgeSeconds, contiguousBand, isReplayBlock, RowPlanner } from "./rows.js";
 
 export const farm: Visualization = {
   id: "farm",
@@ -33,12 +34,10 @@ export const farm: Visualization = {
     ["sw-crow", "crows — reorg"],
   ],
   start(canvas, feed) {
-    const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const loop = createRenderLoop(canvas);
+    const { renderer } = loop;
+    let reducedMotion = loop.reducedMotion;
     const orbit = createOrbitControl(canvas);
-
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
-    renderer.setSize(innerWidth, innerHeight);
 
     const scene = new THREE.Scene();
     // the sky dome (sky.ts) covers the background; this is only a fallback
@@ -65,6 +64,10 @@ export const farm: Visualization = {
     const glow = glowTexture();
     const crops = new CropSystem(scene, glow);
     const tractor = new Tractor(scene, reducedMotion, glow);
+    loop.onReducedMotionChange((reduced) => {
+      reducedMotion = reduced;
+      tractor.setReducedMotion(reduced);
+    });
     const chickens = new Chickens(scene, reducedMotion ? 40 : 120);
     const crows = new Crows(scene, reducedMotion ? 10 : 24);
     const turbines = new Turbines(scene, reducedMotion);
@@ -89,25 +92,38 @@ export const farm: Visualization = {
     // every lit material, built above, takes the drifting cloud shadows
     applyCloudShadows(scene);
 
-    let blockIndex = 0;
-    let currentRow = 0;
+    const rows = new RowPlanner(FIELD.rows);
     let plantIndex = 0;
     let clockT = 0;
-    const frameCallbacks: Array<() => void> = [];
 
     feed.onEvent((event) => {
       switch (event.type) {
-        case "block":
-          currentRow = blockIndex % FIELD.rows;
-          blockIndex += 1;
+        case "block": {
+          const row = rows.next(event.height);
+          // the field wrapped (or a reorg rewound onto this row): clear what
+          // still stands there before it is re-plowed
+          crops.clearRow(row);
           plantIndex = 0;
-          tractor.startRow(currentRow, clockT);
-          field.plow(currentRow, clockT);
-          chickens.chase(0, rowZ(currentRow), clockT);
+          const now = Date.now();
+          if (isReplayBlock(event.timestamp, now)) {
+            // snapshot history: no pass, no hens, no gust — the row simply
+            // appears plowed as long ago as the block was made
+            const passStart = tractor.startRow(row, clockT, blockAgeSeconds(event.timestamp, now));
+            field.plow(row, passStart, clockT);
+            break;
+          }
+          const passStart = tractor.startRow(row, clockT);
+          field.plow(row, passStart, clockT);
+          chickens.chase(
+            rowZ(row),
+            passStart + PASS_SECONDS + 2,
+            chaseCount(event.mempoolIncluded, chickens.visibleCount())
+          );
           turbines.gust(clockT);
           break;
+        }
         case "sprout":
-          crops.plant(event, currentRow, plantIndex);
+          crops.plant(event, rows.currentRow, plantIndex);
           plantIndex += 1;
           break;
         case "ambient":
@@ -115,26 +131,25 @@ export const farm: Visualization = {
           chickens.setMempool(event.mempoolSize);
           break;
         case "reorg": {
-          // sweep the crows over the last ~6 plowed rows
-          const newest = rowZ(currentRow);
-          const oldest = rowZ(Math.max(0, currentRow - 5));
-          crows.fly(Math.min(newest, oldest), Math.max(newest, oldest), clockT);
+          // rewind so the replacement blocks re-plow the invalidated rows
+          const removed = rows.rewind(event.forkHeight);
           crops.clearAbove(event.forkHeight);
-          crops.wilt(clockT);
+          const recent = rows.recentRows(6);
+          // sweep the crows over the invalidated rows and the recent ones
+          // beside them (never across the wrap from row 0 to the far end)
+          const band = contiguousBand([...removed, ...recent]);
+          if (band.length > 0) {
+            const zs = band.map(rowZ);
+            crows.fly(Math.min(...zs) - 0.4, Math.max(...zs) + 0.4, clockT);
+          }
+          crops.wilt(clockT, recent);
           break;
         }
       }
     });
     feed.onStatus((status) => sky.setSignalLost(status === "stale"));
 
-    const timer = new THREE.Timer();
-    const limiter = createFrameLimiter();
-    function frame(): void {
-      requestAnimationFrame(frame);
-      if (!limiter.shouldRender(performance.now())) return;
-      timer.update();
-      const dt = Math.min(timer.getDelta(), 0.1);
-      const t = timer.getElapsed();
+    function update(dt: number, t: number): void {
       clockT = t;
 
       // drift along the field's near edge, looking across the rows at the barn
@@ -161,25 +176,16 @@ export const farm: Visualization = {
       field.update(t);
       tractor.update(t);
       crops.update(t, dt, tractor);
-      chickens.update(t, dt);
+      chickens.update(t, dt, tractor.position(t));
       crows.update(t);
       turbines.update(t, dt);
       motes.update(t, dt);
-      for (const fn of frameCallbacks) fn();
-      postfx.render();
     }
-    frame();
-
-    addEventListener("resize", () => {
-      camera.aspect = innerWidth / innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(innerWidth, innerHeight);
-      postfx.setSize(innerWidth, innerHeight);
-    });
+    loop.start({ camera, postfx, update });
 
     return {
       camera,
-      onFrame: (fn) => frameCallbacks.push(fn),
+      onFrame: loop.onFrame,
       isDragging: () => orbit.isDragging(),
       pickables: () => crops.pickables(),
       metaFor: (object, instanceId) => crops.metaFor(object, instanceId),
