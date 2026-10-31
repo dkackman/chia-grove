@@ -4,6 +4,7 @@ import { mulberry32 } from "../shared/util.js";
 import { GALLERY, FRAME_FINISHES } from "./palette.js";
 import { WALL, hangSlot, frameSize } from "./layout.js";
 import { PictureLights } from "./lights.js";
+import { artVideoTexture } from "./media.js";
 
 interface Piece {
   group: THREE.Group;
@@ -368,7 +369,7 @@ export class Pieces {
     const mat = piece.image.material as THREE.MeshBasicMaterial;
     if (mat.map instanceof THREE.VideoTexture) return; // already swapped
     const old = mat.map;
-    mat.map = new THREE.VideoTexture(video);
+    mat.map = artVideoTexture(video);
     mat.needsUpdate = true;
     old?.dispose();
     // Remove from explicit map — retire() will now find the video via duck-type

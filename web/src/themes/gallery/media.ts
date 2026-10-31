@@ -2,6 +2,19 @@ import * as THREE from "three";
 import { escalateMediaKind, type MediaKind } from "../../ui/media.js";
 import { POSTER_TIME } from "./playback.js";
 
+/** NFT art is sRGB-encoded; without this three treats it as linear and the
+ *  art renders washed out. Every texture loadArtTexture hands back goes
+ *  through here, as should any VideoTexture a surface swaps in later. */
+export function srgb<T extends THREE.Texture>(texture: T): T {
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+/** A live VideoTexture for NFT art (sRGB). */
+export function artVideoTexture(video: HTMLVideoElement): THREE.VideoTexture {
+  return srgb(new THREE.VideoTexture(video));
+}
+
 /**
  * Load an NFT's media as a Three.js texture, mirroring the media-type handling
  * of the detail-card popup: still images become a TextureLoader texture, videos
@@ -51,7 +64,7 @@ export function loadArtTexture(
       loader.crossOrigin = "anonymous";
       loader.load(
         posterSrc,
-        (texture) => onReady(texture, video),
+        (texture) => onReady(srgb(texture), video),
         undefined,
         () => {
           // Thumbnail not available (archive hasn't indexed this NFT yet);
@@ -71,7 +84,7 @@ export function loadArtTexture(
   loader.crossOrigin = "anonymous";
   loader.load(
     src,
-    (texture) => onReady(texture),
+    (texture) => onReady(srgb(texture)),
     undefined,
     () => {
       // the "image" hint may be wrong (e.g. an extensionless video) — retry as
@@ -119,7 +132,7 @@ function loadVideoSeekTexture(
     // Deliberately do NOT call video.play(): the VideoTexture stays frozen on
     // the seeked poster frame, so ambient surfaces show a still instead of
     // autoplaying. The video element is paused and never loops.
-    onReady(new THREE.VideoTexture(video));
+    onReady(artVideoTexture(video));
   };
   const onErr = (): void => {
     detach();
