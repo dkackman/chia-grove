@@ -10,8 +10,8 @@ import { FIELD } from "../src/themes/farm/layout.js";
 test("the soil is turned exactly where the tractor has passed", () => {
   const tractor = new Tractor(new THREE.Scene(), true);
   for (const row of [4, 5]) {
-    const start = 100;
-    tractor.startRow(row, start);
+    // the second row's pass starts after the headland turn: startRow says when
+    const start = tractor.startRow(row, 100 + (row - 4) * 30);
     const direction = row % 2 === 0 ? 1 : -1;
     for (let x = -FIELD.rowLength / 2; x <= FIELD.rowLength / 2; x += 1.7) {
       const reached = plowReachedAt(start, direction, x);
