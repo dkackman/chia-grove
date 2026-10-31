@@ -132,7 +132,10 @@ export class CoinsetPoller implements ChainSource {
         throw new Error("too many reorgs in one tick; backing off");
       }
       const fork = await this.findFork(height - 1);
-      this.handlers.onReorg(fork);
+      // `fork` is the last height that still matches; clients drop everything
+      // at or above the reported height, so report the first invalidated one.
+      // A deep reorg (fork = -1) reports 0: every height is invalidated.
+      this.handlers.onReorg(fork + 1);
       if (fork < 0) {
         // reorg deeper than our memory: reset and re-backfill next tick
         this.known.clear();

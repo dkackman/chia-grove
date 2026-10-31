@@ -132,7 +132,7 @@ test("detects a reorg, emits fork height, and re-walks the new chain", async () 
   rpc.chain([{ h: 3, hash: "h3b" }]);
   await poller.tick();
 
-  expect(sink.reorgs).toEqual([0]);
+  expect(sink.reorgs).toEqual([1]); // first invalidated height
   expect(sink.blocks.map((b) => b.headerHash)).toEqual(["h0", "h1", "h2", "h1b", "h2b", "h3b"]);
 });
 
@@ -154,7 +154,7 @@ test("reorg deeper than hash memory resets and re-backfills", async () => {
   rpc.chain([{ h: 10, hash: "h10b" }]);
   await poller.tick(); // detects reorg, resets
   await poller.tick(); // re-backfills from new peak
-  expect(sink.reorgs).toEqual([-1]);
+  expect(sink.reorgs).toEqual([0]); // deep reorg: everything invalidated
   const tail = sink.blocks.slice(3).map((b) => b.headerHash);
   expect(tail).toEqual(["h8b", "h9b", "h10b"]);
 });
@@ -187,9 +187,9 @@ test("a failed onBlock at the known-hash capacity does not evict history it hasn
   // The true fork (6) must still be findable. If the failed attempt at height
   // 70 had already evicted height 6's hash from `known` before confirming
   // success, findFork would run out of memory and misreport this as a deep
-  // reorg (-1), forcing a full reset + re-backfill instead of a clean,
-  // shallow re-walk from height 6.
-  expect(sink.reorgs).toEqual([6]);
+  // reorg, forcing a full reset + re-backfill instead of a clean,
+  // shallow re-walk from height 6. Reported as 7: the first invalidated height.
+  expect(sink.reorgs).toEqual([7]);
 });
 
 test("backs off exponentially on failure and recovers", async () => {
