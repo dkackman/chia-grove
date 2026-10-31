@@ -179,7 +179,12 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
     lastRenderedOffset = -1;
     ledgerDirty = true;
     if (lastLiveBlock) {
-      header.setBlock(lastLiveBlock.height, lastLiveBlock.spendCount, lastLiveBlock.fees);
+      header.setBlock(
+        lastLiveBlock.height,
+        lastLiveBlock.spendCount,
+        lastLiveBlock.fees,
+        lastLiveBlock.timestamp
+      );
     }
     header.setLive(true);
     cabinet.setLamp("live");
@@ -197,7 +202,8 @@ export function startBoard(canvas: HTMLCanvasElement, feed: GroveFeed): Visualiz
         break;
       case "block":
         lastLiveBlock = event;
-        if (mode === "live") header.setBlock(event.height, event.spendCount, event.fees);
+        if (mode === "live")
+          header.setBlock(event.height, event.spendCount, event.fees, event.timestamp);
         break;
       case "ambient":
         header.setAmbient(event.mempoolSize, event.netspace);

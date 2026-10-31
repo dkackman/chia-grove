@@ -29,7 +29,7 @@ function catLabel(ticker: string | undefined, name: string | undefined): string 
 }
 
 /** Trim a decimal string to at most `maxFrac` fraction digits (no rounding). */
-function clampFrac(s: string, maxFrac: number): string {
+export function clampFrac(s: string, maxFrac: number): string {
   const dot = s.indexOf(".");
   return dot < 0 ? s : s.slice(0, dot + 1 + maxFrac).replace(/\.?0+$/, "") || "0";
 }
