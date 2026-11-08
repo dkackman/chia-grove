@@ -176,6 +176,25 @@ body {
   border-top: 1px solid rgba(61, 220, 132, 0.2);
 }
 
+#legend-tip-open {
+  background: rgba(61, 220, 132, 0.12);
+  border: 1px solid rgba(61, 220, 132, 0.35);
+  border-radius: 4px;
+  padding: 4px 10px;
+  font: inherit;
+  color: #eafff2;
+  cursor: pointer;
+}
+
+#legend-tip-open:hover:not(:disabled) {
+  background: rgba(61, 220, 132, 0.22);
+}
+
+#legend-tip-open:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+
 #legend-scene {
   display: flex;
   align-items: center;
