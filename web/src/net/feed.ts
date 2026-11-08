@@ -69,7 +69,11 @@ export class GroveFeed {
     this.started = true;
     if (new URLSearchParams(location.search).get("demo") === "1") {
       this.setStatus("demo");
-      startDemo((event) => this.dispatch(event));
+      // same paths a socket's snapshot/batch messages take below
+      startDemo({
+        snapshot: (events) => this.queue.enqueue(this.seen.filterSnapshot(events)),
+        batch: (events) => this.queue.enqueue(events),
+      });
       return;
     }
     if (typeof window.addEventListener === "function") {

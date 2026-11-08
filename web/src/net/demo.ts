@@ -43,7 +43,7 @@ function randomKind(): SproutKind {
   return "did";
 }
 
-function sprout(height: number, dispatch?: (event: GroveEvent) => void): SproutEvent {
+function sprout(height: number, sink?: DemoSink): SproutEvent {
   const kind = randomKind();
   const event: SproutEvent = {
     type: "sprout",
@@ -78,11 +78,13 @@ function sprout(height: number, dispatch?: (event: GroveEvent) => void): SproutE
       const launcher = event.launcherId;
       setTimeout(
         () =>
-          dispatch?.({
-            type: "content-flag",
-            launcherId: launcher,
-            mediaFilter: "sensitive",
-          }),
+          sink?.batch([
+            {
+              type: "content-flag",
+              launcherId: launcher,
+              mediaFilter: "sensitive",
+            },
+          ]),
         4000
       );
     }
@@ -90,10 +92,33 @@ function sprout(height: number, dispatch?: (event: GroveEvent) => void): SproutE
   return event;
 }
 
-function blockWithSprouts(
+/**
+ * Where the demo delivers its events: the same two paths a real socket's
+ * messages take in `GroveFeed` (a `snapshot` goes through `SeenBlocks` dedupe,
+ * then both through the `DrainQueue`), so `?demo=1` exercises the real pacing
+ * and dedupe rather than dispatching straight to the theme.
+ */
+export interface DemoSink {
+  snapshot(events: GroveEvent[]): void;
+  batch(events: GroveEvent[]): void;
+}
+
+// Mean Chia block interval; the backlog is spaced at this so its blocks look
+// like real history: all but the newest couple are past themes' 120 s replay
+// cutoff, so the backlog appears without per-block celebrations, as a real
+// connect's snapshot does.
+const BLOCK_INTERVAL_S = 52;
+const BACKLOG_BLOCKS = 30;
+const LIVE_BLOCK_MS = 8000;
+// One live block in this many replaces the previous block (a 1-deep reorg), so
+// every theme's reorg path gets exercised offline too.
+const REORG_EVERY = 12;
+
+export function blockWithSprouts(
   height: number,
-  dispatch?: (event: GroveEvent) => void,
-  mempool?: { included: number; remaining: number }
+  sink?: DemoSink,
+  mempool?: { included: number; remaining: number },
+  timestamp = Math.floor(Date.now() / 1000)
 ): GroveEvent[] {
   const count = 2 + Math.floor(Math.random() * 14);
   return [
@@ -101,42 +126,58 @@ function blockWithSprouts(
       type: "block",
       height,
       headerHash: randomHex(32),
-      timestamp: Math.floor(Date.now() / 1000),
+      timestamp,
       spendCount: count,
       fees: String(Math.floor(Math.random() * 1e9)),
       mempoolIncluded: mempool?.included,
       mempoolRemaining: mempool?.remaining,
     },
-    ...Array.from({ length: count }, () => sprout(height, dispatch)),
+    ...Array.from({ length: count }, () => sprout(height, sink)),
   ];
 }
 
-export function startDemo(dispatch: (event: GroveEvent) => void): void {
+/** The synthetic connect snapshot: `BACKLOG_BLOCKS` past blocks ending just before `tip`. */
+export function demoBacklog(tip: number, nowS: number, sink?: DemoSink): GroveEvent[] {
+  const events: GroveEvent[] = [];
+  for (let i = 0; i < BACKLOG_BLOCKS; i++) {
+    const age = (BACKLOG_BLOCKS - i) * BLOCK_INTERVAL_S;
+    events.push(...blockWithSprouts(tip - BACKLOG_BLOCKS + i, sink, undefined, nowS - age));
+  }
+  return events;
+}
+
+export function startDemo(sink: DemoSink): void {
   let height = 7_000_000;
   let mempool = 60;
+  let liveBlocks = 0;
 
-  // synthetic snapshot: 30 past blocks, replayed quickly
-  const backlog: GroveEvent[] = [];
-  for (let i = 0; i < 30; i++) backlog.push(...blockWithSprouts(height++, dispatch));
-  backlog.forEach((event, i) => setTimeout(() => dispatch(event), i * 12));
+  sink.snapshot(demoBacklog(height, Math.floor(Date.now() / 1000), sink));
 
   setInterval(() => {
     // a live block takes a random share of the mempool (the backlog above doesn't)
     const included = Math.floor(mempool * (0.2 + Math.random() * 0.6));
     mempool -= included;
     const inclusion = { included, remaining: Math.floor(mempool) };
-    for (const event of blockWithSprouts(height++, dispatch, inclusion)) dispatch(event);
-  }, 8000);
+    liveBlocks += 1;
+    if (liveBlocks % REORG_EVERY === 0) {
+      // the previous block is orphaned: its replacement arrives at the same height
+      height -= 1;
+      sink.batch([{ type: "reorg", forkHeight: height }]);
+    }
+    sink.batch(blockWithSprouts(height++, sink, inclusion));
+  }, LIVE_BLOCK_MS);
 
   setInterval(() => {
     mempool = Math.max(5, Math.min(400, mempool + (Math.random() - 0.5) * 40));
-    dispatch({
-      type: "ambient",
-      peakHeight: height,
-      mempoolSize: Math.floor(mempool),
-      mempoolCost: String(Math.floor(mempool * 5e9)),
-      mempoolFees: String(Math.floor(mempool * 1e7)),
-      netspace: String(33n * 2n ** 60n),
-    });
+    sink.batch([
+      {
+        type: "ambient",
+        peakHeight: height,
+        mempoolSize: Math.floor(mempool),
+        mempoolCost: String(Math.floor(mempool * 5e9)),
+        mempoolFees: String(Math.floor(mempool * 1e7)),
+        netspace: String(33n * 2n ** 60n),
+      },
+    ]);
   }, 2000);
 }
