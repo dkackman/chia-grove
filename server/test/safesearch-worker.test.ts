@@ -952,6 +952,38 @@ test("a fallback on a Google-unreachable gateway is not attempted", async () => 
   store.close();
 });
 
+test("visionUnreachableHosts replaces the default list (case-insensitive)", async () => {
+  const HASH = "3d".repeat(32);
+  const run = async (fallbackUrl: string): Promise<number> => {
+    const media = new MediaIndex(10);
+    media.set("L1", { url: `${ARCHIVE}/content/${HASH}`, kind: "image", fallbackUrl });
+    const store = new ContentStore(":memory:");
+    store.putCheap("L1", "nft1", { disposition: "ok" }, HASH);
+    let visionCalls = 0;
+    const worker = new SafeSearchWorker({
+      media,
+      store,
+      apiKey: "k",
+      onFlag: () => {},
+      archiveBaseUrl: ARCHIVE,
+      archiveCheckAttempts: 1,
+      archiveCheckDelayMs: 0,
+      visionUnreachableHosts: [" Blocked.Example "],
+      fetchImpl: (async (url: string, init?: RequestInit) => {
+        if (init?.method === "HEAD") return new Response(null, { status: 404 });
+        if (String(url).includes("images:annotate")) visionCalls++;
+        return new Response("{}", { status: 404 });
+      }) as typeof fetch,
+    });
+    worker.maybeEnqueue(nftEvent());
+    await flushMicrotasks();
+    store.close();
+    return visionCalls;
+  };
+  expect(await run("https://blocked.example/a.png")).toBe(0); // configured host skipped
+  expect(await run("https://ipfs.mintgarden.io/ipfs/abc")).toBe(1); // default list replaced
+});
+
 test("a video NFT never falls back to the raw clip when its poster is not ready", async () => {
   const POSTER = "https://assets.mainnet.mintgarden.io/thumbnails/4d_512.webp";
   const media = new MediaIndex(10);

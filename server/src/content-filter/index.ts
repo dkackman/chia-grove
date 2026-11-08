@@ -89,6 +89,9 @@ export interface ContentFilterOptions {
    *  SafeSearchWorkerOpts.enforceCleanSkipsVision. No effect if
    *  localNsfwModelPath is unset. */
   localNsfwEnforceClean?: boolean;
+  /** Hostnames Google's image fetcher cannot reach (see
+   *  SafeSearchWorkerOpts.visionUnreachableHosts); unset keeps the default. */
+  visionUnreachableHosts?: Iterable<string>;
 }
 
 /**
@@ -171,6 +174,7 @@ export class ContentFilter {
         apiKey: opts.googleApiKey,
         onFlag: opts.onFlag,
         enforceCleanSkipsVision: opts.localNsfwEnforceClean,
+        visionUnreachableHosts: opts.visionUnreachableHosts,
         fetchImpl: opts.fetchImpl,
         archiveBaseUrl: opts.archiveBaseUrl,
         archiveCheckAttempts: opts.archiveCheckAttempts,

@@ -6,6 +6,10 @@ import { querySafeSearch, adultIsSensitive, type SafeSearchResult } from "./sign
 import type { LocalNsfwBand } from "./signals/local-nsfw.js";
 import { BoundedMap } from "../util/bounded-map.js";
 import { log } from "../logger.js";
+import { ConcurrencyGate } from "./concurrency-gate.js";
+import { VisionTargetResolver } from "./vision-target.js";
+
+export { DEFAULT_VISION_UNREACHABLE_HOSTS } from "./vision-target.js";
 
 // Bech32m nft1... form of a launcherId, for logging alongside the raw hex —
 // pasteable straight into MintGarden/spacescan without a manual lookup. Must
@@ -62,6 +66,10 @@ export interface SafeSearchWorkerOpts {
    *  ever decided locally, so a local false-negative on nsfw content can't
    *  slip through unconfirmed. No effect if `localClassify` is unset. */
   enforceCleanSkipsVision?: boolean;
+  /** Hostnames Google's image fetcher cannot reach; an original-URL fallback
+   *  on one of them is skipped rather than paid for as a guaranteed failure.
+   *  Defaults to `DEFAULT_VISION_UNREACHABLE_HOSTS`. */
+  visionUnreachableHosts?: Iterable<string>;
 }
 
 /**
@@ -97,11 +105,6 @@ const DEFAULT_MAX_PENDING = 256;
  *  instead of one per sweep, forever. */
 const MAX_DEDUP_FAIL_TTL_MS = 6 * 60 * 60 * 1000;
 
-/** Hosts Google's image fetcher cannot reach (the reason the Archive upgrade
- *  exists) — a Vision call against them is a guaranteed failure, so don't pay
- *  the attempt. */
-const GOOGLE_UNREACHABLE_HOSTS = new Set(["ipfs.mintgarden.io"]);
-
 interface VisionOutcome {
   result: SafeSearchResult;
   checkedUri: string;
@@ -110,18 +113,13 @@ interface VisionOutcome {
 export class SafeSearchWorker {
   private readonly fetchImpl: typeof fetch;
   private readonly timeoutMs: number;
-  private readonly concurrency: number;
   private readonly maxPending: number;
   private readonly failTtlMs: number;
   private readonly now: () => number;
-  private readonly archiveBaseUrl: string;
-  private readonly archiveCheckAttempts: number;
-  private readonly archiveCheckDelayMs: number;
-  private readonly thumbnailBaseUrl: string;
   private readonly localClassifyMaxBytes: number;
   private readonly enforceCleanSkipsVision: boolean;
-  private active = 0;
-  private readonly waiters: Array<() => void> = [];
+  private readonly targets: VisionTargetResolver;
+  private readonly visionGate: ConcurrencyGate;
   private readonly queued = new Set<string>();
   private readonly failedUntil = new BoundedMap<string, number>(FAILED_UNTIL_CAP);
   /** dedup key (contentHash, or imageUri when no contentHash is known yet) ->
@@ -142,17 +140,21 @@ export class SafeSearchWorker {
   constructor(private readonly opts: SafeSearchWorkerOpts) {
     this.fetchImpl = opts.fetchImpl ?? fetch;
     this.timeoutMs = opts.timeoutMs ?? 8000;
-    this.concurrency = opts.concurrency ?? 2;
     this.maxPending = opts.maxPending ?? DEFAULT_MAX_PENDING;
     this.failTtlMs = opts.failTtlMs ?? 300_000;
     this.now = opts.now ?? Date.now;
-    this.archiveBaseUrl = opts.archiveBaseUrl ?? "https://archive.mintgarden.io";
-    this.archiveCheckAttempts = opts.archiveCheckAttempts ?? 3;
-    this.archiveCheckDelayMs = opts.archiveCheckDelayMs ?? 2000;
-    this.thumbnailBaseUrl =
-      opts.thumbnailBaseUrl ?? "https://assets.mainnet.mintgarden.io/thumbnails";
     this.localClassifyMaxBytes = opts.localClassifyMaxBytes ?? 15 * 1024 * 1024;
     this.enforceCleanSkipsVision = opts.enforceCleanSkipsVision ?? false;
+    this.visionGate = new ConcurrencyGate(opts.concurrency ?? 2);
+    this.targets = new VisionTargetResolver({
+      fetchImpl: this.fetchImpl,
+      timeoutMs: this.timeoutMs,
+      archiveBaseUrl: opts.archiveBaseUrl ?? "https://archive.mintgarden.io",
+      thumbnailBaseUrl: opts.thumbnailBaseUrl ?? "https://assets.mainnet.mintgarden.io/thumbnails",
+      archiveCheckAttempts: opts.archiveCheckAttempts ?? 3,
+      archiveCheckDelayMs: opts.archiveCheckDelayMs ?? 2000,
+      unreachableHosts: opts.visionUnreachableHosts,
+    });
   }
 
   maybeEnqueue(event: SproutEvent): void {
@@ -317,7 +319,7 @@ export class SafeSearchWorker {
     imageUri: string,
     fallbackUri?: string
   ): Promise<VisionOutcome | undefined> {
-    const target = await this.resolveTarget(imageUri, fallbackUri);
+    const target = await this.targets.resolve(imageUri, fallbackUri);
 
     if (this.enforceCleanSkipsVision && this.opts.localClassify) {
       // Enforcement decides whether Vision runs at all, so (unlike shadow
@@ -359,21 +361,6 @@ export class SafeSearchWorker {
     return this.resolveVisionOutcome(launcherId, target, shadow);
   }
 
-  /** Resolves the readiness-probed / fallback URL Vision (and the local
-   *  classifier) should actually classify. */
-  private async resolveTarget(imageUri: string, fallbackUri?: string): Promise<string> {
-    if (!this.needsReadyProbe(imageUri)) return imageUri;
-    const ready = await this.waitForContentReady(imageUri);
-    if (ready) return imageUri;
-    const fallback = this.usableFallback(imageUri, fallbackUri);
-    if (!fallback) {
-      throw new Error(`content not ready after ${this.archiveCheckAttempts} attempts`);
-    }
-    // MintGarden never ingested these bytes; classify the on-chain original
-    // instead of giving up. checked_uri records what was actually classified.
-    return fallback;
-  }
-
   /** Calls Vision (if an apiKey is configured) or logs the local classifier's
    *  standalone result (if not) — shared by both the enforce and shadow
    *  paths in checkVision, which differ only in when `local` resolves. */
@@ -402,7 +389,7 @@ export class SafeSearchWorker {
       return undefined;
     }
 
-    const result = await this.gate(() =>
+    const result = await this.visionGate.run(() =>
       querySafeSearch(target, {
         apiKey: this.opts.apiKey!,
         fetchImpl: this.fetchImpl,
@@ -467,30 +454,6 @@ export class SafeSearchWorker {
     }
   }
 
-  /** The original art URL, if it is worth one Vision attempt: http(s), distinct
-   *  from what we already tried, and not on a host Google cannot reach. */
-  private usableFallback(imageUri: string, fallbackUri?: string): string | undefined {
-    if (!fallbackUri || fallbackUri === imageUri) return undefined;
-    try {
-      const u = new URL(fallbackUri);
-      if (u.protocol !== "https:" && u.protocol !== "http:") return undefined;
-      if (GOOGLE_UNREACHABLE_HOSTS.has(u.hostname)) return undefined;
-      return fallbackUri;
-    } catch {
-      return undefined;
-    }
-  }
-
-  /** MintGarden's ingestion-lagged CDNs, where a probe from here predicts what
-   *  Google's fetcher will see. Other hosts are checked blind: our reachability
-   *  says nothing about Google's (e.g. gateways that block Google's IP ranges). */
-  private needsReadyProbe(imageUri: string): boolean {
-    return (
-      imageUri.startsWith(this.archiveBaseUrl + "/") ||
-      imageUri.startsWith(this.thumbnailBaseUrl + "/")
-    );
-  }
-
   /** Persist a SafeSearch verdict, clear failure suppression, and flag if sensitive. */
   private persistVerdict(
     launcherId: string,
@@ -534,53 +497,5 @@ export class SafeSearchWorker {
         );
       }
     }
-  }
-
-  // Runs outside the Vision gate, so a not-yet-ingested NFT sleeps between polls
-  // without occupying a paid-call slot; many waits proceed in parallel (capped by
-  // maxPending, which bounds concurrent probes too). HEAD of the exact URL Vision
-  // will fetch: ingested archive content answers an immutable 301 (to
-  // files.mintgarden.io), existing thumbnails 200, missing content 404 — so any
-  // 2xx/3xx is ready and everything else (incl. network errors) retries.
-  private async waitForContentReady(url: string): Promise<boolean> {
-    for (let attempt = 0; attempt < this.archiveCheckAttempts; attempt++) {
-      if (attempt > 0 && this.archiveCheckDelayMs > 0) {
-        await new Promise<void>((r) => setTimeout(r, this.archiveCheckDelayMs));
-      }
-      try {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), this.timeoutMs);
-        let res: Response;
-        try {
-          res = await this.fetchImpl(url, {
-            method: "HEAD",
-            redirect: "manual",
-            signal: controller.signal,
-          });
-        } finally {
-          clearTimeout(timer);
-        }
-        if (res.ok || (res.status >= 300 && res.status < 400)) return true;
-      } catch {
-        // network error or abort → treat as not ready, retry
-      }
-    }
-    return false;
-  }
-
-  private gate<T>(fn: () => Promise<T>): Promise<T> {
-    const runNow = async (): Promise<T> => {
-      this.active++;
-      try {
-        return await fn();
-      } finally {
-        this.active--;
-        this.waiters.shift()?.();
-      }
-    };
-    if (this.active < this.concurrency) return runNow();
-    return new Promise<T>((resolve, reject) => {
-      this.waiters.push(() => runNow().then(resolve, reject));
-    });
   }
 }
