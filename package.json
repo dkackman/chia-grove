@@ -23,14 +23,14 @@
     "@emnapi/core": "^1.11.3",
     "@emnapi/runtime": "^1.11.3",
     "@eslint/js": "^10.0.1",
-    "@playwright/test": "^1.63.0",
+    "@playwright/test": "^1.65.0",
     "esbuild": "^0.28.2",
     "eslint": "^10.14.0",
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.9.9",
     "typescript": "^6.0.0",
     "typescript-eslint": "^8.72.1",
-    "vitest": "^5.0.2"
+    "vitest": "^5.1.0"
   },
   "engines": {
     "node": ">=24"
@@ -38,8 +38,8 @@
   "allowScripts": {
     "esbuild@0.28.2": true,
     "fsevents@2.3.3": true,
-    "onnxruntime-node@1.27.0": true,
     "sharp@0.34.5": true,
-    "fsevents@2.3.2": true
+    "fsevents@2.3.2": true,
+    "onnxruntime-node@1.30.0": true
   }
 }
