@@ -11,13 +11,21 @@ test("url param wins over stored value", () => {
   expect(resolveTheme("?theme=grove", "other").id).toBe("grove");
 });
 
-test("every theme has an id, label, and non-empty legend", () => {
+test("every theme has an id, label, and non-empty legend", async () => {
   expect(THEMES.length).toBeGreaterThanOrEqual(1);
-  for (const theme of THEMES) {
-    expect(theme.id).toBeTruthy();
-    expect(theme.label).toBeTruthy();
+  for (const entry of THEMES) {
+    expect(entry.id).toBeTruthy();
+    expect(entry.label).toBeTruthy();
+    const theme = await entry.load();
+    // the registry's metadata must agree with the scene module it loads
+    expect(theme.id).toBe(entry.id);
+    expect(theme.label).toBe(entry.label);
     expect(theme.legend.length).toBeGreaterThan(0);
   }
+});
+
+test("theme ids are unique", () => {
+  expect(new Set(THEMES.map((t) => t.id)).size).toBe(THEMES.length);
 });
 
 test("farm theme is registered and resolvable", () => {

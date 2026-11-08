@@ -33,6 +33,15 @@ function envInt(name: string, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+/** Comma-separated env list; unset or blank → undefined (the caller's default). */
+function envList(name: string): string[] | undefined {
+  const items = (process.env[name] ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return items.length > 0 ? items : undefined;
+}
+
 const PORT = envInt("PORT", 8080);
 // Chia mainnet blocks land every ~18.75s on average; polling much faster than
 // that just burns getBlockchainState calls that come back with nothing new.
@@ -77,6 +86,9 @@ const contentFilter = new ContentFilter(media, {
   // (via the shadow/standalone logs above), set this to actually skip Vision
   // on a confident-clean local score instead of just logging the comparison.
   localNsfwEnforceClean: process.env.LOCAL_NSFW_ENFORCE_CLEAN === "true",
+  // Comma-separated hostnames Google's fetcher can't reach; unset keeps the
+  // built-in list (ipfs.mintgarden.io).
+  visionUnreachableHosts: envList("VISION_UNREACHABLE_HOSTS"),
 }); // MintGarden lookups cached per nftId; SafeSearch async when API key set
 const cats = new CatRegistry();
 // a load that lands after blocks were already classified (initial failure, a

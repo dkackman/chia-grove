@@ -22,7 +22,9 @@ export interface OrbiterStyle {
   glow: number;
 }
 
-const VERTEX = /* glsl */ `
+/** Exported so tests can pin the lines `layout.ts` (`orbitPointInto`,
+ *  `reachAt`, `scaleAt`) mirrors on the CPU for picking. */
+export const ORBIT_VERTEX = /* glsl */ `
 attribute vec3 aCenter;
 attribute vec4 aOrbit;  // radius, phase, speed, yOff
 attribute vec4 aTilt;   // incl, node, spin, spinPhase
@@ -189,7 +191,7 @@ export class Orbiters<T> {
       uSelfGlow: { value: style.glow },
     };
     const material = new THREE.ShaderMaterial({
-      vertexShader: VERTEX,
+      vertexShader: ORBIT_VERTEX,
       fragmentShader: FRAGMENT,
       uniforms: this.uniforms,
       side: THREE.DoubleSide,
