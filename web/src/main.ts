@@ -2,22 +2,22 @@ import { GroveFeed } from "./net/feed.js";
 import { resolveTheme, switchTheme, THEMES, THEME_STORAGE_KEY } from "./themes/index.js";
 import { attachPicker } from "./ui/picker.js";
 import { BlockConsole } from "./ui/console.js";
-import { initLegend } from "./ui/legend.js";
+import { initLegend, type LegendHandle } from "./ui/legend.js";
 import { shortcutFor } from "./ui/shortcuts.js";
 
 const canvas = document.getElementById("grove") as HTMLCanvasElement;
 const status = document.getElementById("status") as HTMLDivElement;
 
-const theme = resolveTheme(location.search, localStorage.getItem(THEME_STORAGE_KEY));
-const legend = initLegend(theme);
+const entry = resolveTheme(location.search, localStorage.getItem(THEME_STORAGE_KEY));
+let legend: LegendHandle | null = null;
 
 // 1–6 switch scene, L toggles the legend (ignored while typing or with modifiers)
 addEventListener("keydown", (e) => {
   if (e.defaultPrevented || e.repeat) return;
   const shortcut = shortcutFor(e, THEMES.length);
   if (!shortcut) return;
-  if (shortcut.type === "legend") legend.toggle();
-  else if (THEMES[shortcut.index].id !== theme.id) switchTheme(THEMES[shortcut.index].id);
+  if (shortcut.type === "legend") legend?.toggle();
+  else if (THEMES[shortcut.index].id !== entry.id) switchTheme(THEMES[shortcut.index].id);
   e.preventDefault();
 });
 const blockConsole = new BlockConsole(document.getElementById("console") as HTMLDivElement);
@@ -49,7 +49,27 @@ feed.onStatus((s, info) => {
   if (info.retryAt !== undefined) retryTicker = window.setInterval(tick, 1000);
 });
 
-const handle = theme.start(canvas, feed);
-if (!handle.selfManagedInput) attachPicker(canvas, handle);
-feed.onEvent((event) => blockConsole.handle(event));
-feed.start();
+// A chunk that fails to load is almost always a stale tab after a deploy (its
+// hashed scene chunk is gone) — reload once for the fresh HTML; if that also
+// fails, say so instead of looping.
+const RELOAD_KEY = "grove.chunk-reload";
+entry.load().then(
+  (theme) => {
+    sessionStorage.removeItem(RELOAD_KEY);
+    legend = initLegend(theme);
+    const handle = theme.start(canvas, feed);
+    if (!handle.selfManagedInput) attachPicker(canvas, handle);
+    feed.onEvent((event) => blockConsole.handle(event));
+    feed.start();
+  },
+  (err: unknown) => {
+    console.error("failed to load scene", entry.id, err);
+    if (sessionStorage.getItem(RELOAD_KEY) !== entry.id) {
+      sessionStorage.setItem(RELOAD_KEY, entry.id);
+      location.reload();
+      return;
+    }
+    status.hidden = false;
+    statusLabel.textContent = "scene failed to load — try reloading";
+  }
+);
