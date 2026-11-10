@@ -19,6 +19,8 @@ Node/Fastify process that polls the Chia blockchain, classifies coin spends, fil
   - `GOOGLE_VISION_API_KEY` unset disables SafeSearch (cheap signals still run). `CONTENT_DB_PATH` controls the SQLite path.
   - _Local NSFW pre-classifier_ (`signals/nsfw-preprocess.ts`, `signals/nsfw-infer.ts`, `signals/local-nsfw-runtime.ts`) — a self-hosted opennsfw2 model (`server/models/opennsfw2.onnx`, Apache 2.0; see `server/models/convert_opennsfw2_to_onnx.py` for how it was converted from the original Keras weights) run via `onnxruntime-node`, with `sharp` replicating opennsfw2's preprocessing (resize/crop/BGR-mean-subtract — parity-tested against a Python-generated fixture in `server/test/fixtures/`, since sharp and PIL's resize kernels aren't bit-identical). Decoupled from Vision: with no `GOOGLE_VISION_API_KEY` it runs standalone (observability only, logs `local-nsfw standalone result`); with a key set it runs in shadow mode alongside every Vision call and logs a comparison (`local-nsfw shadow comparison`) instead. By default neither mode changes the persisted verdict — `signals/local-nsfw.ts` has the clean/nsfw/uncertain thresholds (`localNsfwCleanBelow`/`localNsfwNsfwAbove`, both `ContentFilterOptions`). Setting `LOCAL_NSFW_ENFORCE_CLEAN=true` promotes it to an actual gate: a confident-clean local score (`band === "clean"`) skips Vision entirely and persists ok/checked directly (logged as `local-nsfw enforced clean`) — uncertain/nsfw scores are unaffected and still go to Vision, so only "clean" is ever decided locally. `LOCAL_NSFW_MODEL_PATH` unset disables the classifier entirely; when set, the path is resolved relative to the server process's cwd (`server/`), e.g. `./models/opennsfw2.onnx`.
 
+- **`Collection`** (`src/web/collection.ts`) is the gallery's permanent collection, served by `GET /collection?limit=` (default 18, max 48; launcher ids only — art still goes through `/img`). Live ingest `offer()`s every NFT sprout after `enrich()`; only still images with proxiable art and no `mediaFilter` become candidates (newest 150, SQLite at `COLLECTION_DB_PATH`). What is _shown_ is decided at read time by `isClean` (wired in `index.ts` to the content-filter store): disposition `ok`, and — when `GOOGLE_VISION_API_KEY` is set — SafeSearch-checked (or allow-listed). Unlike the live feed this **fails closed**: no verdict row, no store, or a store error → not listed. A later `ContentFlagEvent` removes the piece (`onFlag`), a reorg removes pieces from orphaned blocks, and `MediaIndex.delete` (blocked) drops its art. Candidates' `MediaEntry`s are _pinned_ in `MediaIndex` (`pin`/`unpin`, re-pinned from disk on start) so their art stays resolvable after the bounded map evicts them. An empty collection is seeded once at startup from `ContentStore.recentClean()` (SafeSearch-cleared rows with a `checked_uri`, video posters skipped).
+
 - **`/img` proxy** (`src/web/img-proxy.ts`) holds the routes, rate limit, negative cache and response cache. The SSRF boundary (target validation, private-range blocking, connect-time DNS check, re-validated redirects) is `src/web/safe-fetch.ts`; body-size capping and cache collection are `src/web/proxy-streams.ts`.
 
 - **`Hub`** handles backpressure: sockets above 1 MB buffered are terminated; ambient events are dropped for sockets above 64 KB.
@@ -27,15 +29,16 @@ Node/Fastify process that polls the Chia blockchain, classifies coin spends, fil
 
 ## Environment variables
 
-| Var                            | Default                        | Notes                                                                 |
-| ------------------------------ | ------------------------------ | --------------------------------------------------------------------- |
-| `PORT`                         | `8080`                         |                                                                       |
-| `POLL_INTERVAL_MS`             | `10000`                        |                                                                       |
-| `BACKFILL_BLOCKS`              | `150`                          |                                                                       |
-| `GOOGLE_VISION_API_KEY`        | (unset)                        | Enables Vision SafeSearch; unset = cheap signals only                 |
-| `CONTENT_DB_PATH`              | `./data/content-filter.sqlite` | SQLite verdict store path                                             |
-| `SAFESEARCH_SWEEP_INTERVAL_MS` | `600000`                       | Re-check cadence for still-unchecked NFTs in MediaIndex; `0` disables |
-| `LOCAL_NSFW_MODEL_PATH`        | (unset)                        | Enables local NSFW pre-classification (standalone or shadow mode)     |
-| `LOCAL_NSFW_ENFORCE_CLEAN`     | (unset)                        | `true` promotes confident-clean local scores to skip Vision entirely  |
-| `WHITELIST_GIST_URL`           | (unset)                        | Raw gist URL for the allow-list JSON, fetched once at startup         |
-| `VISION_UNREACHABLE_HOSTS`     | `ipfs.mintgarden.io`           | Comma-separated hosts Google can't fetch; their fallbacks are skipped |
+| Var                            | Default                        | Notes                                                                   |
+| ------------------------------ | ------------------------------ | ----------------------------------------------------------------------- |
+| `PORT`                         | `8080`                         |                                                                         |
+| `POLL_INTERVAL_MS`             | `10000`                        |                                                                         |
+| `BACKFILL_BLOCKS`              | `150`                          |                                                                         |
+| `GOOGLE_VISION_API_KEY`        | (unset)                        | Enables Vision SafeSearch; unset = cheap signals only                   |
+| `CONTENT_DB_PATH`              | `./data/content-filter.sqlite` | SQLite verdict store path                                               |
+| `COLLECTION_DB_PATH`           | `./data/collection.sqlite`     | Gallery permanent-collection store (set outside the deploy dir in prod) |
+| `SAFESEARCH_SWEEP_INTERVAL_MS` | `600000`                       | Re-check cadence for still-unchecked NFTs in MediaIndex; `0` disables   |
+| `LOCAL_NSFW_MODEL_PATH`        | (unset)                        | Enables local NSFW pre-classification (standalone or shadow mode)       |
+| `LOCAL_NSFW_ENFORCE_CLEAN`     | (unset)                        | `true` promotes confident-clean local scores to skip Vision entirely    |
+| `WHITELIST_GIST_URL`           | (unset)                        | Raw gist URL for the allow-list JSON, fetched once at startup           |
+| `VISION_UNREACHABLE_HOSTS`     | `ipfs.mintgarden.io`           | Comma-separated hosts Google can't fetch; their fallbacks are skipped   |

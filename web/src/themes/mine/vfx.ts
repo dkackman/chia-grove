@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import type { XZ } from "../shared/util.js";
 import { MINE } from "./palette.js";
-import { chunkElevation, torchRadius, FLOOR_SIDE } from "./layout.js";
+import { cellKey, cellTiles, chunkPosition, slotLevel, torchRadius, type Cell } from "./layout.js";
 import { WATER_LEVEL } from "./water.js";
 
 const BEACON_CAP = 12;
@@ -30,6 +30,32 @@ export function cursorOpacity(age: number): number {
   return CURSOR_REST + CURSOR_FLASH * Math.exp(-Math.max(0, age) * CURSOR_DECAY);
 }
 
+/** Upper bound on a cell's tile count (cells reach at most 4 tiles from center). */
+const CURSOR_MAX_TILES = 81;
+
+/**
+ * Build-cursor geometry for a cell, in the cell's local frame (y = 0): `line`
+ * is the cell's outline as segment endpoints — one segment per tile edge with
+ * no cell tile beyond it — and `fill` is two triangles per tile.
+ */
+export function cursorGeometry(tiles: ReadonlyArray<Cell>): { line: number[]; fill: number[] } {
+  const inCell = new Set(tiles.map(cellKey));
+  const line: number[] = [];
+  const fill: number[] = [];
+  for (const { col, row } of tiles) {
+    const x0 = col - 0.5;
+    const x1 = col + 0.5;
+    const z0 = row - 0.5;
+    const z1 = row + 0.5;
+    fill.push(x0, 0, z0, x0, 0, z1, x1, 0, z0, x1, 0, z0, x0, 0, z1, x1, 0, z1);
+    if (!inCell.has(cellKey({ col: col - 1, row }))) line.push(x0, 0, z0, x0, 0, z1);
+    if (!inCell.has(cellKey({ col: col + 1, row }))) line.push(x1, 0, z0, x1, 0, z1);
+    if (!inCell.has(cellKey({ col, row: row - 1 }))) line.push(x0, 0, z0, x1, 0, z0);
+    if (!inCell.has(cellKey({ col, row: row + 1 }))) line.push(x0, 0, z1, x1, 0, z1);
+  }
+  return { line, fill };
+}
+
 interface Beacon {
   mesh: THREE.Mesh;
   bornAt: number;
@@ -47,9 +73,11 @@ export class Vfx {
   private readonly burst: THREE.Points;
   private readonly burstVel: Float32Array;
   private burstStart = -1;
-  // build cursor: a square outline + faint fill over the chunk being built,
-  // flashing on each XCH spend so lapped (already paved) chunks still respond
+  // build cursor: the outline + faint fill of the cell being built, flashing on
+  // each XCH spend so lapped (already green) cells still respond
   private readonly cursor = new THREE.Group();
+  private readonly cursorLine: THREE.LineSegments;
+  private readonly cursorFill: THREE.Mesh;
   private readonly cursorMats: THREE.Material[] = [];
   private pulseAt = -Infinity;
 
@@ -99,7 +127,7 @@ export class Vfx {
     this.flames = [];
     for (let i = 0; i < TORCH_CAP; i++) {
       const flame = new THREE.Sprite(flameMat());
-      flame.scale.setScalar(0.9);
+      flame.scale.setScalar(0.42); // a small square pixel flame on the torch head
       flame.visible = false;
       scene.add(flame);
       this.flames.push(flame);
@@ -131,14 +159,14 @@ export class Vfx {
     this.burst.visible = false;
     scene.add(this.burst);
 
-    // build cursor
-    const half = FLOOR_SIDE / 2;
-    const outline = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(-half, 0, -half),
-      new THREE.Vector3(half, 0, -half),
-      new THREE.Vector3(half, 0, half),
-      new THREE.Vector3(-half, 0, half),
-    ]);
+    // build cursor: geometry is rewritten per cell by setCursor (buffers sized
+    // for the largest cell, so no allocation after construction)
+    const outline = new THREE.BufferGeometry();
+    outline.setAttribute(
+      "position",
+      new THREE.BufferAttribute(new Float32Array(CURSOR_MAX_TILES * 4 * 2 * 3), 3)
+    );
+    outline.setDrawRange(0, 0);
     const lineMat = new THREE.LineBasicMaterial({
       color: MINE.beacon,
       transparent: true,
@@ -147,8 +175,12 @@ export class Vfx {
       blending: THREE.AdditiveBlending,
       fog: false,
     });
-    const fillGeo = new THREE.PlaneGeometry(FLOOR_SIDE, FLOOR_SIDE);
-    fillGeo.rotateX(-Math.PI / 2);
+    const fillGeo = new THREE.BufferGeometry();
+    fillGeo.setAttribute(
+      "position",
+      new THREE.BufferAttribute(new Float32Array(CURSOR_MAX_TILES * 6 * 3), 3)
+    );
+    fillGeo.setDrawRange(0, 0);
     const fillMat = new THREE.MeshBasicMaterial({
       color: MINE.beacon,
       transparent: true,
@@ -157,8 +189,13 @@ export class Vfx {
       blending: THREE.AdditiveBlending,
       fog: false,
     });
+    this.cursorLine = new THREE.LineSegments(outline, lineMat);
+    this.cursorFill = new THREE.Mesh(fillGeo, fillMat);
+    // the buffers are rewritten in place; skip per-change bounds recomputation
+    this.cursorLine.frustumCulled = false;
+    this.cursorFill.frustumCulled = false;
     this.cursorMats.push(lineMat, fillMat);
-    this.cursor.add(new THREE.LineLoop(outline, lineMat), new THREE.Mesh(fillGeo, fillMat));
+    this.cursor.add(this.cursorLine, this.cursorFill);
     this.cursor.visible = false;
     scene.add(this.cursor);
   }
@@ -201,9 +238,19 @@ export class Vfx {
     return this.ringRadius;
   }
 
-  /** Move the build cursor onto the chunk the current block is building. */
-  setCursor(chunk: XZ): void {
-    this.cursor.position.set(chunk.x, chunkElevation(chunk) + 1.03, chunk.z);
+  /** Move the build cursor onto the cell of the block slot being built. */
+  setCursor(index: number): void {
+    const { line, fill } = cursorGeometry(cellTiles(index));
+    const linePos = this.cursorLine.geometry.getAttribute("position") as THREE.BufferAttribute;
+    (linePos.array as Float32Array).set(line);
+    linePos.needsUpdate = true;
+    this.cursorLine.geometry.setDrawRange(0, line.length / 3);
+    const fillPos = this.cursorFill.geometry.getAttribute("position") as THREE.BufferAttribute;
+    (fillPos.array as Float32Array).set(fill);
+    fillPos.needsUpdate = true;
+    this.cursorFill.geometry.setDrawRange(0, fill.length / 3);
+    const chunk = chunkPosition(index);
+    this.cursor.position.set(chunk.x, slotLevel(index) + 1.03, chunk.z);
     this.cursor.visible = true;
   }
 
@@ -232,7 +279,8 @@ export class Vfx {
         b.mesh.visible = false;
       }
     }
-    const night = 1 - this.sky.daylight;
+    // flames come up through dusk rather than hanging as pale squares all day
+    const night = THREE.MathUtils.smoothstep(1 - this.sky.daylight, 0.35, 0.85);
     for (let i = 0; i < TORCH_CAP; i++) {
       const lit = i < this.litCount;
       const flame = this.flames[i];

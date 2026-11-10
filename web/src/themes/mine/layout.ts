@@ -1,114 +1,202 @@
-import { mulberry32, type XZ } from "../shared/util.js";
+import type { XZ } from "../shared/util.js";
 
 const GOLDEN_ANGLE = Math.PI * (3 - Math.sqrt(5));
 
 /** How many block slots the spiral cycles through before reusing chunk centers. */
 export const MAX_BLOCK_SLOTS = 200;
 
-export const FLOOR_SIDE = 7; // odd → a true center cell at (0,0)
-export const FLOOR_TILES = FLOOR_SIDE * FLOOR_SIDE; // 49
-const SPREAD = 3.0; // chunks overlap slightly into one contiguous landmass
+const SPREAD = 3.0; // one slot per 9π ≈ 28 tiles of disc area
+/** How far a slot's land reaches past its center at the island's edge. */
+const EDGE_REACH = 3.5;
+/** A tile farther than this from its nearest center is open sea (bounds rim cells). */
+const CELL_REACH = 4;
 
-/** Block index → chunk center on a phyllotaxis spiral. */
-export function chunkPosition(index: number): XZ {
+/** Block index → continuous point on the phyllotaxis spiral (the Voronoi site). */
+export function spiralPoint(index: number): XZ {
   const angle = index * GOLDEN_ANGLE;
   const radius = SPREAD * Math.sqrt(index);
   return { x: Math.cos(angle) * radius, z: Math.sin(angle) * radius };
 }
 
 /**
+ * Block index → chunk center, snapped to the global integer voxel grid. Every
+ * tile, cube, villager and painting of the block is an integer (col, row)
+ * offset from this point, so the whole island shares one grid.
+ */
+export function chunkPosition(index: number): XZ {
+  const p = spiralPoint(index);
+  return { x: Math.round(p.x) + 0, z: Math.round(p.z) + 0 }; // + 0: no negative zero
+}
+
+/**
  * Radius from the origin to the outer edge of an island of `blockCount` chunks.
  * The outermost chunk sits at the spiral's far end (index blockCount-1); add its
- * footprint half-width so the result encloses the land. Used to frame the camera
- * to the *current* fill so a sparse island isn't stranded in the center of view.
+ * cell's reach so the result encloses the land. Used to frame the camera to the
+ * *current* fill so a sparse island isn't stranded in the center of view.
  */
 export function spiralRadius(blockCount: number): number {
   const outerCenter = blockCount > 1 ? SPREAD * Math.sqrt(blockCount - 1) : 0;
-  return outerCenter + FLOOR_SIDE / 2; // +3.5: tiles reach ±3.5 from chunk center
+  return outerCenter + EDGE_REACH;
 }
 
 export const MAX_ELEVATION = 3;
-
-/** Quantized chunk-center key, so a center round-trips to the same table entry. */
-function centerKey(pos: XZ): number {
-  const xi = Math.round(pos.x * 16);
-  const zi = Math.round(pos.z * 16);
-  return ((xi * 73856093) ^ (zi * 19349663)) >>> 0;
-}
-
-/**
- * Terrace level per block slot, precomputed so that *every* pair of blocks whose
- * land touches steps against the other. The step — an exposed dirt cliff and its
- * shadow — is the only thing delineating where one block ends and the next
- * begins, and a plain per-chunk hash leaves a share of boundaries flat
- * (1-in-2 with two levels, 1-in-4 with four): those blocks merge into one
- * indistinguishable slab.
- *
- * Two chunks touch when their 7×7 footprints overlap, i.e. when their centers
- * are closer than one full footprint width. Greedy graph coloring in spiral
- * order over that neighbor graph — ~200 nodes of degree ≤ 6, run once at module
- * load — resolves it exactly at four levels. If a slot ever did exhaust the
- * levels it falls back to 0 rather than throwing; the test pins that it doesn't.
- */
-const ELEVATIONS: ReadonlyMap<number, number> = (() => {
-  const centers = Array.from({ length: MAX_BLOCK_SLOTS }, (_, i) => chunkPosition(i));
-  const levels = new Array<number>(centers.length).fill(0);
-  for (let i = 0; i < centers.length; i++) {
-    const taken = new Set<number>();
-    for (let j = 0; j < i; j++) {
-      const d = Math.hypot(centers[i].x - centers[j].x, centers[i].z - centers[j].z);
-      if (d < FLOOR_SIDE) taken.add(levels[j]);
-    }
-    let level = 0;
-    while (level <= MAX_ELEVATION && taken.has(level)) level++;
-    levels[i] = level > MAX_ELEVATION ? 0 : level;
-  }
-  return new Map(centers.map((c, i) => [centerKey(c), levels[i]]));
-})();
-
-/**
- * Per-block terrace height (0..MAX_ELEVATION), looked up from the precomputed
- * coloring above. Positions off the spiral (none in practice) hash to a stable
- * level so the function stays total.
- */
-export function chunkElevation(pos: XZ): number {
-  const key = centerKey(pos);
-  const assigned = ELEVATIONS.get(key);
-  if (assigned !== undefined) return assigned;
-  return Math.floor(mulberry32(key)() * (MAX_ELEVATION + 1));
-}
 
 export interface Cell {
   col: number;
   row: number;
 }
 
-const SPACING = 1; // unit cubes
-const CUBE = 1;
-
 export function cellKey(c: Cell): string {
   return `${c.col},${c.row}`;
 }
 
-// Center-first ordering by Chebyshev ring (center, then growing square rings),
-// tie-broken by angle. Deterministic and independent of total count.
-const FLOOR_ORDER: Cell[] = (() => {
-  const half = Math.floor(FLOOR_SIDE / 2); // 3
-  const all: Cell[] = [];
-  for (let col = -half; col <= half; col++)
-    for (let row = -half; row <= half; row++) all.push({ col, row });
-  all.sort((a, b) => {
-    const ra = Math.max(Math.abs(a.col), Math.abs(a.row));
-    const rb = Math.max(Math.abs(b.col), Math.abs(b.row));
-    if (ra !== rb) return ra - rb;
-    return Math.atan2(a.row, a.col) - Math.atan2(b.row, b.col);
-  });
-  return all;
-})();
+/** The tile grid spans [-ISLAND_HALF, ISLAND_HALF] on x and z (with a sea margin
+ *  so a land tile's neighbors are always on the grid). */
+export const ISLAND_HALF = Math.ceil(spiralRadius(MAX_BLOCK_SLOTS)) + 2;
+export const ISLAND_SIDE = ISLAND_HALF * 2 + 1;
+/** Owner of an open-sea tile. */
+export const SEA = -1;
 
-/** Floor tile (layer 0) for the n-th ground cube, center-first. */
-export function floorCell(n: number): Cell {
-  return FLOOR_ORDER[n % FLOOR_TILES];
+/** Integer tile (x, z) → index into the island's tile arrays. */
+export function tileIndex(x: number, z: number): number {
+  return (z + ISLAND_HALF) * ISLAND_SIDE + (x + ISLAND_HALF);
+}
+
+/**
+ * The island's land, computed once: one global integer grid, partitioned into
+ * a Voronoi cell per block slot.
+ *
+ * - `owner[tileIndex]` is the slot whose spiral point is nearest that tile
+ *   (ties → the lower slot), or SEA beyond the island's rim. Cells therefore
+ *   tile the disc with no gaps and no overlaps, ~28 tiles each.
+ * - `cells[slot]` lists the slot's tiles as (col, row) offsets from its
+ *   `chunkPosition`, center-first (distance, then angle) — the order XCH spends
+ *   green them and specials seat on them.
+ * - `levels[slot]` is the cell's terrace level (see `terraceLevels`): every pair
+ *   of cells whose tiles share an edge steps against the other. The step — an
+ *   exposed cliff and its shadow — is what delineates one block from the next.
+ */
+function buildIsland(): {
+  owner: Int16Array;
+  cells: ReadonlyArray<ReadonlyArray<Cell>>;
+  levels: Uint8Array;
+} {
+  const sites = Array.from({ length: MAX_BLOCK_SLOTS }, (_, i) => spiralPoint(i));
+  const anchors = sites.map((_, i) => chunkPosition(i));
+  const rim2 = spiralRadius(MAX_BLOCK_SLOTS) ** 2;
+  const reach2 = CELL_REACH ** 2;
+  const owner = new Int16Array(ISLAND_SIDE * ISLAND_SIDE).fill(SEA);
+  const cells: Cell[][] = sites.map(() => []);
+  for (let z = -ISLAND_HALF; z <= ISLAND_HALF; z++) {
+    for (let x = -ISLAND_HALF; x <= ISLAND_HALF; x++) {
+      if (x * x + z * z > rim2) continue;
+      let best = SEA;
+      let bestD = reach2;
+      for (let i = 0; i < sites.length; i++) {
+        const dx = sites[i].x - x;
+        const dz = sites[i].z - z;
+        const d = dx * dx + dz * dz;
+        if (d < bestD) {
+          bestD = d;
+          best = i;
+        }
+      }
+      if (best === SEA) continue;
+      owner[tileIndex(x, z)] = best;
+      cells[best].push({ col: x - anchors[best].x, row: z - anchors[best].z });
+    }
+  }
+  for (const cell of cells) {
+    cell.sort(
+      (a, b) =>
+        a.col * a.col + a.row * a.row - (b.col * b.col + b.row * b.row) ||
+        Math.atan2(a.row, a.col) - Math.atan2(b.row, b.col)
+    );
+  }
+
+  // cell adjacency: two cells touch when any of their tiles share an edge
+  const touching: Array<Set<number>> = sites.map(() => new Set<number>());
+  for (let i = 0; i < MAX_BLOCK_SLOTS; i++) {
+    for (const c of cells[i]) {
+      const x = anchors[i].x + c.col;
+      const z = anchors[i].z + c.row;
+      for (const o of [owner[tileIndex(x + 1, z)], owner[tileIndex(x, z + 1)]]) {
+        if (o === SEA || o === i) continue;
+        touching[i].add(o);
+        touching[o].add(i);
+      }
+    }
+  }
+  return { owner, cells, levels: terraceLevels(touching) };
+}
+
+/**
+ * Terrace level per cell such that touching cells never share one, preferring
+ * gentle steps. Coordinate descent, sweeping in spiral order: each cell takes
+ * the level with the fewest same-level neighbors, then the smallest summed
+ * squared step to its neighbors, then the lowest. That objective only ever
+ * decreases, so the sweeps settle — on a result with no flat boundary (the
+ * tests pin that) and mostly one-block steps rather than sheer three-block walls.
+ */
+function terraceLevels(touching: ReadonlyArray<ReadonlySet<number>>): Uint8Array {
+  const levels = new Uint8Array(touching.length);
+  const UNSET = 255;
+  levels.fill(UNSET);
+  for (let sweep = 0; sweep < 64; sweep++) {
+    let changed = false;
+    for (let i = 0; i < levels.length; i++) {
+      let best = 0;
+      let bestScore = Infinity;
+      for (let level = 0; level <= MAX_ELEVATION; level++) {
+        let score = 0;
+        for (const n of touching[i]) {
+          if (levels[n] === UNSET) continue;
+          const step = level - levels[n];
+          score += step === 0 ? 1e6 : step * step;
+        }
+        if (score < bestScore) {
+          bestScore = score;
+          best = level;
+        }
+      }
+      if (levels[i] !== best) {
+        levels[i] = best;
+        changed = true;
+      }
+    }
+    if (!changed) break;
+  }
+  return levels;
+}
+
+const ISLAND = buildIsland();
+
+/** Per-tile owner slot (SEA for water), indexed by `tileIndex`. Read-only. */
+export const TILE_OWNER: Int16Array = ISLAND.owner;
+
+/** Slot owning the integer tile (x, z), or SEA (also for anything off the grid). */
+export function tileOwner(x: number, z: number): number {
+  if (Math.abs(x) > ISLAND_HALF || Math.abs(z) > ISLAND_HALF) return SEA;
+  return ISLAND.owner[tileIndex(x, z)];
+}
+
+/** A slot's tiles as offsets from its `chunkPosition`, center-first. */
+export function cellTiles(index: number): ReadonlyArray<Cell> {
+  return ISLAND.cells[index];
+}
+
+/** Terrace level (0..MAX_ELEVATION) of a block slot's cell. */
+export function slotLevel(index: number): number {
+  return ISLAND.levels[index];
+}
+
+/**
+ * Terrace level of the land at a world position — for a chunk center, its own
+ * cell's level. Open sea is level 0, so the function stays total.
+ */
+export function chunkElevation(pos: XZ): number {
+  const o = tileOwner(Math.round(pos.x), Math.round(pos.z));
+  return o === SEA ? 0 : ISLAND.levels[o];
 }
 
 export interface Seat {
@@ -117,16 +205,9 @@ export interface Seat {
   layer: number; // ≥ 1: specials sit above the floor
 }
 
-/** Special (CAT/NFT/DID) seating: fill the footprint at layer 1, then stack. */
-export function seatCell(seatIndex: number): Seat {
-  const cell = FLOOR_ORDER[seatIndex % FLOOR_TILES];
-  const layer = 1 + Math.floor(seatIndex / FLOOR_TILES);
-  return { col: cell.col, row: cell.row, layer };
-}
-
-/** Cell + layer → local offset (relative to the chunk center). */
+/** Cell + layer → local offset (relative to the chunk center). Unit cubes. */
 export function cellLocal(cell: Cell, layer: number): { x: number; z: number; y: number } {
-  return { x: cell.col * SPACING, z: cell.row * SPACING, y: layer * CUBE };
+  return { x: cell.col, z: cell.row, y: layer };
 }
 
 /** Seat height in layers per special kind: a cube fills one layer, a villager
@@ -134,27 +215,31 @@ export function cellLocal(cell: Cell, layer: number): { x: number; z: number; y:
 export const SEAT_HEIGHT = { cat: 1, did: 2, nft: 3 } as const;
 
 /** Specials placed per block (airdrops stay bounded). */
-export const SPECIAL_BUDGET = 600;
+export const SPECIAL_BUDGET = 340; // ~12 layers over a ~28-tile cell
 
 /**
- * Column-aware seating for one chunk's specials. Each floor cell keeps its
- * column top (next free layer); a special takes the lowest column, center-first,
- * and raises it by its own height — so a painting or villager never shares
- * space with a cube or another special stacked into the same column. With only
- * 1-layer cubes this reduces exactly to `seatCell` (fill the footprint at layer
- * 1, then stack).
+ * Column-aware seating for one chunk's specials, over that chunk's own cell
+ * tiles. Each tile keeps its column top (next free layer); a special takes the
+ * lowest column, center-first, and raises it by its own height — so a painting
+ * or villager never shares space with a cube or another special stacked into
+ * the same column. With only 1-layer cubes this fills the cell at layer 1 in
+ * tile order, then stacks.
  */
 export class ChunkSeats {
-  private readonly tops = new Array<number>(FLOOR_TILES).fill(1);
+  private readonly tops: number[];
   private placed = 0;
   /** coin ids seated in this chunk — cleared when the spiral laps back here */
   readonly coinIds = new Set<string>();
 
+  constructor(private readonly tiles: ReadonlyArray<Cell>) {
+    this.tops = new Array<number>(tiles.length).fill(1);
+  }
+
   next(height: number, coinId?: string): Seat | null {
-    if (this.placed >= SPECIAL_BUDGET) return null;
+    if (this.placed >= SPECIAL_BUDGET || this.tiles.length === 0) return null;
     let best = 0;
-    for (let i = 1; i < FLOOR_TILES; i++) if (this.tops[i] < this.tops[best]) best = i;
-    const cell = FLOOR_ORDER[best];
+    for (let i = 1; i < this.tops.length; i++) if (this.tops[i] < this.tops[best]) best = i;
+    const cell = this.tiles[best];
     const layer = this.tops[best];
     this.tops[best] += Math.max(1, height);
     this.placed++;
@@ -168,15 +253,15 @@ export class ChunkSeats {
  * MAX_BLOCK_SLOTS blocks; when it laps back onto a slot, `startChunk` returns
  * the coin ids the previous visit seated there so the caller can clear those
  * still-alive specials (otherwise the new lap's seats z-fight with them), and
- * the slot's seating restarts from an empty footprint.
+ * the slot's seating restarts from an empty cell.
  */
 export class SpecialSeats {
   private readonly chunks = new Map<number, ChunkSeats>();
-  private current = new ChunkSeats();
+  private current = new ChunkSeats(cellTiles(0));
 
   startChunk(index: number): ReadonlySet<string> {
     const stale = this.chunks.get(index)?.coinIds ?? new Set<string>();
-    this.current = new ChunkSeats();
+    this.current = new ChunkSeats(cellTiles(index));
     this.chunks.set(index, this.current);
     return stale;
   }

@@ -9,6 +9,7 @@ import { BlockSlots, isReplayed } from "./blocks.js";
 import { Lantern } from "./lantern.js";
 import { COLORS } from "./palette.js";
 import { createSky } from "./sky.js";
+import { createTreeline } from "./trees.js";
 import { createPostFx } from "../shared/postfx.js";
 import { createOrbitControl } from "../shared/orbit.js";
 
@@ -66,6 +67,7 @@ export function startGrove(canvas: HTMLCanvasElement, feed: GroveFeed) {
 
   const sky = createSky(scene, reducedMotion);
   const ground = createGround(scene, reducedMotion);
+  createTreeline(scene);
   const lantern = new Lantern(scene);
   lantern.setReducedMotion(reducedMotion);
 
@@ -77,6 +79,8 @@ export function startGrove(canvas: HTMLCanvasElement, feed: GroveFeed) {
     bloomStrength: 0.1,
     bloomRadius: 0.4,
     bloomThreshold: 0.5,
+    // darkened corners pull the eye into the glade
+    grade: { vignette: 0.32 },
   });
 
   // wired up by later tasks (flora, fireflies):

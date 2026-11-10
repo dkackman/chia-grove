@@ -20,7 +20,7 @@ export class EmptyWall {
       metalness: 0.6,
       roughness: 0.35,
       emissive: GALLERY.brass,
-      emissiveIntensity: 0.2,
+      emissiveIntensity: 0.6,
     });
     const hookGeo = new THREE.TorusGeometry(0.05, 0.012, 6, 16, Math.PI);
     hookGeo.rotateZ(Math.PI); // an upturned "U" hook
@@ -50,7 +50,7 @@ export class EmptyWall {
         map,
         roughness: 1,
         emissive: GALLERY.matIvory,
-        emissiveIntensity: 0.12,
+        emissiveIntensity: 0.5,
       })
     );
     placard.position.set(placardX, placardY, WALL.z + 0.02);

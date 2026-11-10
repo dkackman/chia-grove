@@ -5,11 +5,12 @@ import {
   SpecialSeats,
   SEAT_HEIGHT,
   SPECIAL_BUDGET,
-  FLOOR_TILES,
   MAX_BLOCK_SLOTS,
   TORCH_MARGIN,
-  seatCell,
+  cellTiles,
+  chunkPosition,
   spiralRadius,
+  tileOwner,
   torchRadius,
   cellKey,
 } from "../src/themes/mine/layout.js";
@@ -21,13 +22,30 @@ function occupied(seat: Seat, height: number): string[] {
   return Array.from({ length: height }, (_, i) => `${cellKey(seat)},${seat.layer + i}`);
 }
 
-test("all-cube seating reduces exactly to seatCell", () => {
-  const s = new ChunkSeats();
-  for (let i = 0; i < FLOOR_TILES * 3; i++) expect(s.next(1)).toEqual(seatCell(i));
+/** A mid-island slot: an ordinary interior cell. */
+const SLOT = 57;
+const TILES = cellTiles(SLOT);
+
+test("all-cube seating fills the cell's own tiles center-first, then stacks", () => {
+  const s = new ChunkSeats(TILES);
+  for (let layer = 1; layer <= 3; layer++) {
+    for (const tile of TILES) expect(s.next(1)).toEqual({ ...tile, layer });
+  }
 });
 
-test("mixed specials never share a voxel, even past 49 per block", () => {
-  const s = new ChunkSeats();
+test("every seat stands on a tile of its own block's cell", () => {
+  for (let slot = 0; slot < MAX_BLOCK_SLOTS; slot++) {
+    const s = new ChunkSeats(cellTiles(slot));
+    const center = chunkPosition(slot);
+    for (let i = 0; i < cellTiles(slot).length + 5; i++) {
+      const seat = s.next(1)!;
+      expect(tileOwner(center.x + seat.col, center.z + seat.row)).toBe(slot);
+    }
+  }
+});
+
+test("mixed specials never share a voxel, even past one per tile", () => {
+  const s = new ChunkSeats(TILES);
   const used = new Set<string>();
   const heights = [SEAT_HEIGHT.cat, SEAT_HEIGHT.nft, SEAT_HEIGHT.did];
   for (let i = 0; i < 300; i++) {
@@ -41,11 +59,11 @@ test("mixed specials never share a voxel, even past 49 per block", () => {
 });
 
 test("a painting's column is raised by three layers before anything stacks on it", () => {
-  const s = new ChunkSeats();
+  const s = new ChunkSeats(TILES);
   const painting = s.next(SEAT_HEIGHT.nft)!; // center, layer 1
   expect(painting).toEqual({ col: 0, row: 0, layer: 1 });
-  for (let i = 1; i < FLOOR_TILES; i++) s.next(1); // fill the rest of layer 1
-  for (let i = 0; i < FLOOR_TILES - 1; i++) s.next(1); // and layer 2 (off-center)
+  for (let i = 1; i < TILES.length; i++) s.next(1); // fill the rest of layer 1
+  for (let i = 0; i < TILES.length - 1; i++) s.next(1); // and layer 2 (off-center)
   // the center column's top is 4; every other column is at 3 → next goes elsewhere
   const next = s.next(1)!;
   expect(next.layer).toBe(3);
@@ -53,7 +71,7 @@ test("a painting's column is raised by three layers before anything stacks on it
 });
 
 test("the per-block budget caps seating", () => {
-  const s = new ChunkSeats();
+  const s = new ChunkSeats(TILES);
   for (let i = 0; i < SPECIAL_BUDGET; i++) expect(s.next(1)).not.toBeNull();
   expect(s.next(1)).toBeNull();
 });
@@ -67,7 +85,7 @@ test("lapping back onto a slot returns its previous specials and restarts seatin
   seats.next(1, "c");
   const stale = seats.startChunk(7); // the spiral wrapped
   expect([...stale].sort()).toEqual(["a", "b"]);
-  // fresh footprint: first seat is the center at layer 1 again
+  // fresh cell: first seat is the center at layer 1 again
   expect(seats.next(1, "d")).toEqual({ col: 0, row: 0, layer: 1 });
   // and the next lap only sees what this lap seated
   expect([...seats.startChunk(7)]).toEqual(["d"]);

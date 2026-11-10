@@ -299,3 +299,24 @@ test("a new piece's lamp switches on over the ramp instead of instantly", () => 
   pieces.update(1, 1);
   expect(pieces.lampOnFor(obj)).toBe(1);
 });
+
+test("a flagged permanent-collection piece comes off the wall entirely", () => {
+  const pieces = new Pieces(new THREE.Scene(), 28);
+  pieces.add(nft(id(1), lid(1)), new THREE.Texture(), undefined, true);
+  pieces.add(nft(id(2), lid(2)), new THREE.Texture());
+  expect(pieces.takeDownPermanent(lid(1))).toBe(true);
+  expect(pieces.hasLauncher(lid(1))).toBe(false);
+  expect(pieces.count()).toBe(1);
+  // a live piece is left to the usual placeholder treatment, and unknown ids are ignored
+  expect(pieces.takeDownPermanent(lid(2))).toBe(false);
+  expect(pieces.takeDownPermanent(lid(9))).toBe(false);
+  expect(pieces.count()).toBe(1);
+});
+
+test("permanent-collection pieces carry no block plaque and don't consume the block marker", () => {
+  const pieces = new Pieces(new THREE.Scene(), 28);
+  pieces.add(nft(id(1), lid(1), 0), new THREE.Texture(), undefined, true);
+  expect(pieces.hasPlaque(pieces.pickables()[0])).toBe(false);
+  pieces.add(nft(id(2), lid(2), 50), new THREE.Texture());
+  expect(pieces.hasPlaque(pieces.pickables()[1])).toBe(true);
+});

@@ -15,6 +15,7 @@ Environment=NODE_ENV=production
 Environment=AXIOM_DATASET=chia-grove
 Environment=LOG_LEVEL=info
 Environment=CONTENT_DB_PATH=/var/lib/chia-grove/content-filter.sqlite
+Environment=COLLECTION_DB_PATH=/var/lib/chia-grove/collection.sqlite
 
 # Secrets must NOT appear in this file. Set them via a systemd drop-in so they
 # are never committed to the repo. On the droplet run:

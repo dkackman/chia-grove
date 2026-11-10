@@ -10,13 +10,19 @@ import { registerImageProxy } from "./img-proxy.js";
 import { registerBlockLookup, type BlockLookupDeps } from "./block-lookup.js";
 import type { MediaIndex } from "./media-index.js";
 import { readVersion } from "../version.js";
-import { PROTOCOL_VERSION } from "@grove/shared";
+import { PROTOCOL_VERSION, type CollectionResponse } from "@grove/shared";
+import type { Collection } from "./collection.js";
+
+/** Pieces `GET /collection` returns when no (valid) `limit` is given, and its ceiling. */
+const COLLECTION_DEFAULT = 18;
+const COLLECTION_MAX = 48;
 
 export async function buildServer(
   hub: Hub,
   media: MediaIndex,
   logger: Logger,
-  blockLookup?: BlockLookupDeps
+  blockLookup?: BlockLookupDeps,
+  collection?: Pick<Collection, "list">
 ): Promise<FastifyInstance> {
   // trust the local Caddy reverse proxy (see deploy/Caddyfile) so request.ip
   // reflects the real client via X-Forwarded-For — the image proxy rate-limits
@@ -49,6 +55,17 @@ export async function buildServer(
     gitSha: version.gitSha,
     protocolVersion: PROTOCOL_VERSION,
   }));
+  // the gallery's permanent collection (see collection.ts): launcher ids only,
+  // art is still fetched through /img. Without a collection the route answers
+  // empty rather than 404, so the client needs no special case.
+  app.get<{ Querystring: { limit?: string } }>("/collection", async (request, reply) => {
+    const asked = Number(request.query.limit);
+    const limit =
+      Number.isInteger(asked) && asked > 0 ? Math.min(asked, COLLECTION_MAX) : COLLECTION_DEFAULT;
+    reply.header("Cache-Control", "public, max-age=30");
+    const body: CollectionResponse = { pieces: collection ? collection.list(limit) : [] };
+    return body;
+  });
   registerImageProxy(app, media);
   if (blockLookup) registerBlockLookup(app, blockLookup, media);
 

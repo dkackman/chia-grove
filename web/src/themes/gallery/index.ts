@@ -8,7 +8,8 @@ export const gallery: Visualization = {
   id: "gallery",
   label: "gallery",
   legend: [
-    ["sw-canvas", "framed piece — NFT mint"],
+    ["sw-canvas", "framed piece — NFT (new acquisition = mint, red dot = sold)"],
+    ["sw-canvas", "permanent collection — recent NFTs, hung first"],
     ["sw-spotlight", "light warmth — netspace"],
     ["sw-breath", "light pulse — new block"],
     ["sw-reorg", "pieces removed — reorg"],

@@ -177,6 +177,24 @@ export class FloraSystem {
       emissive: COLORS.grassEmissive,
       roughness: 0.8,
     });
+    // Blades are dark at the root and luminous toward the tip (every grass
+    // geometry grows from y = 0 to ~1), so a clump reads as glowing grass with
+    // depth rather than flat green spikes.
+    grassMaterial.onBeforeCompile = (shader) => {
+      shader.vertexShader = shader.vertexShader
+        .replace("#include <common>", "#include <common>\nvarying float vBladeY;")
+        .replace("#include <begin_vertex>", "#include <begin_vertex>\n\tvBladeY = position.y;");
+      shader.fragmentShader = shader.fragmentShader
+        .replace("#include <common>", "#include <common>\nvarying float vBladeY;")
+        .replace(
+          "#include <color_fragment>",
+          "#include <color_fragment>\n\tdiffuseColor.rgb *= mix(0.3, 1.1, vBladeY);"
+        )
+        .replace(
+          "#include <emissivemap_fragment>",
+          "#include <emissivemap_fragment>\n\ttotalEmissiveRadiance *= mix(0.08, 2.4, vBladeY * vBladeY);"
+        );
+    };
     this.grass = grassGeometries().map(
       (geometry) => new InstancedKind(scene, geometry, grassMaterial, CAPS.grass, 0.09)
     );

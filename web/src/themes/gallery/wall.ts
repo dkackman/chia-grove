@@ -75,6 +75,7 @@ export function createWall(scene: THREE.Scene): WallHandle {
     },
     setLight(ambient: number, lamps: number): void {
       wallUniforms.uAmbient.value = ambient;
+      wallUniforms.uTrack.value = lamps * 0.16;
       floorUniforms.ambient.value = ambient;
       floorUniforms.spill.value = lamps;
     },

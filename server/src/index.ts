@@ -9,6 +9,7 @@ import { Hub } from "./web/hub.js";
 import { RingBuffer } from "./web/ring-buffer.js";
 import { buildServer } from "./web/server.js";
 import { MediaIndex } from "./web/media-index.js";
+import { Collection } from "./web/collection.js";
 import { ContentFilter } from "./content-filter/index.js";
 import { ContentStore } from "./content-filter/store.js";
 import { WhitelistRegistry } from "./content-filter/signals/whitelist-registry.js";
@@ -21,8 +22,14 @@ process.on("unhandledRejection", (reason) => {
 process.on("uncaughtException", (error) => {
   // log and exit: a process that limps on after an uncaught exception can
   // look "up" to systemd while serving nothing — let Restart=always recover
+  // stderr first, synchronously: with the Axiom transport pino writes from a
+  // worker thread, so an immediate exit would lose the log line entirely
+  console.error("uncaught exception:", error);
   log.error({ err: error }, "uncaught exception");
-  process.exit(1);
+  // give the transport a moment to flush to Axiom, but never hang on it
+  const exit = () => process.exit(1);
+  setTimeout(exit, 2000).unref();
+  log.flush(exit);
 });
 
 // Number() on a non-numeric env value yields NaN rather than throwing, which
@@ -69,13 +76,58 @@ try {
     "content-filter store failed to open (degrading to in-memory-only)"
   );
 }
+// The gallery's permanent collection. Stricter than the live feed (which fails
+// open): a piece is listed only while its persisted verdict is positively
+// clean — never anything marked sensitive or blocked, and, when Vision
+// SafeSearch is on, only art it has actually checked (or the allow-list
+// vouched for). No verdict store, or a store error, means nothing is shown.
+const SAFESEARCH_ON = !!process.env.GOOGLE_VISION_API_KEY;
+const COLLECTION_DB_PATH = process.env.COLLECTION_DB_PATH ?? "./data/collection.sqlite";
+let collection: Collection | undefined;
+try {
+  collection = new Collection(COLLECTION_DB_PATH, media, {
+    isClean: (launcherId) => {
+      const verdict = contentStore?.get(launcherId);
+      if (!verdict || verdict.disposition !== "ok") return false;
+      return !SAFESEARCH_ON || verdict.safesearchChecked;
+    },
+  });
+} catch (err) {
+  log.error(
+    { path: COLLECTION_DB_PATH, err },
+    "collection store failed to open (gallery collection disabled)"
+  );
+}
+// a fresh install starts from art SafeSearch has already cleared, rather than
+// an empty wall until enough new NFT spends arrive
+try {
+  if (collection && contentStore && collection.size === 0) {
+    const seeded = collection.seed(contentStore.recentClean(60));
+    if (seeded > 0) log.info({ seeded }, "collection seeded from verified-clean NFTs");
+  }
+} catch (err) {
+  log.warn({ err }, "collection seed failed");
+}
+/** Collection upkeep must never disturb ingest. */
+function withCollection(what: string, fn: (c: Collection) => void): void {
+  if (!collection) return;
+  try {
+    fn(collection);
+  } catch (err) {
+    log.warn({ err }, `collection ${what} failed`);
+  }
+}
 const whitelistRegistry = new WhitelistRegistry({ gistUrl: process.env.WHITELIST_GIST_URL });
 await whitelistRegistry.start();
 const contentFilter = new ContentFilter(media, {
   store: contentStore,
   googleApiKey: process.env.GOOGLE_VISION_API_KEY,
   whitelist: whitelistRegistry.get(),
-  onFlag: (e) => hub.publish([e]),
+  onFlag: (e) => {
+    // flagged after the fact: out of the permanent collection for good
+    withCollection("remove", (c) => c.remove(e.launcherId));
+    hub.publish([e]);
+  },
   safesearchSweepIntervalMs: envInt("SAFESEARCH_SWEEP_INTERVAL_MS", 600_000),
   // Runs standalone without a Vision key, or in shadow mode alongside Vision
   // if one is set (see safesearch-worker.ts). Unset by default; opting in
@@ -139,6 +191,9 @@ const poller = new CoinsetPoller(
       }
       hub.publish(events);
       const sprouts = events.filter((e): e is SproutEvent => e.type === "sprout");
+      withCollection("offer", (c) => {
+        for (const sprout of sprouts) c.offer(sprout);
+      });
       log.info(
         {
           height: block.height,
@@ -165,13 +220,14 @@ const poller = new CoinsetPoller(
     },
     onReorg(forkHeight) {
       log.warn({ forkHeight }, "reorg");
+      withCollection("reorg", (c) => c.removeFrom(forkHeight));
       hub.publish([{ type: "reorg", forkHeight }]);
     },
   },
   { pollIntervalMs: POLL_INTERVAL_MS, backfillBlocks: BACKFILL_BLOCKS }
 );
 
-const app = await buildServer(hub, media, log, { rpc: rpcView, cats, contentFilter });
+const app = await buildServer(hub, media, log, { rpc: rpcView, cats, contentFilter }, collection);
 await app.listen({ port: PORT, host: "0.0.0.0" });
 poller.start();
 mempool.start();
@@ -192,6 +248,7 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
     cats.stop();
     await app.close();
     contentStore?.close();
+    collection?.close();
     process.exit(0);
   });
 }

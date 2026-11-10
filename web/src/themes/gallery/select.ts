@@ -10,9 +10,14 @@ export function shouldHang(event: SproutEvent): boolean {
 }
 
 /**
- * The wall label a hung piece wears: a fresh mint is a "new acquisition"; any
- * other spend of an NFT (a transfer or sale) gets the gallery's red "sold" dot.
+ * The wall label a hung piece wears: a piece from the permanent collection says
+ * so; otherwise a fresh mint is a "new acquisition" and any other spend of an
+ * NFT (a transfer or sale) gets the gallery's red "sold" dot.
  */
-export function hangTag(event: SproutEvent): "acquisition" | "sold" {
+export function hangTag(
+  event: SproutEvent,
+  permanent = false
+): "collection" | "acquisition" | "sold" {
+  if (permanent) return "collection";
   return event.mint ? "acquisition" : "sold";
 }

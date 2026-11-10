@@ -23,7 +23,11 @@ export function startMine(canvas: HTMLCanvasElement, feed: GroveFeed) {
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 600);
 
-  scene.add(new THREE.HemisphereLight(0xcfe6ff, 0x3a3326, 0.4));
+  // Fill light does the job of Minecraft's fixed per-face shading: block sides
+  // facing away from the sun still read as lit dirt, never black. It follows
+  // the day-night cycle in update() so nights stay dark and moody.
+  const hemi = new THREE.HemisphereLight(0xdcecff, 0x8f8272, 1);
+  scene.add(hemi);
   const sky = createMineSky(scene, reducedMotion);
   const water = createWater(scene);
   const clouds = createClouds(scene, scene.fog as THREE.FogExp2, reducedMotion);
@@ -34,12 +38,13 @@ export function startMine(canvas: HTMLCanvasElement, feed: GroveFeed) {
     bloomStrength: 0.07,
     bloomRadius: 0.5,
     bloomThreshold: 0.82,
+    grade: { saturation: 1.1, vignette: 0.14 },
   });
 
   // wired up by later tasks (island/cats/structures/vfx via index.ts)
   let onSprout = (_event: SproutEvent, _chunk: XZ, _height: number) => {};
   let onAmbientExtra = (_mempoolSize: number) => {};
-  let onBlockExtra = (_chunk: XZ, _index: number, _live: boolean) => {};
+  let onBlockExtra = (_chunk: XZ, _index: number, _height: number, _live: boolean) => {};
   let onReorgExtra = (_forkHeight: number, _forkChunk: XZ | null) => {};
   let onContentFlag = (_launcherId: string) => {};
   let extraUpdate = (_dt: number, _t: number) => {};
@@ -57,7 +62,7 @@ export function startMine(canvas: HTMLCanvasElement, feed: GroveFeed) {
         // snapshot replay (and catch-up after a reconnect) delivers old blocks
         // in a burst — flag them so per-block fanfare stays quiet
         const live = event.timestamp * 1000 > Date.now() - REPLAY_AGE_MS;
-        onBlockExtra(currentChunk, index, live);
+        onBlockExtra(currentChunk, index, event.height, live);
         break;
       }
       case "sprout":
@@ -81,12 +86,13 @@ export function startMine(canvas: HTMLCanvasElement, feed: GroveFeed) {
   });
   feed.onStatus((status) => sky.setSignalLost(status === "stale"));
 
-  // Camera distance tracks the island's *current* extent so a sparse island
-  // isn't stranded in the center of the view and a full one still fits frame.
-  // Factors reproduce the original 120-block framing (radius 38 / height 17 at
-  // spiral edge ~36.2); the spiral grows as sqrt(blocks) so the camera trails it.
-  // MIN_CAM_DIST floors it so the first few blocks aren't framed from underwater.
-  const MIN_CAM_DIST = 14;
+  // Camera distance tracks the island's *current* extent so a young island
+  // isn't stranded in the center of the view and a full one still fits frame:
+  // the island is one solid disc, so the camera stands 1.6 radii out and 0.7 up,
+  // which keeps both its near and far shore in a 55° frame. The spiral grows as
+  // sqrt(blocks) so the camera trails it. MIN_CAM_DIST floors it so the first
+  // few blocks aren't framed from underwater.
+  const MIN_CAM_DIST = 10;
   let camDist = MIN_CAM_DIST;
   function update(dt: number, t: number): void {
     // Reduced-motion: frame the full island statically (no per-block dolly, in
@@ -98,15 +104,17 @@ export function startMine(canvas: HTMLCanvasElement, feed: GroveFeed) {
     camDist += (target - camDist) * (reducedMotion ? 1 : Math.min(1, dt * 0.8));
 
     const angle = (reducedMotion ? 0.8 : t * 0.015) + orbit.getOffset();
-    const radius = camDist * 1.05 + (reducedMotion ? 0 : Math.sin(t * 0.06) * 3);
+    // the slow drift only ever backs away from the 1.6-radius framing distance
+    const radius = camDist * 1.6 + (reducedMotion ? 0 : (1 + Math.sin(t * 0.06)) * 3);
     camera.position.set(
       Math.cos(angle) * radius,
-      camDist * 0.47 + (reducedMotion ? 0 : Math.sin(t * 0.04) * 1.2),
+      camDist * 0.7 + (reducedMotion ? 0 : Math.sin(t * 0.04) * 1.2),
       Math.sin(angle) * radius
     );
     camera.lookAt(0, 3, 0);
 
     sky.update(dt, t, camera);
+    hemi.intensity = 0.55 + 0.5 * sky.daylight;
     clouds.update(t, camera, sky.cloudColor);
     water.update(t);
     extraUpdate(dt, t);
