@@ -99,3 +99,14 @@ export interface Batch {
 }
 
 export type WireMessage = Snapshot | Hello | Batch;
+
+/**
+ * `GET /collection` — the gallery's permanent collection: recently seen image
+ * NFTs whose content verdict is clean, newest first. Plain HTTP (not part of
+ * the WebSocket wire format, so no protocol bump). Each piece is shaped like
+ * the NFT `SproutEvent` it was collected from and never carries `mediaFilter`:
+ * anything marked sensitive or blocked is excluded server-side.
+ */
+export interface CollectionResponse {
+  pieces: SproutEvent[];
+}

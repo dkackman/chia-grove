@@ -14,7 +14,13 @@ export const RAIL_Y = 9.6;
 export const wallUniforms = {
   uAlbedo: { value: new THREE.Color(GALLERY.wallAlbedo) },
   uAmbient: { value: 0.06 }, // room fill reaching the wall; set per frame
+  uTrack: { value: 0.0 }, // ceiling track-light level (scallops along the wall top)
 };
+
+/** Spacing of the ceiling track's spots — one per hanging column (WALL.colStep). */
+export const TRACK_STEP = 3.0;
+/** The track starts with the first column; nothing washes the wall left of this. */
+export const TRACK_START_X = -1.5;
 
 /**
  * Plaster: three octaves of value noise → an albedo multiplier around 1.0.
@@ -52,8 +58,10 @@ export const PLASTER_GLSL = /* glsl */ `
  * a lit top edge and a contact shadow above the floor. Unlit — the room's
  * light arrives as uniforms (ambient here, lamp pools in lights.ts).
  */
-export function createWallMaterial(): THREE.ShaderMaterial {
+export function createWallMaterial(side = false): THREE.ShaderMaterial {
   return new THREE.ShaderMaterial({
+    // the return wall at the corner runs along z, not x, and has no track
+    defines: side ? { SIDE_WALL: "" } : {},
     uniforms: {
       ...wallUniforms,
       uSkirting: { value: new THREE.Color(GALLERY.skirting) },
@@ -68,15 +76,34 @@ export function createWallMaterial(): THREE.ShaderMaterial {
     fragmentShader: /* glsl */ `
       uniform vec3 uAlbedo;
       uniform float uAmbient;
+      uniform float uTrack;
       uniform vec3 uSkirting;
       varying vec3 vWorld;
       ${PLASTER_GLSL}
       void main() {
         float y = vWorld.y;
-        vec2 w = vec2( vWorld.x, y );
+        #ifdef SIDE_WALL
+          vec2 w = vec2( vWorld.z + 91.0, y );
+        #else
+          vec2 w = vec2( vWorld.x, y );
+        #endif
         // ambient gathers around the hang and falls off toward the ceiling
         float v = 0.3 + 0.7 * smoothstep( 11.0, 3.0, y );
-        vec3 col = uAlbedo * plaster( w ) * uAmbient * v;
+        float grain = plaster( w );
+        vec3 col = uAlbedo * grain * uAmbient * v;
+
+        #ifdef SIDE_WALL
+          // the return wall has no lamps of its own: it is lit by what spills
+          // from the hang, so it brightens toward the corner
+          col *= 0.55 + 0.75 * exp( -max( vWorld.z + 3.0, 0.0 ) * 0.16 );
+        #else
+          // ceiling track: each spot throws a soft scallop down the top of the
+          // wall above its column, so even a bare stretch of wall has rhythm
+          float cx = ( fract( vWorld.x / ${TRACK_STEP.toFixed(1)} + 0.5 ) - 0.5 ) * ${TRACK_STEP.toFixed(1)};
+          float scallop = exp( -cx * cx / 0.85 ) * smoothstep( 5.2, 9.3, y )
+                        * step( ${TRACK_START_X.toFixed(1)}, vWorld.x );
+          col += uAlbedo * grain * vec3( 1.0, 0.9, 0.74 ) * scallop * uTrack;
+        #endif
 
         // picture rail: a thin moulding with a lit top edge and a soft shadow below
         float rd = y - ${RAIL_Y.toFixed(2)};

@@ -42,7 +42,7 @@ export const farm: Visualization = {
     const scene = new THREE.Scene();
     // the sky dome (sky.ts) covers the background; this is only a fallback
     scene.background = new THREE.Color(FARM.haze);
-    scene.fog = new THREE.FogExp2(FARM.haze, 0.0038);
+    scene.fog = new THREE.FogExp2(FARM.haze, 0.003);
 
     const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.1, 500);
     scene.add(new THREE.HemisphereLight(0xcfe4ff, 0x4a6238, 0.8));
@@ -53,6 +53,10 @@ export const farm: Visualization = {
       bloomStrength: 0.12,
       bloomRadius: 0.35,
       bloomThreshold: 0.85,
+      // the low sun leaves the turf mostly sky-lit and the haze greys the
+      // middle distance; a touch of saturation and contrast restores the
+      // late-afternoon warmth without retinting the painted landscape
+      grade: { saturation: 1.22, contrast: 1.08, vignette: 0.16 },
     });
 
     const sky = createFarmSky(scene, reducedMotion);

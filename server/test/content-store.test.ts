@@ -202,3 +202,24 @@ test("content_hash is indexed so the dedup lookup is not a full table scan", () 
     db.close();
   }
 });
+
+test("recentClean lists SafeSearch-cleared NFTs with their checked URI, newest first", async () => {
+  const store = new ContentStore(":memory:");
+  const ok = { disposition: "ok" as const };
+  for (const l of ["a", "b", "c", "d"]) store.putCheap(l, `nft-${l}`, ok);
+  store.putSafeSearch(
+    "a",
+    { sensitive: false, adult: "VERY_UNLIKELY", raw: {} },
+    "https://h/a.png"
+  );
+  await new Promise((r) => setTimeout(r, 3));
+  store.putSafeSearch("b", { sensitive: true, adult: "LIKELY", raw: {} }, "https://h/b.png");
+  store.putSafeSearch("c", { sensitive: false, adult: "UNLIKELY", raw: {} }, "https://h/c.png");
+  // "d" was never SafeSearch-checked
+  expect(store.recentClean(10)).toEqual([
+    { launcherId: "c", nftId: "nft-c", uri: "https://h/c.png" },
+    { launcherId: "a", nftId: "nft-a", uri: "https://h/a.png" },
+  ]);
+  expect(store.recentClean(1)).toHaveLength(1);
+  store.close();
+});

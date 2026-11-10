@@ -131,12 +131,13 @@ void main() {
   // the sweep hand: an arc from the head slot toward the next one, filling as
   // the timelords grind out the next proof of time
   float rel = mod(ang - uHeadAngle + TAU, TAU) / (TAU / SLOTS);
-  float arc = step(0.0, rel) * (1.0 - step(uSweep, rel)) * smoothstep(0.25, 0.45, t) * (1.0 - smoothstep(0.75, 0.95, t));
+  // a slim track inside the tick band (a full-width fill bloomed into a slab)
+  float arc = step(0.0, rel) * (1.0 - step(uSweep, rel)) * smoothstep(0.4, 0.47, t) * (1.0 - smoothstep(0.55, 0.62, t));
   float hand = exp(-pow((rel - uSweep) * 40.0, 2.0)) * smoothstep(0.3, 0.5, t) * (1.0 - smoothstep(0.8, 1.0, t));
   float head = exp(-pow(min(rel, SLOTS - rel) * 5.0, 2.0));
 
   vec3 col = vec3(0.3, 0.7, 0.9) * mark * 0.45
-           + vec3(0.25, 1.0, 0.55) * (arc * 0.18 + hand * 0.8)
+           + vec3(0.25, 1.0, 0.55) * (arc * 0.3 + hand * 0.8)
            + vec3(0.6, 1.0, 0.8) * head * tick * 0.35;
   col = mix(col, vec3(1.0, 0.35, 0.2) * length(col), uLost);
   gl_FragColor = vec4(col * visibility(vWorld), 1.0);

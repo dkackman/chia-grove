@@ -20,6 +20,7 @@ interface Piece {
   outerHalfH: number;
   soldDot: THREE.Mesh | null;
   plaque: THREE.Mesh | null; // per-piece block-height plaque (own texture)
+  permanent: boolean; // hung from the permanent collection, not the live feed
   event: SproutEvent; // latest event seen for this NFT
   eventCount: number; // how many events this NFT has had while on the wall
   bornAt: number; // set on first update() frame, drives the arrival bloom
@@ -163,6 +164,28 @@ function acquisitionTag(): THREE.Mesh {
   return new THREE.Mesh(tagGeo, tagMat);
 }
 
+let collectionGeo: THREE.PlaneGeometry | null = null;
+let collectionMat: THREE.MeshStandardMaterial | null = null;
+
+function collectionTag(): THREE.Mesh {
+  collectionGeo ??= new THREE.PlaneGeometry(0.62, 0.1);
+  if (!collectionMat) {
+    const map = wallTextTexture(["PERMANENT COLLECTION"], {
+      width: 344,
+      height: 56,
+      background: "#2b2f33",
+      color: "#d9d2c1",
+      font: "600 21px Georgia, 'Times New Roman', serif",
+    });
+    collectionMat = new THREE.MeshStandardMaterial({
+      color: map ? 0xffffff : 0x2b2f33,
+      map,
+      roughness: 1,
+    });
+  }
+  return new THREE.Mesh(collectionGeo, collectionMat);
+}
+
 function blockPlaque(height: number): THREE.Mesh {
   plaqueGeo ??= new THREE.PlaneGeometry(0.5, 0.13);
   const map = wallTextTexture([`BLOCK ${height.toLocaleString("en-US")}`], {
@@ -280,7 +303,16 @@ export class Pieces {
     this.lights = new PictureLights(scene, cap);
   }
 
-  add(event: SproutEvent, texture: THREE.Texture, video?: HTMLVideoElement): void {
+  /**
+   * Hang a piece in the next slot. `permanent` marks one from the permanent
+   * collection (its own wall tag instead of the acquisition card / sold dot).
+   */
+  add(
+    event: SproutEvent,
+    texture: THREE.Texture,
+    video?: HTMLVideoElement,
+    permanent = false
+  ): void {
     // a content-flag beat the art to the wall (common for slower-loading video
     // NFTs) — hang the remembered placeholder instead of the now-stale art
     const flagged = event.launcherId ? this.pendingSensitive.get(event.launcherId) : undefined;
@@ -340,15 +372,22 @@ export class Pieces {
     // a new block's pieces start, the acquisition card / sold dot at the right
     const labelY = -oy - LABEL_Y;
     let plaque: THREE.Mesh | null = null;
-    if (event.height !== this.lastHeight) {
+    // (a permanent-collection piece is not part of the block flow: no plaque,
+    // and it leaves the "new block" marker alone)
+    if (!permanent && event.height !== this.lastHeight) {
       plaque = blockPlaque(event.height);
       // a narrow frame can't fit plaque and tag side by side: drop the plaque a line
       plaque.position.set(-ox + 0.25, ox < 0.55 ? labelY - 0.16 : labelY, -0.02);
       group.add(plaque);
     }
-    this.lastHeight = event.height;
+    if (!permanent) this.lastHeight = event.height;
     let dot: THREE.Mesh | null = null;
-    if (hangTag(event) === "acquisition") {
+    const tagKind = hangTag(event, permanent);
+    if (tagKind === "collection") {
+      const tag = collectionTag();
+      tag.position.set(ox - 0.31, labelY, -0.02);
+      group.add(tag);
+    } else if (tagKind === "acquisition") {
       const tag = acquisitionTag();
       tag.position.set(ox - 0.23, labelY, -0.02);
       group.add(tag);
@@ -372,6 +411,7 @@ export class Pieces {
       outerHalfW: ox,
       outerHalfH: oy,
       soldDot: dot,
+      permanent,
       plaque,
       event,
       eventCount: 1,
@@ -390,6 +430,11 @@ export class Pieces {
   /** Slot count: at most this many pieces hang before the oldest wraps off. */
   get capacity(): number {
     return this.cap;
+  }
+
+  /** True if a content-flag is being remembered for this (still loading) NFT. */
+  isPendingSensitive(launcherId: string): boolean {
+    return this.pendingSensitive.has(launcherId);
   }
 
   /** True if the NFT with this launcherId is currently hung. */
@@ -415,7 +460,7 @@ export class Pieces {
     if (!piece.soldDot && hangTag(event) === "sold") {
       const dot = soldDot();
       // a sold dot goes just left of the acquisition card
-      dot.position.set(piece.outerHalfW - 0.53, -piece.outerHalfH - LABEL_Y, -0.02);
+      dot.position.set(piece.outerHalfW - 0.7, -piece.outerHalfH - LABEL_Y, -0.02);
       piece.group.add(dot);
       piece.soldDot = dot;
     }
@@ -488,6 +533,19 @@ export class Pieces {
     if (this.hovered === slotId) this.hovered = null;
     if (this.focused === slotId) this.focused = null;
     this.slots[slotId] = null;
+  }
+
+  /**
+   * Take a permanent-collection piece off the wall altogether (it was flagged
+   * after hanging): the collection shows nothing filtered, not even as a
+   * placeholder. Returns false — and does nothing — for a live piece or an NFT
+   * that isn't hung; those keep the usual blurred-placeholder treatment.
+   */
+  takeDownPermanent(launcherId: string): boolean {
+    const slotId = this.byLauncher.get(launcherId);
+    if (slotId === undefined || !this.slots[slotId]?.permanent) return false;
+    this.retire(slotId);
+    return true;
   }
 
   /**

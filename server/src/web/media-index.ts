@@ -26,6 +26,13 @@ export interface MediaEntry {
  */
 export class MediaIndex {
   private readonly store: BoundedMap<string, MediaEntry>;
+  /**
+   * Entries held outside the bounded map so they never evict: the gallery's
+   * permanent collection (web/collection.ts), whose art must stay resolvable
+   * long after its last spend has aged out of the live window. A live entry
+   * for the same launcher wins; the pin is the fallback.
+   */
+  private readonly pinned = new Map<string, MediaEntry>();
 
   constructor(capacity: number) {
     this.store = new BoundedMap(capacity);
@@ -36,15 +43,26 @@ export class MediaIndex {
   }
 
   get(launcherId: string): MediaEntry | undefined {
-    return this.store.get(launcherId);
+    return this.store.get(launcherId) ?? this.pinned.get(launcherId);
   }
 
-  /** Remove an entry so /img?nft=<launcherId> can no longer resolve it. */
+  /** Remove an entry (pinned or not) so /img?nft=<launcherId> can no longer resolve it. */
   delete(launcherId: string): void {
     this.store.delete(launcherId);
+    this.pinned.delete(launcherId);
   }
 
-  /** Iterate every stored [launcherId, entry] pair (insertion order). */
+  /** Keep `entry` resolvable regardless of eviction, until `unpin`/`delete`. */
+  pin(launcherId: string, entry: MediaEntry): void {
+    this.pinned.set(launcherId, entry);
+  }
+
+  /** Drop a pin; a live entry for the launcher (if any) is untouched. */
+  unpin(launcherId: string): void {
+    this.pinned.delete(launcherId);
+  }
+
+  /** Iterate every live [launcherId, entry] pair (insertion order); pins are not included. */
   entries(): IterableIterator<[string, MediaEntry]> {
     return this.store.entries();
   }

@@ -1,5 +1,7 @@
 import * as THREE from "three";
+import type { GroveEvent, SproutEvent } from "@grove/shared";
 import type { GroveFeed } from "../../net/feed.js";
+import { fetchCollection } from "../../net/collection.js";
 import type { VisualizationHandle } from "../types.js";
 import { createPostFx } from "../shared/postfx.js";
 import { createRenderLoop } from "../shared/render-loop.js";
@@ -7,6 +9,7 @@ import { glowTexture } from "../shared/textures.js";
 import { GALLERY } from "./palette.js";
 import { WALL } from "./layout.js";
 import { createWall } from "./wall.js";
+import { createRoom } from "./room.js";
 import { Pieces } from "./pieces.js";
 import { Placard$ } from "./label.js";
 import { PlayButton$ } from "./play-button.js";
@@ -36,6 +39,10 @@ const ART_LOAD_CONCURRENCY = 10;
 // loadedmetadata/seeked/error never fires) — without it, the job would hold
 // its LoadPool slot forever, silently shrinking effective concurrency.
 const ART_LOAD_TIMEOUT_MS = 20_000;
+/** Pieces asked of the permanent collection (six columns of three). */
+const COLLECTION_PIECES = 18;
+/** Longest the live feed is held back while the collection hangs. */
+const COLLECTION_HOLD_MS = 3500;
 const REST_Y = 4.2; // vertical center of the 3-row grid
 const REST_Z = 12; // pulled back so ~10–15 pieces are in frame at once
 const VIEW_AHEAD = 5; // keep the newest column right-of-center while auto-following
@@ -71,9 +78,11 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
     bloomStrength: 0.18,
     bloomRadius: 0.5,
     bloomThreshold: 1.0,
+    grade: { vignette: 0.28 },
   });
 
   const wall = createWall(scene);
+  const room = createRoom(scene);
   const pieces = new Pieces(scene, reducedMotion ? 24 : 60);
   pieces.setReducedMotion(reducedMotion);
   // bare wall before the first NFT: empty hooks + an "installation" placard,
@@ -144,7 +153,91 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
 
   let dustThrottle = 0;
 
-  feed.onEvent((event) => {
+  /**
+   * Queue an NFT for the wall: placeholder straight away if it is filtered,
+   * otherwise fetch its art through the paced load pool and hang it when it
+   * lands. `permanent` marks a piece from the permanent collection. `settled`
+   * fires exactly once, when the NFT has hung or definitely won't.
+   */
+  function hangNft(event: SproutEvent, permanent = false, settled: () => void = () => {}): void {
+    const launcher = event.launcherId;
+    if (!launcher || pieces.hasLauncher(launcher) || !shouldHang(event) || inflight.has(launcher)) {
+      settled();
+      return;
+    }
+    const media = resolveMedia(event);
+    if (media.render === "none") {
+      releaseLauncher(launcher); // audio etc. never hangs
+      settled();
+      return;
+    }
+    if (media.render !== "art") {
+      // blocked/sensitive → hang a neutral placeholder; never fetch the art.
+      // The permanent collection shows nothing filtered at all (the server
+      // withholds such pieces; this is the belt to that pair of braces).
+      // Clone the singleton because pieces disposes mat.map on slot eviction;
+      // a clone keeps the shared source intact so future filtered frames render.
+      if (!permanent) {
+        pieces.add(event, sensitivePlaceholderTexture().clone());
+        noteActivity();
+      }
+      settled();
+      return;
+    }
+    const src = media.src;
+    const kind = media.kind;
+    const poster = thumbnailSrc(event) ?? undefined;
+    const job = inflight.begin(launcher, event.height);
+    const mySeq = nftSeq++;
+    const abandon = (): void => {
+      inflight.settle(job);
+      releaseLauncher(launcher);
+      settled();
+    };
+    artLoads.submit({
+      // if this many newer NFTs have queued behind it, this one would be
+      // wrapped straight off the wall — skip the fetch (and free its guard);
+      // a reorg may also have orphaned it while it queued
+      stillWanted: () => job.live && nftSeq - mySeq < pieces.capacity,
+      onDrop: abandon,
+      onTimeout: abandon,
+      start: (done) => {
+        loadArtTexture(
+          src,
+          kind,
+          (texture, video) => {
+            done(); // release the pool slot regardless of dedup outcome
+            // a load that outlived its timeout, was orphaned by a reorg, or
+            // whose NFT reached the wall another way meanwhile is dropped
+            const live = inflight.settle(job);
+            if (!shouldHangLoaded(live, pieces.hasLauncher(launcher))) {
+              discardArt(texture, video);
+              releaseLauncher(launcher);
+              return; // (a timed-out job already settled via onTimeout)
+            }
+            // flagged while its art was loading: a collection piece is simply
+            // not hung, rather than hung as a placeholder
+            if (permanent && pieces.isPendingSensitive(launcher)) {
+              discardArt(texture, video);
+              pieces.forgetSensitive(launcher);
+              settled();
+              return;
+            }
+            pieces.add(event, texture, video, permanent);
+            noteActivity();
+            settled();
+          },
+          () => {
+            done();
+            abandon();
+          },
+          poster
+        );
+      },
+    });
+  }
+
+  function handleEvent(event: GroveEvent): void {
     switch (event.type) {
       case "sprout": {
         if (event.kind !== "nft") {
@@ -153,67 +246,12 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
           break;
         }
         if (!event.launcherId) break;
-        const launcher = event.launcherId;
-        if (pieces.hasLauncher(launcher)) {
+        if (pieces.hasLauncher(event.launcherId)) {
           // already hung → register activity on the existing frame, no duplicate
-          if (pieces.ping(event)) refreshPlacardIf(launcher);
+          if (pieces.ping(event)) refreshPlacardIf(event.launcherId);
           break;
         }
-        if (!shouldHang(event) || inflight.has(launcher)) break;
-        const media = resolveMedia(event);
-        if (media.render === "none") {
-          releaseLauncher(launcher); // audio etc. never hangs
-          break;
-        }
-        if (media.render !== "art") {
-          // blocked/sensitive → hang a neutral placeholder; never fetch the art.
-          // Clone the singleton because pieces disposes mat.map on slot eviction;
-          // a clone keeps the shared source intact so future filtered frames render.
-          pieces.add(event, sensitivePlaceholderTexture().clone());
-          noteActivity();
-          break;
-        }
-        const src = media.src;
-        const kind = media.kind;
-        const poster = thumbnailSrc(event) ?? undefined;
-        const job = inflight.begin(launcher, event.height);
-        const mySeq = nftSeq++;
-        const abandon = (): void => {
-          inflight.settle(job);
-          releaseLauncher(launcher);
-        };
-        artLoads.submit({
-          // if this many newer NFTs have queued behind it, this one would be
-          // wrapped straight off the wall — skip the fetch (and free its guard);
-          // a reorg may also have orphaned it while it queued
-          stillWanted: () => job.live && nftSeq - mySeq < pieces.capacity,
-          onDrop: abandon,
-          onTimeout: abandon,
-          start: (done) => {
-            loadArtTexture(
-              src,
-              kind,
-              (texture, video) => {
-                done(); // release the pool slot regardless of dedup outcome
-                // a load that outlived its timeout, was orphaned by a reorg, or
-                // whose NFT reached the wall another way meanwhile is dropped
-                const live = inflight.settle(job);
-                if (!shouldHangLoaded(live, pieces.hasLauncher(launcher))) {
-                  discardArt(texture, video);
-                  releaseLauncher(launcher);
-                  return;
-                }
-                pieces.add(event, texture, video);
-                noteActivity();
-              },
-              () => {
-                done();
-                abandon();
-              },
-              poster
-            );
-          },
-        });
+        hangNft(event);
         break;
       }
       case "ambient":
@@ -231,6 +269,7 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
         // remember the flag only while this NFT's art is loading (add() applies
         // it when it lands); with nothing hung or loading, later events for it
         // arrive already stamped by the server's persisted verdict
+        if (pieces.takeDownPermanent(event.launcherId)) break; // (update() drops a stale focus)
         const remember = inflight.has(event.launcherId);
         if (
           pieces.markSensitive(event.launcherId, sensitivePlaceholderTexture().clone(), remember)
@@ -241,7 +280,40 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
         break;
       }
     }
+  }
+
+  // The permanent collection hangs first, so it reads as the older, standing
+  // part of the exhibition with the live chain's pieces arriving after it.
+  // Feed events are held (not dropped) until every collection piece has hung
+  // or given up — bounded by COLLECTION_HOLD_MS so a slow /collection or slow
+  // art can never stall the wall. Demo mode has no server to ask.
+  let held: GroveEvent[] | null = [];
+  const release = (): void => {
+    if (!held) return;
+    const queue = held;
+    held = null;
+    for (const event of queue) handleEvent(event);
+  };
+  feed.onEvent((event) => {
+    if (held) held.push(event);
+    else handleEvent(event);
   });
+  if (new URLSearchParams(location.search).get("demo") === "1") {
+    release();
+  } else {
+    setTimeout(release, COLLECTION_HOLD_MS);
+    void fetchCollection(reducedMotion ? 9 : COLLECTION_PIECES).then((collection) => {
+      if (!held) return; // the hold already timed out: live pieces own the wall
+      let pending = collection.length;
+      if (pending === 0) return release();
+      const settled = (): void => {
+        if (--pending === 0) release();
+      };
+      // the list is newest-first; hang oldest-first so the newest ends up
+      // nearest the live end of the wall
+      for (const piece of collection.reverse()) hangNft(piece, true, settled);
+    });
+  }
 
   function focus(object: THREE.Object3D): void {
     const f = pieces.focusOf(object);
@@ -382,7 +454,7 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
     fill.intensity += (0.4 + litTarget * 0.2 - fill.intensity) * Math.min(dt * 2, 1);
     // the wall, floor and picture-light pools are shader-lit from the same levels;
     // the focused piece's lamp holds the undimmed netspace level
-    wall.setLight(fill.intensity * 0.05 + spot.intensity * 0.035, spot.intensity);
+    wall.setLight(fill.intensity * 0.085 + spot.intensity * 0.06, spot.intensity);
     pieces.setLightLevel(spot.intensity, lightTarget + breath * 0.3);
 
     let ease: number;
@@ -431,6 +503,7 @@ export function startGallery(canvas: HTMLCanvasElement, feed: GroveFeed): Visual
     tmpLook.lerp(lookTarget, ease);
     camera.lookAt(tmpLook);
     wall.follow(camera.position.x);
+    room.update(camera.position.x, spot.intensity);
   }
   tmpLook.copy(lookTarget);
   loop.start({ camera, postfx, update });

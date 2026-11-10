@@ -208,6 +208,29 @@ export class ContentStore {
     };
   }
 
+  /**
+   * The most recently SafeSearch-checked NFTs that are positively clean
+   * (disposition ok after a real check) together with the image URI that was
+   * checked, newest first. Used to seed the gallery's permanent collection on
+   * a fresh install, so it does not start empty; rows whose check predates the
+   * `checked_uri` column are skipped.
+   */
+  recentClean(limit: number): Array<{ launcherId: string; nftId?: string; uri: string }> {
+    const rows = this.db
+      .prepare(
+        `SELECT launcher_id, nft_id, checked_uri FROM nft
+         WHERE disposition = 'ok' AND safesearch_checked_at IS NOT NULL
+           AND safesearch_adult IS NOT NULL AND checked_uri IS NOT NULL
+         ORDER BY safesearch_checked_at DESC LIMIT ?`
+      )
+      .all(limit) as Array<{ launcher_id: string; nft_id: string | null; checked_uri: string }>;
+    return rows.map((r) => ({
+      launcherId: r.launcher_id,
+      nftId: r.nft_id ?? undefined,
+      uri: r.checked_uri,
+    }));
+  }
+
   close(): void {
     this.db.close();
   }

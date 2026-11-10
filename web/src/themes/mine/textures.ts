@@ -4,7 +4,7 @@ import * as THREE from "three";
  * Procedural 16×16 pixel-art block textures, nearest-filtered for the crisp
  * Minecraft look. CAT textures are grayscale (centered near white) so the
  * per-instance `instanceColor` tint shows through; the ground textures bake in
- * their own colors (grass green / dirt brown) so the grass block can be green
+ * their own colors (grass green, dirt brown, sand, stone, oak log and leaves) so the grass block can be green
  * on top and dirt on the sides. Built once on a <canvas>; document access lives
  * only inside these functions so the module stays importable in the (DOM-less)
  * test environment.
@@ -75,6 +75,53 @@ export function grassTopTexture(size = 16): THREE.CanvasTexture {
 export function dirtTexture(size = 16): THREE.CanvasTexture {
   const { ctx, canvas } = px(size);
   speckRGB(ctx, 0, 0, size, size, DIRT[0], DIRT[1], DIRT[2], 22, 0.14, -20);
+  return nearest(canvas);
+}
+
+const SAND = [222, 207, 160] as const;
+const STONE = [128, 128, 126] as const;
+
+/** Beach sand: pale, finely speckled, with a few lighter grains. */
+export function sandTexture(size = 16): THREE.CanvasTexture {
+  const { ctx, canvas } = px(size);
+  speckRGB(ctx, 0, 0, size, size, SAND[0], SAND[1], SAND[2], 14, 0.12, 14);
+  return nearest(canvas);
+}
+
+/** Stone: grey with darker cracks — the rock under a tall cliff's dirt. */
+export function stoneTexture(size = 16): THREE.CanvasTexture {
+  const { ctx, canvas } = px(size);
+  speckRGB(ctx, 0, 0, size, size, STONE[0], STONE[1], STONE[2], 14, 0.16, -26);
+  // a few short horizontal seams, like Minecraft stone's strata
+  for (let k = 0; k < 5; k++) {
+    const y = (k * 3 + 1) % size;
+    const x0 = (k * 7 + 2) % size;
+    for (let i = 0; i < 4 + (k % 3); i++) {
+      ctx.fillStyle = rgb(STONE[0] - 30, STONE[1] - 30, STONE[2] - 30);
+      ctx.fillRect((x0 + i) % size, y, 1, 1);
+    }
+  }
+  return nearest(canvas);
+}
+
+/** Oak log bark: brown with darker vertical grooves. */
+export function logTexture(size = 16): THREE.CanvasTexture {
+  const { ctx, canvas } = px(size);
+  for (let x = 0; x < size; x++) {
+    const groove = x % 4 === 1 ? -22 : x % 4 === 3 ? 8 : 0;
+    for (let y = 0; y < size; y++) {
+      const n = (Math.random() - 0.5) * 12 + groove;
+      ctx.fillStyle = rgb(104 + n, 80 + n, 48 + n);
+      ctx.fillRect(x, y, 1, 1);
+    }
+  }
+  return nearest(canvas);
+}
+
+/** Oak leaves: deeper green than the grass, with dark gaps between the leaves. */
+export function leavesTexture(size = 16): THREE.CanvasTexture {
+  const { ctx, canvas } = px(size);
+  speckRGB(ctx, 0, 0, size, size, 58, 126, 44, 30, 0.22, -34);
   return nearest(canvas);
 }
 

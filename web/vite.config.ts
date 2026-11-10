@@ -7,6 +7,7 @@ export default defineConfig({
       "/img": { target: "http://localhost:8080" },
       "/thumbnail": { target: "http://localhost:8080" },
       "/block": { target: "http://localhost:8080" },
+      "/collection": { target: "http://localhost:8080" },
     },
   },
 });

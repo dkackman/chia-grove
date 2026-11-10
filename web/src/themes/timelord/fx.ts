@@ -10,10 +10,12 @@ void main() {
   // radial distance across the quad; a bright leading edge with a soft wake
   float r = length(vUv - 0.5) * 2.0;
   if (r > 1.0) discard;
-  float edge = exp(-pow((r - 0.96) * 30.0, 2.0));
-  float wake = smoothstep(0.7, 0.96, r) * 0.06;
-  float fade = pow(1.0 - uProgress, 1.6);
-  gl_FragColor = vec4(uColor * (edge * 0.9 + wake) * fade, 1.0);
+  // kept thin and under the bloom's blow-out point: at full strength the pass
+  // fattened this into a white band that hid the helix for the whole fanfare
+  float edge = exp(-pow((r - 0.96) * 48.0, 2.0));
+  float wake = smoothstep(0.7, 0.96, r) * 0.05;
+  float fade = pow(1.0 - uProgress, 2.2);
+  gl_FragColor = vec4(uColor * (edge * 0.55 + wake) * fade, 1.0);
 }
 `;
 

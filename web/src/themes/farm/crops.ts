@@ -10,10 +10,11 @@ import { FARM } from "./palette.js";
 import type { Tractor } from "./tractor.js";
 
 function wheatBlade(height: number): THREE.BufferGeometry {
-  const stalk = new THREE.CylinderGeometry(0.018, 0.03, height, 4);
+  const stalk = new THREE.CylinderGeometry(0.024, 0.036, height, 4);
   stalk.translate(0, height / 2, 0);
-  const head = new THREE.ConeGeometry(0.06, 0.28, 5);
-  head.translate(0, height + 0.1, 0);
+  // a plump ear, so a row reads as a band of grain rather than bare stalks
+  const head = new THREE.ConeGeometry(0.085, 0.36, 5);
+  head.translate(0, height + 0.13, 0);
   return mergeGeometries([stalk, head]);
 }
 

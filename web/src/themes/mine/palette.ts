@@ -52,9 +52,9 @@ export const FIXED_COLORS: Record<string, HSL> = {
 export const MINE = {
   grassTop: 0x6aa84f,
   dirt: 0x7a5a3a,
-  skyDay: 0x79bdef,
+  skyDay: 0x4a98ee,
   skyNight: 0x0a1130,
-  fogDay: 0xbfe0f2,
+  fogDay: 0xa6cff6,
   fogNight: 0x13203f,
   sun: 0xfff4c2,
   moon: 0xdfe6f2,

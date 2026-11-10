@@ -11,7 +11,7 @@ export const mine: Visualization = {
   id: "mine",
   label: "mineworld",
   legend: [
-    ["sw-land", "land — XCH spend (the island)"],
+    ["sw-land", "land — a block raises bare dirt; each XCH spend greens a tile"],
     ["sw-block", "block — CAT (material + color = asset)"],
     ["sw-painting", "painting — NFT (clickable)"],
     ["sw-villager", "villager — DID"],
@@ -36,10 +36,10 @@ export const mine: Visualization = {
     let liveBlock = true;
     let hovered: { object: THREE.Object3D; index: number | undefined } | null = null;
 
-    runtime.setBlockHandler((chunk, index, live) => {
+    runtime.setBlockHandler((chunk, index, height, live) => {
       currentChunkRef.value = chunk;
       liveBlock = live;
-      island.startBlock(chunk, index);
+      island.startBlock(index, height, clock.t);
       cats.startBlock(chunk);
       // the spiral lapped back onto this slot: take down the previous lap's
       // still-alive specials so the new block's seats don't z-fight with them
@@ -50,13 +50,13 @@ export const mine: Visualization = {
         villagers.clearWhere(wasHere);
         paintings.clearWhere(wasHere);
       }
-      vfx.setCursor(chunk);
+      vfx.setCursor(index);
       vfx.setIslandRadius(torchRadius(runtime.filledBlocks()));
     });
     runtime.setSproutHandler((event, chunk, _height) => {
       if (event.kind === "xch") {
         island.placeGrass(event, clock.t);
-        // lapped chunks are already paved — the cursor flash is the spend's visual
+        // a fully green cell has nothing left to turn — the cursor flash is the spend's visual
         if (liveBlock) vfx.pulse(clock.t);
         return;
       }

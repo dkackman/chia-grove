@@ -9,7 +9,7 @@ version.json
 # Visual brainstorming companion
 .superpowers/
 
-# content-filter SQLite store
+# content-filter + gallery-collection SQLite stores
 /data/
 content-filter.sqlite
 
@@ -25,3 +25,4 @@ server/models/.venv*
 
 .playwright-mcp/
 .claude/settings.json
+collection.sqlite

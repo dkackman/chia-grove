@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { expect, test } from "vitest";
-import { Vfx, torchRingPosition, cursorOpacity } from "../src/themes/mine/vfx.js";
-import { torchRadius } from "../src/themes/mine/layout.js";
+import { Vfx, torchRingPosition, cursorOpacity, cursorGeometry } from "../src/themes/mine/vfx.js";
+import { torchRadius, MAX_BLOCK_SLOTS } from "../src/themes/mine/layout.js";
 
 const sky = { daylight: 1 };
 
@@ -44,4 +44,18 @@ test("the build cursor flashes on a spend and settles back to rest", () => {
   expect(cursorOpacity(0)).toBeGreaterThan(cursorOpacity(1));
   expect(cursorOpacity(10)).toBeCloseTo(cursorOpacity(Infinity), 3);
   expect(cursorOpacity(Infinity)).toBeGreaterThan(0); // the cursor stays faintly visible
+});
+
+test("the build cursor traces the cell's own outline", () => {
+  // an L of three tiles: 3 quads of fill, and 8 unit edges around the outside
+  const { line, fill } = cursorGeometry([
+    { col: 0, row: 0 },
+    { col: 1, row: 0 },
+    { col: 0, row: 1 },
+  ]);
+  expect(fill.length).toBe(3 * 6 * 3);
+  expect(line.length).toBe(8 * 2 * 3);
+  // and every real cell fits the preallocated cursor buffers
+  const v = new Vfx(new THREE.Scene(), sky);
+  for (let slot = 0; slot < MAX_BLOCK_SLOTS; slot++) expect(() => v.setCursor(slot)).not.toThrow();
 });
